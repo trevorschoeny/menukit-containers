@@ -225,8 +225,9 @@ public class MenuKit implements ModInitializer {
             LOGGER.warn("[MenuKit] Panel '{}' registered twice — overwriting", def.name());
         }
         panels.put(def.name(), def);
-        LOGGER.info("[MenuKit] Registered panel '{}' → {} slots, {} buttons{}",
+        LOGGER.info("[MenuKit] Registered panel '{}' → {} slots, {} buttons, {} texts, rootGroup={}{}",
                 def.name(), def.slotDefs().size(), def.buttonDefs().size(),
+                def.textDefs().size(), def.rootGroup() != null,
                 def.isStandaloneScreen() ? " (standalone screen)" : "");
     }
 
@@ -513,8 +514,11 @@ public class MenuKit implements ModInitializer {
             return new MKContainer(1); // fallback to avoid NPE
         }
 
-        if (def.binding() == MKContainerDef.BindingType.PLAYER) {
-            // Player-bound: one container per player, persisted in player NBT
+        if (def.binding() == MKContainerDef.BindingType.PLAYER
+                || def.binding() == MKContainerDef.BindingType.EPHEMERAL) {
+            // Player-bound and ephemeral: both stored in player maps.
+            // PLAYER containers are persisted to NBT; EPHEMERAL are not
+            // (saveAll/loadAll filter by binding type).
             return (isServer ? playerServerContainers : playerClientContainers)
                     .computeIfAbsent(playerId, k -> new LinkedHashMap<>())
                     .computeIfAbsent(containerName, k -> new MKContainer(def.size()));
@@ -583,7 +587,7 @@ public class MenuKit implements ModInitializer {
         for (int i = 0; i < def.slotDefs().size(); i++) {
             MKSlotDef slotDef = def.slotDefs().get(i);
             MKSlot slot = slotDef.createSlotAt(lookup,
-                    0, 0, def.effectivePadding(), def.slotContentOffset(),
+                    0, 0, def.effectivePadding(),
                     flowPos[i][0], flowPos[i][1], panelName, player);
             if (slot != null) {
                 slot.setSlotIndexInPanel(i);
@@ -659,7 +663,7 @@ public class MenuKit implements ModInitializer {
             for (int i = 0; i < def.slotDefs().size(); i++) {
                 MKSlotDef slotDef = def.slotDefs().get(i);
                 MKSlot slot = slotDef.createSlotAt(lookup,
-                        pos[0], pos[1], def.effectivePadding(), def.slotContentOffset(),
+                        pos[0], pos[1], def.effectivePadding(),
                         flowPos[i][0], flowPos[i][1], def.name(), player);
                 if (slot != null) {
                     slot.setSlotIndexInPanel(i);
@@ -703,7 +707,7 @@ public class MenuKit implements ModInitializer {
             for (int i = 0; i < def.slotDefs().size(); i++) {
                 MKSlotDef slotDef = def.slotDefs().get(i);
                 MKSlot slot = slotDef.createSlotAt(lookup,
-                        pos[0], pos[1], def.effectivePadding(), def.slotContentOffset(),
+                        pos[0], pos[1], def.effectivePadding(),
                         flowPos[i][0], flowPos[i][1], def.name(), player);
                 if (slot != null) {
                     slot.setSlotIndexInPanel(i);
@@ -844,8 +848,8 @@ public class MenuKit implements ModInitializer {
             int[][] flowPos = def.computeFlowPositions();
             for (int i = 0; i < def.slotDefs().size(); i++) {
                 map.put(def.name() + ":" + i, new int[]{
-                        pos[0] + def.effectivePadding() + def.slotContentOffset() + flowPos[i][0],
-                        pos[1] + def.effectivePadding() + def.slotContentOffset() + flowPos[i][1]
+                        pos[0] + def.effectivePadding() + flowPos[i][0],
+                        pos[1] + def.effectivePadding() + flowPos[i][1]
                 });
             }
         }
@@ -929,6 +933,15 @@ public class MenuKit implements ModInitializer {
                     maxBottom = Math.max(maxBottom, flowPos[fi][1] + btn.getHeight());
                 }
 
+                // Include text elements
+                for (int ti = 0; ti < def.textDefs().size(); ti++) {
+                    int fi = def.slotDefs().size() + def.buttonDefs().size() + ti;
+                    if (fi >= flowPos.length || flowPos[fi][0] == -9999) continue;
+                    MKTextDef textDef = def.textDefs().get(ti);
+                    maxRight = Math.max(maxRight, flowPos[fi][0] + textDef.estimateWidth());
+                    maxBottom = Math.max(maxBottom, flowPos[fi][1] + MKTextDef.TEXT_HEIGHT);
+                }
+
                 livePanelSizes.put(def.name(), new int[]{
                         maxRight + def.effectivePadding() * 2,
                         maxBottom + def.effectivePadding() * 2
@@ -983,6 +996,25 @@ public class MenuKit implements ModInitializer {
 
             MKPanel.renderPanel(graphics, panelX, panelY,
                     size[0], size[1], def.style(), def.customSprite());
+
+            // Render text labels
+            if (!def.textDefs().isEmpty()) {
+                var mc = net.minecraft.client.Minecraft.getInstance();
+                int[][] flowPos = def.computeFlowPositions();
+                int ep = def.effectivePadding();
+                for (int i = 0; i < def.textDefs().size(); i++) {
+                    int fi = def.slotDefs().size() + def.buttonDefs().size() + i;
+                    if (fi >= flowPos.length || flowPos[fi][0] == -9999) continue;
+                    MKTextDef textDef = def.textDefs().get(i);
+                    net.minecraft.network.chat.Component text = textDef.content().get();
+                    if (text != null) {
+                        int textX = panelX + ep + flowPos[fi][0];
+                        int textY = panelY + ep + flowPos[fi][1];
+                        graphics.drawString(mc.font, text, textX, textY,
+                                textDef.color(), textDef.shadow());
+                    }
+                }
+            }
 
             // Track panel hover — is the mouse within this panel's bounds?
             if (mouseX >= panelX && mouseX < panelX + size[0]
@@ -1044,8 +1076,9 @@ public class MenuKit implements ModInitializer {
 
                 // Slot.x/y is where the 16×16 item renders.
                 // The 18×18 inset background goes 1px outside that.
-                int slotX = panelX + def.effectivePadding() + def.slotContentOffset() + flowPos[slotIdx][0];
-                int slotY = panelY + def.effectivePadding() + def.slotContentOffset() + flowPos[slotIdx][1];
+                // Slot content offset (+1) is already baked into flowPos by the layout engine
+                int slotX = panelX + def.effectivePadding() + flowPos[slotIdx][0];
+                int slotY = panelY + def.effectivePadding() + flowPos[slotIdx][1];
                 MKPanel.renderSlotBackground(graphics, slotX - 1, slotY - 1);
 
                 // Find the live MKSlot from the menu by matching position.
@@ -1116,7 +1149,9 @@ public class MenuKit implements ModInitializer {
         Map<String, MKContainer> containers = playerServerContainers.get(playerId);
         if (containers == null) return;
 
-        // Save player-bound containers by container name
+        // Save player-bound containers by container name.
+        // EPHEMERAL and INSTANCE containers are intentionally skipped —
+        // ephemeral contents live in their bound source, not in player NBT.
         for (MKContainerDef cDef : containerDefs.values()) {
             if (cDef.binding() != MKContainerDef.BindingType.PLAYER) continue;
 
@@ -1140,7 +1175,8 @@ public class MenuKit implements ModInitializer {
      * Called during {@code ServerPlayer.readAdditionalSaveData()}.
      */
     public static void loadAll(UUID playerId, ValueInput input) {
-        // Load player-bound containers by container name
+        // Load player-bound containers by container name.
+        // EPHEMERAL containers are skipped — their contents come from bound sources, not NBT.
         for (MKContainerDef cDef : containerDefs.values()) {
             if (cDef.binding() != MKContainerDef.BindingType.PLAYER) continue;
 
@@ -1270,6 +1306,7 @@ public class MenuKit implements ModInitializer {
                                                       boolean effectsActive, int effectsHeight) {
         int containerWidth = context.containerWidth();
         int containerHeight = context.containerHeight();
+        int m = MKPanel.Builder.DEFAULT_MARGIN;
 
         // Always recompute — disabledWhen predicates can change panel sizes
         // and visibility frame-to-frame, so cached positions may be stale
@@ -1278,8 +1315,16 @@ public class MenuKit implements ModInitializer {
         lastResolvedHeight = containerHeight;
         lastResolvedContext = context;
 
-        // Creative tab dimensions
-        int creativeTabHeight = 32; // standard tab height
+        // ── Auto-stacking cursors ──────────────────────────────────────────
+        // Track the running offset for each auto-stacking lane.
+        // LEFT_AUTO / RIGHT_AUTO: cursor tracks the Y position of the next panel
+        // ABOVE/BELOW_LEFT/RIGHT: cursor tracks the X position of the next panel
+        int leftCursorY = 0;       // next Y for LEFT_AUTO panels
+        int rightCursorY = 0;      // next Y for RIGHT_AUTO panels
+        int aboveLeftCursorX = 0;  // next X for ABOVE_LEFT panels
+        int aboveRightCursorX = 0; // next X offset (from right) for ABOVE_RIGHT panels
+        int belowLeftCursorX = 0;  // next X for BELOW_LEFT panels
+        int belowRightCursorX = 0; // next X offset (from right) for BELOW_RIGHT panels
 
         for (MKPanelDef def : panels.values()) {
             if (!def.needsMenuClass(context.menuClass())) continue;
@@ -1287,59 +1332,104 @@ public class MenuKit implements ModInitializer {
             if (!def.appliesTo(context)) continue;
             if (isPanelInactive(def.name())) continue;
 
-            // Base position
-            int[] pos = def.resolvePosition(context);
             int[] size = def.computeSize();
-            int px = pos[0], py = pos[1];
             int pw = size[0], ph = size[1];
+            int px, py;
 
+            if (def.isAutoStacked()) {
+                // ── Auto-stacking: compute position from cursor ────────────
+                switch (def.posMode()) {
+                    case LEFT_AUTO -> {
+                        px = -m - pw;
+                        py = leftCursorY;
+                        leftCursorY += ph + m; // advance cursor for next panel
+                    }
+                    case RIGHT_AUTO -> {
+                        px = containerWidth + m;
+                        py = rightCursorY;
+                        rightCursorY += ph + m;
+                    }
+                    case ABOVE_LEFT -> {
+                        px = aboveLeftCursorX;
+                        py = -m - ph;
+                        aboveLeftCursorX += pw + m;
+                    }
+                    case ABOVE_RIGHT -> {
+                        px = containerWidth - aboveRightCursorX - pw;
+                        py = -m - ph;
+                        aboveRightCursorX += pw + m;
+                    }
+                    case BELOW_LEFT -> {
+                        px = belowLeftCursorX;
+                        py = containerHeight + m;
+                        belowLeftCursorX += pw + m;
+                    }
+                    case BELOW_RIGHT -> {
+                        px = containerWidth - belowRightCursorX - pw;
+                        py = containerHeight + m;
+                        belowRightCursorX += pw + m;
+                    }
+                    default -> {
+                        // shouldn't happen — isAutoStacked() would be false
+                        int[] pos = def.resolvePosition(context);
+                        px = pos[0]; py = pos[1];
+                    }
+                }
+            } else {
+                // ── Manual positioning ──────────────────────────────────────
+                int[] pos = def.resolvePosition(context);
+                px = pos[0]; py = pos[1];
+            }
+
+            // ── Avoidance ───────────────────────────────────────────────────
+            // Auto-stacked panels skip panel-to-panel collision (cursor handles it)
+            // but still need to avoid vanilla elements like status effects and tabs.
             if (!def.allowOverlap()) {
-                // ── Avoid status effects (right side) ──────────────────────
-                if (effectsActive && def.posMode() == MKPanelDef.PosMode.RIGHT) {
-                    // Effects render at (containerWidth + 2, topPos) with variable height
-                    // Our panel is also to the right of the container
-                    // Check if they overlap vertically
+                // Avoid status effects (right side)
+                boolean isRight = def.posMode() == MKPanelDef.PosMode.RIGHT
+                        || def.posMode() == MKPanelDef.PosMode.RIGHT_AUTO;
+                if (effectsActive && isRight) {
                     int effectsX = containerWidth + 2;
-                    int effectsY = 0; // effects start at top of container
-                    // Effects width varies, but they occupy the right side starting at effectsX
-                    // Our panel starts at px. If px overlaps with effectsX area, shift down
                     if (px >= effectsX - 4 && py < effectsHeight) {
-                        py = effectsHeight + 2; // shift below effects
+                        py = effectsHeight + 2;
                     }
                 }
 
-                // ── Avoid creative tabs ────────────────────────────────────
+                // Avoid creative tabs (applies to all above/below modes)
                 if (context.isCreative()) {
-                    if (def.posMode() == MKPanelDef.PosMode.ABOVE) {
-                        // Top tabs are at y = -32 to y = 0 (above container)
-                        // If our panel overlaps, shift further up
+                    boolean isAbove = def.posMode() == MKPanelDef.PosMode.ABOVE
+                            || def.posMode() == MKPanelDef.PosMode.ABOVE_LEFT
+                            || def.posMode() == MKPanelDef.PosMode.ABOVE_RIGHT;
+                    boolean isBelow = def.posMode() == MKPanelDef.PosMode.BELOW
+                            || def.posMode() == MKPanelDef.PosMode.BELOW_LEFT
+                            || def.posMode() == MKPanelDef.PosMode.BELOW_RIGHT;
+                    if (isAbove) {
+                        int creativeTabHeight = 32;
                         if (py + ph > -creativeTabHeight) {
                             py = -creativeTabHeight - ph - 2;
                         }
                     }
-                    if (def.posMode() == MKPanelDef.PosMode.BELOW) {
-                        // Bottom tabs are at y = containerHeight to y = containerHeight + 32
-                        // If our panel overlaps, shift further down
+                    if (isBelow) {
+                        int creativeTabHeight = 32;
                         if (py < containerHeight + creativeTabHeight) {
                             py = containerHeight + creativeTabHeight + 2;
                         }
                     }
                 }
 
-                // ── Avoid other MKPanels ───────────────────────────────────
-                for (var entry : resolvedPositions.entrySet()) {
-                    MKPanelDef otherDef = panels.get(entry.getKey());
-                    if (otherDef == null || otherDef.allowOverlap()) continue;
-
-                    int[] otherPos = entry.getValue();
-                    int[] otherSize = livePanelSizes.getOrDefault(otherDef.name(), otherDef.computeSize());
-                    int ox = otherPos[0], oy = otherPos[1];
-                    int ow = otherSize[0], oh = otherSize[1];
-
-                    // Check overlap (AABB collision)
-                    if (px < ox + ow && px + pw > ox && py < oy + oh && py + ph > oy) {
-                        // Collision — shift this panel below the other one
-                        py = oy + oh + 2;
+                // Avoid other panels (AABB collision) — manual panels only
+                // Auto-stacked panels are already spaced by the cursor system
+                if (!def.isAutoStacked()) {
+                    for (var entry : resolvedPositions.entrySet()) {
+                        MKPanelDef otherDef = panels.get(entry.getKey());
+                        if (otherDef == null || otherDef.allowOverlap()) continue;
+                        int[] otherPos = entry.getValue();
+                        int[] otherSize = livePanelSizes.getOrDefault(otherDef.name(), otherDef.computeSize());
+                        int ox = otherPos[0], oy = otherPos[1];
+                        int ow = otherSize[0], oh = otherSize[1];
+                        if (px < ox + ow && px + pw > ox && py < oy + oh && py + ph > oy) {
+                            py = oy + oh + 2;
+                        }
                     }
                 }
             }
@@ -1438,12 +1528,12 @@ public class MenuKit implements ModInitializer {
             if (def.autoSize()) {
                 int maxRight = 0, maxBottom = 0;
                 int[][] sizeFlowPos = def.computeFlowPositions();
-                int so = def.slotContentOffset();
 
+                // Slot content offset (+1) is already baked into flowPos
                 for (int si = 0; si < def.slotDefs().size(); si++) {
                     if (sizeFlowPos[si][0] == -9999) continue;
-                    maxRight = Math.max(maxRight, sizeFlowPos[si][0] + so + 18);
-                    maxBottom = Math.max(maxBottom, sizeFlowPos[si][1] + so + 18);
+                    maxRight = Math.max(maxRight, sizeFlowPos[si][0] + 18);
+                    maxBottom = Math.max(maxBottom, sizeFlowPos[si][1] + 18);
                 }
                 // Use actual button widget dimensions
                 int btnIdx = 0;
@@ -1459,6 +1549,15 @@ public class MenuKit implements ModInitializer {
                         }
                         btnIdx++;
                     }
+                }
+
+                // Include text elements in size computation
+                for (int ti = 0; ti < def.textDefs().size(); ti++) {
+                    int fi = def.slotDefs().size() + def.buttonDefs().size() + ti;
+                    if (fi >= sizeFlowPos.length || sizeFlowPos[fi][0] == -9999) continue;
+                    MKTextDef textDef = def.textDefs().get(ti);
+                    maxRight = Math.max(maxRight, sizeFlowPos[fi][0] + textDef.estimateWidth());
+                    maxBottom = Math.max(maxBottom, sizeFlowPos[fi][1] + MKTextDef.TEXT_HEIGHT);
                 }
 
                 livePanelSizes.put(def.name(), new int[]{
