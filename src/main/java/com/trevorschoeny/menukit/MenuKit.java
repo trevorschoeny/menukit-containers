@@ -1315,22 +1315,61 @@ public class MenuKit implements ModInitializer {
         lastResolvedHeight = containerHeight;
         lastResolvedContext = context;
 
+        // ── Exclusive panel pre-pass ─────────────────────────────────────────
+        // Check which sides have a visible exclusive panel. Non-exclusive panels
+        // on that side will be suppressed (not positioned, not rendered).
+        boolean exclusiveLeft = false, exclusiveRight = false;
+        boolean exclusiveAboveLeft = false, exclusiveAboveRight = false;
+        boolean exclusiveBelowLeft = false, exclusiveBelowRight = false;
+        for (MKPanelDef def : panels.values()) {
+            if (!def.exclusive() || !def.isAutoStacked()) continue;
+            if (!def.needsMenuClass(context.menuClass())) continue;
+            if (def.isStandaloneScreen()) continue;
+            if (!def.appliesTo(context)) continue;
+            if (isPanelInactive(def.name())) continue;
+            switch (def.posMode()) {
+                case LEFT_AUTO    -> exclusiveLeft = true;
+                case RIGHT_AUTO   -> exclusiveRight = true;
+                case ABOVE_LEFT   -> exclusiveAboveLeft = true;
+                case ABOVE_RIGHT  -> exclusiveAboveRight = true;
+                case BELOW_LEFT   -> exclusiveBelowLeft = true;
+                case BELOW_RIGHT  -> exclusiveBelowRight = true;
+                default -> {}
+            }
+        }
+
         // ── Auto-stacking cursors ──────────────────────────────────────────
         // Track the running offset for each auto-stacking lane.
-        // LEFT_AUTO / RIGHT_AUTO: cursor tracks the Y position of the next panel
-        // ABOVE/BELOW_LEFT/RIGHT: cursor tracks the X position of the next panel
-        int leftCursorY = 0;       // next Y for LEFT_AUTO panels
-        int rightCursorY = 0;      // next Y for RIGHT_AUTO panels
-        int aboveLeftCursorX = 0;  // next X for ABOVE_LEFT panels
-        int aboveRightCursorX = 0; // next X offset (from right) for ABOVE_RIGHT panels
-        int belowLeftCursorX = 0;  // next X for BELOW_LEFT panels
-        int belowRightCursorX = 0; // next X offset (from right) for BELOW_RIGHT panels
+        int leftCursorY = 0;
+        int rightCursorY = 0;
+        int aboveLeftCursorX = 0;
+        int aboveRightCursorX = 0;
+        int belowLeftCursorX = 0;
+        int belowRightCursorX = 0;
 
         for (MKPanelDef def : panels.values()) {
             if (!def.needsMenuClass(context.menuClass())) continue;
             if (def.isStandaloneScreen()) continue;
             if (!def.appliesTo(context)) continue;
             if (isPanelInactive(def.name())) continue;
+
+            // Suppress non-exclusive panels when an exclusive panel is active on their side
+            if (def.isAutoStacked() && !def.exclusive()) {
+                boolean suppressed = switch (def.posMode()) {
+                    case LEFT_AUTO    -> exclusiveLeft;
+                    case RIGHT_AUTO   -> exclusiveRight;
+                    case ABOVE_LEFT   -> exclusiveAboveLeft;
+                    case ABOVE_RIGHT  -> exclusiveAboveRight;
+                    case BELOW_LEFT   -> exclusiveBelowLeft;
+                    case BELOW_RIGHT  -> exclusiveBelowRight;
+                    default -> false;
+                };
+                if (suppressed) {
+                    // Position off-screen so it doesn't render or accept interactions
+                    resolvedPositions.put(def.name(), new int[]{ -9999, -9999 });
+                    continue;
+                }
+            }
 
             int[] size = def.computeSize();
             int pw = size[0], ph = size[1];
