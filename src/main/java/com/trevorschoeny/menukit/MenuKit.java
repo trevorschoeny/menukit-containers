@@ -335,6 +335,28 @@ public class MenuKit implements ModInitializer {
         return isPanelHidden(name) || isPanelDisabled(name);
     }
 
+    /**
+     * Returns true if the named panel allows items to be shift-clicked INTO it.
+     * Returns false if the panel doesn't exist, is inactive, or has shiftClickIn=false.
+     */
+    public static boolean isShiftClickIn(String name) {
+        MKPanelDef def = panels.get(name);
+        if (def == null) return false;
+        if (isPanelInactive(name)) return false;
+        return def.shiftClickIn();
+    }
+
+    /**
+     * Returns true if the named panel allows items to be shift-clicked OUT OF it.
+     * Returns false if the panel doesn't exist, is inactive, or has shiftClickOut=false.
+     */
+    public static boolean isShiftClickOut(String name) {
+        MKPanelDef def = panels.get(name);
+        if (def == null) return false;
+        if (isPanelInactive(name)) return false;
+        return def.shiftClickOut();
+    }
+
     // ── Hover Tracking (client-only) ──────────────────────────────────────
 
     /**
