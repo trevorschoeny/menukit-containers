@@ -231,6 +231,14 @@ public class MenuKit implements ModInitializer {
                 def.isStandaloneScreen() ? " (standalone screen)" : "");
     }
 
+    /**
+     * Returns true if a panel with this name is already registered.
+     * Used by {@link MKFamily#sharedPanel} for deduplication.
+     */
+    public static boolean hasPanel(String name) {
+        return panels.containsKey(name);
+    }
+
     // ── Container Registration ─────────────────────────────────────────────
 
     /**
