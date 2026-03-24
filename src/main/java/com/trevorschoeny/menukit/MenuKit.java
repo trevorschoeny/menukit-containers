@@ -10,6 +10,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -25,6 +26,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.function.Consumer;
 
 /**
  * Central registry and lifecycle manager for the MenuKit framework.
@@ -146,6 +148,19 @@ public class MenuKit implements ModInitializer {
     // ── Panel visibility ───────────────────────────────────────────────────
     // Tracks which panels are currently hidden. Client-side only.
     private static final Set<String> hiddenPanels = new HashSet<>();
+
+    // ── Standalone persistence handlers ────────────────────────────────────
+    // Allows any feature to save/load arbitrary data without creating a panel.
+    // Key: unique string identifier. Value: save and load callbacks.
+    // Hooked into the same player NBT lifecycle as panel onSave/onLoad.
+    // The key is used as the NBT tag name within the player's MenuKit data.
+    private static final Map<String, PersistenceHandler> persistenceHandlers = new LinkedHashMap<>();
+
+    /**
+     * A pair of save/load callbacks for standalone persistence.
+     * Registered via {@link #registerPersistence(String, Consumer, Consumer)}.
+     */
+    private record PersistenceHandler(Consumer<ValueOutput> save, Consumer<ValueInput> load) {}
 
     // ── Family registry ─────────────────────────────────────────────────────
     // Families group multiple mods under a shared config screen + keybind
@@ -362,6 +377,41 @@ public class MenuKit implements ModInitializer {
     /** Returns a container definition by name, or null if not found. */
     public static @Nullable MKContainerDef getContainerDef(String name) {
         return containerDefs.get(name);
+    }
+
+    // ── Standalone Persistence API ──────────────────────────────────────────
+
+    /**
+     * Registers a standalone persistence handler — save/load callbacks that
+     * hook into the same player NBT lifecycle as panel onSave/onLoad, but
+     * without requiring a panel.
+     *
+     * <p>Use this when a feature needs to persist data (e.g., disabled-slot
+     * state, preferences, counters) but has no panel of its own. The key
+     * becomes the NBT tag name within the player's MenuKit data.
+     *
+     * <p>Example:
+     * <pre>{@code
+     * MenuKit.registerPersistence("pocket_disabled",
+     *     output -> {
+     *         output.putString("slot_0", "0,2");
+     *     },
+     *     input -> {
+     *         input.getString("slot_0").ifPresent(str -> ...);
+     *     }
+     * );
+     * }</pre>
+     *
+     * @param key  unique identifier for this data block (used as NBT tag name)
+     * @param save receives a ValueOutput to write data into during player save
+     * @param load receives a ValueInput to read data from during player load
+     */
+    public static void registerPersistence(String key, Consumer<ValueOutput> save, Consumer<ValueInput> load) {
+        if (persistenceHandlers.containsKey(key)) {
+            LOGGER.warn("[MenuKit] Persistence handler '{}' registered twice — overwriting", key);
+        }
+        persistenceHandlers.put(key, new PersistenceHandler(save, load));
+        LOGGER.info("[MenuKit] Registered persistence handler '{}'", key);
     }
 
     // ── Panel Queries ──────────────────────────────────────────────────────
@@ -1416,6 +1466,92 @@ public class MenuKit implements ModInitializer {
                         }
                     }
                 }
+
+                // ── Background Tint (renders BEHIND the item) ──────────────
+                // Read from MKSlotState so both declarative (builder) and
+                // imperative (runtime) tints are respected.
+                if (liveMKSlot != null) {
+                    MKSlotState dState = MKSlotStateRegistry.get(liveMKSlot);
+                    if (dState != null && dState.getBackgroundTint() != 0) {
+                        // Fill the 16×16 item area with the tint color.
+                        // Alpha channel controls transparency — 0x40 = 25%.
+                        graphics.fill(slotX, slotY, slotX + 16, slotY + 16,
+                                dState.getBackgroundTint());
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Renders overlay icons and border decorations ON TOP of slot items.
+     * Called at RETURN of {@code renderSlots} — after vanilla has drawn all
+     * slot items — so overlays appear above the items.
+     *
+     * <p>Only processes slots that have decorations set (overlay icon or border
+     * color), gated behind {@link MKSlotState#hasDecoration()} for zero cost
+     * on undecorated slots.
+     *
+     * @param graphics  the current GuiGraphics context
+     * @param menu      the container menu with all slots
+     * @param context   the active MKContext
+     * @param offsetX   x offset (0 in translated space)
+     * @param offsetY   y offset (0 in translated space)
+     */
+    public static void renderSlotOverlays(GuiGraphics graphics,
+                                           AbstractContainerMenu menu,
+                                           MKContext context,
+                                           int offsetX, int offsetY) {
+        for (MKPanelDef def : panels.values()) {
+            if (!def.needsMenuClass(context.menuClass())) continue;
+            if (def.isStandaloneScreen()) continue;
+            if (!def.appliesTo(context)) continue;
+            if (isPanelInactive(def.name())) continue;
+
+            int[] pos = getResolvedPosition(def, context);
+            int panelX = offsetX + pos[0];
+            int panelY = offsetY + pos[1];
+
+            int[][] flowPos = def.computeFlowPositions();
+            for (int slotIdx = 0; slotIdx < def.slotDefs().size(); slotIdx++) {
+                // Skip disabled slots (flow positions will be -9999 for these)
+                if (flowPos[slotIdx][0] == -9999) continue;
+
+                int slotX = panelX + def.effectivePadding() + flowPos[slotIdx][0];
+                int slotY = panelY + def.effectivePadding() + flowPos[slotIdx][1];
+
+                // Find the live slot and its state
+                net.minecraft.world.inventory.Slot liveMKSlot = findLiveMKSlot(menu, slotX, slotY);
+                if (liveMKSlot == null) continue;
+
+                MKSlotState dState = MKSlotStateRegistry.get(liveMKSlot);
+                // Fast gate: skip slots with no decorations (most slots)
+                if (dState == null || !dState.hasDecoration()) continue;
+
+                // ── Overlay Icon (renders ON TOP of the item) ──────────────
+                // Draws a 16×16 sprite at the slot position, above the item.
+                // Common use: lock icon, warning indicator, status badge.
+                Identifier overlay = dState.getOverlayIcon();
+                if (overlay != null) {
+                    graphics.blitSprite(
+                            net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED,
+                            overlay, slotX, slotY, 16, 16);
+                }
+
+                // ── Border (renders ON TOP of the item) ────────────────────
+                // Four 1px fills forming a rectangle around the 16×16 slot area.
+                // The border sits at the slot boundary, inside the 18×18 background.
+                int bc = dState.getBorderColor();
+                if (bc != 0) {
+                    // Top edge
+                    graphics.fill(slotX, slotY, slotX + 16, slotY + 1, bc);
+                    // Bottom edge
+                    graphics.fill(slotX, slotY + 15, slotX + 16, slotY + 16, bc);
+                    // Left edge
+                    graphics.fill(slotX, slotY + 1, slotX + 1, slotY + 15, bc);
+                    // Right edge
+                    graphics.fill(slotX + 15, slotY + 1, slotX + 16, slotY + 15, bc);
+                }
             }
         }
     }
@@ -1476,6 +1612,11 @@ public class MenuKit implements ModInitializer {
                 def.onSave().accept(output.child("panel_" + def.name()));
             }
         }
+
+        // Call standalone persistence handlers (panel-independent data)
+        for (var entry : persistenceHandlers.entrySet()) {
+            entry.getValue().save().accept(output.child(entry.getKey()));
+        }
     }
 
     /**
@@ -1503,6 +1644,12 @@ public class MenuKit implements ModInitializer {
                 input.child("panel_" + def.name()).ifPresent(panelInput ->
                         def.onLoad().accept(panelInput));
             }
+        }
+
+        // Call standalone persistence handlers (panel-independent data)
+        for (var entry : persistenceHandlers.entrySet()) {
+            input.child(entry.getKey()).ifPresent(handlerInput ->
+                    entry.getValue().load().accept(handlerInput));
         }
     }
 
@@ -2144,6 +2291,32 @@ public class MenuKit implements ModInitializer {
         return true;
     }
 
+    // ── Event System ────────────────────────────────────────────────────────
+
+    /**
+     * Entry point for registering event handlers via builder chain.
+     *
+     * <p>Call this during mod init to register global handlers that fire
+     * whenever a matching slot event occurs. Use the builder's filter methods
+     * to narrow which events reach your handler.
+     *
+     * <p><b>Example:</b>
+     * <pre>{@code
+     * MenuKit.on(MKSlotEvent.Type.LEFT_CLICK, MKSlotEvent.Type.RIGHT_CLICK)
+     *     .region("storage")
+     *     .handler(event -> {
+     *         // custom logic here
+     *         return MKEventResult.CONSUMED;
+     *     });
+     * }</pre>
+     *
+     * @param types one or more event types to listen for
+     * @return a builder for configuring filters and the handler
+     */
+    public static MKEventBuilder on(MKSlotEvent.Type... types) {
+        return new MKEventBuilder(types);
+    }
+
     // ══════════════════════════════════════════════════════════════════════
     // HUD — Registration, Rendering, Notifications
     // ══════════════════════════════════════════════════════════════════════
@@ -2281,5 +2454,48 @@ public class MenuKit implements ModInitializer {
 
         // Remove expired notifications
         expired.forEach(activeNotifications::remove);
+    }
+
+    // ── Server-Thread Execution ───────────────────────────────────────────────
+
+    /**
+     * Executes an action on the server thread. Safe to call from either side.
+     *
+     * <p><b>When this works:</b>
+     * <ul>
+     *   <li>On a dedicated or integrated server — the action runs on the server
+     *       thread via {@link MinecraftServer#execute(Runnable)}.</li>
+     *   <li>On a singleplayer client — {@code player.getServer()} returns the
+     *       integrated server, so the action is submitted normally.</li>
+     * </ul>
+     *
+     * <p><b>When this is a no-op (returns false):</b>
+     * <ul>
+     *   <li>On a multiplayer client — there is no local server instance.
+     *       Server-side actions must be triggered via network packets instead.</li>
+     * </ul>
+     *
+     * <p>The return value lets callers know whether the action was actually
+     * submitted. A {@code false} return does <em>not</em> mean an error — it
+     * means there is no server reachable from this context, and the caller
+     * should use a packet-based approach instead.
+     *
+     * @param player the player (used to find the server instance)
+     * @param action the action to run on the server thread
+     * @return true if the action was submitted, false if no server was available
+     */
+    public static boolean executeOnServer(Player player, Runnable action) {
+        // player.level().getServer() returns the MinecraftServer if one is accessible:
+        //   - On dedicated server: always present
+        //   - On integrated server (singleplayer): always present
+        //   - On multiplayer client: null (no local server)
+        MinecraftServer server = player.level().getServer();
+        if (server == null) return false;
+
+        // Submit to the server's main thread. If we're already on it, this
+        // executes synchronously at the end of the current tick; otherwise
+        // it queues for the next tick.
+        server.execute(action);
+        return true;
     }
 }
