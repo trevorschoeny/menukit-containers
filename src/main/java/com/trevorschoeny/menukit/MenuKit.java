@@ -80,6 +80,20 @@ public class MenuKit implements ModInitializer {
     // Key: panel name. Computed during screen init when button sizes are known.
     private static final Map<String, int[]> livePanelSizes = new HashMap<>();
 
+    // ── Vanilla slot → panel mapping (map-based tracking) ───────────────────
+    // Instead of replacing vanilla slots with MKSlotWrappers, we track which
+    // vanilla slot indices belong to which MK panels. This is safe — vanilla
+    // slots remain untouched, but MenuKit knows their panel association for
+    // shift-click routing and feature application.
+    // Key: menu identity hash → Map<slotIndex, panelName>
+    private static final Map<Integer, Map<Integer, String>> menuSlotPanelMaps = new HashMap<>();
+
+    // ── Per-menu vanilla container wrappers ───────────────────────────────────
+    // Auto-created when a menu is constructed. Maps container name → MKContainer
+    // wrapping the vanilla Container backing those slots.
+    // Key: menu identity hash → Map<containerName, MKContainer>
+    private static final Map<Integer, Map<String, MKContainer>> menuContainerMaps = new HashMap<>();
+
     // ── Collision-avoidance resolved positions ──────────────────────────────
     // Key: panel name. Resolved each frame with collision avoidance applied.
     // Values are container-relative {x, y}.
@@ -105,7 +119,7 @@ public class MenuKit implements ModInitializer {
     // imageWidth/imageHeight bounding box, so MKSlots positioned outside
     // (like pocket panels) are invisible to vanilla's hoveredSlot.
     // Our detection runs in renderSlotBackgrounds and works everywhere.
-    private static @Nullable MKSlot hoveredMKSlot = null;
+    private static net.minecraft.world.inventory.Slot hoveredMKSlot = null; // nullable
     private static @Nullable String hoveredPanelName = null;
 
 
@@ -173,7 +187,12 @@ public class MenuKit implements ModInitializer {
         // Register block break listener for instance-bound container cleanup
         MKBlockBreakListener.register();
 
-        LOGGER.info("[MenuKit] Registered MK_MENU_TYPE");
+        // Register vanilla inventory wrapper panels — these panels have zero
+        // slot defs (the slots are wrapped from vanilla, not created by MK).
+        // They exist purely for shift-click routing and feature association.
+        registerVanillaInventoryPanels();
+
+        LOGGER.info("[MenuKit] Registered MK_MENU_TYPE + vanilla inventory panels");
     }
 
     /**
@@ -237,6 +256,80 @@ public class MenuKit implements ModInitializer {
      */
     public static boolean hasPanel(String name) {
         return panels.containsKey(name);
+    }
+
+    // ── Vanilla Inventory Wrapper Panels ────────────────────────────────────
+
+    /** Panel names for vanilla inventory slot groups. */
+    public static final String PANEL_HOTBAR = "mk:hotbar";
+    public static final String PANEL_MAIN_INVENTORY = "mk:main_inventory";
+    public static final String PANEL_ARMOR = "mk:armor";
+    public static final String PANEL_OFFHAND = "mk:offhand";
+    public static final String PANEL_CRAFT_2X2 = "mk:craft_2x2";
+    public static final String PANEL_CRAFT_RESULT = "mk:craft_result";
+
+    /**
+     * Registers invisible panels for vanilla inventory slot groups.
+     * These panels have zero slot defs — slots are wrapped from vanilla
+     * via {@link MKSlotWrapper}, not created by MenuKit's panel builder.
+     *
+     * <p>Panels exist purely for shift-click routing flags and feature
+     * association (sort, lock, etc.). They don't render anything.
+     */
+    private static void registerVanillaInventoryPanels() {
+        // Hotbar — always shift-clickable in both directions
+        MKPanel.builder(PANEL_HOTBAR)
+                .showIn(MKContext.ALL_WITH_PLAYER_INVENTORY)
+                .style(MKPanel.Style.NONE)
+                .pos(-9999, -9999)  // off-screen — no visual rendering
+                .shiftClickIn(true)
+                .shiftClickOut(true)
+                .column().build();
+
+        // Main inventory — always shift-clickable in both directions
+        MKPanel.builder(PANEL_MAIN_INVENTORY)
+                .showIn(MKContext.ALL_WITH_PLAYER_INVENTORY)
+                .style(MKPanel.Style.NONE)
+                .pos(-9999, -9999)
+                .shiftClickIn(true)
+                .shiftClickOut(true)
+                .column().build();
+
+        // Armor — shift-clickable (vanilla armor shift-click behavior)
+        MKPanel.builder(PANEL_ARMOR)
+                .showIn(MKContext.PERSONAL)
+                .style(MKPanel.Style.NONE)
+                .pos(-9999, -9999)
+                .shiftClickIn(true)
+                .shiftClickOut(true)
+                .column().build();
+
+        // Offhand — shift-clickable
+        MKPanel.builder(PANEL_OFFHAND)
+                .showIn(MKContext.PERSONAL)
+                .style(MKPanel.Style.NONE)
+                .pos(-9999, -9999)
+                .shiftClickIn(true)
+                .shiftClickOut(true)
+                .column().build();
+
+        // 2x2 crafting grid — transient workspace, shift-clickable
+        MKPanel.builder(PANEL_CRAFT_2X2)
+                .showIn(MKContext.PERSONAL)
+                .style(MKPanel.Style.NONE)
+                .pos(-9999, -9999)
+                .shiftClickIn(true)
+                .shiftClickOut(true)
+                .column().build();
+
+        // Crafting result — output only (can take out, can't put in)
+        MKPanel.builder(PANEL_CRAFT_RESULT)
+                .showIn(MKContext.PERSONAL)
+                .style(MKPanel.Style.NONE)
+                .pos(-9999, -9999)
+                .shiftClickIn(false)
+                .shiftClickOut(true)
+                .column().build();
     }
 
     // ── Container Registration ─────────────────────────────────────────────
@@ -357,6 +450,190 @@ public class MenuKit implements ModInitializer {
         return def.shiftClickOut();
     }
 
+    // ── Vanilla Slot Panel Mapping ──────────────────────────────────────────
+
+    /**
+     * Registers a range of vanilla slot indices as belonging to an MK panel.
+     * Called during menu construction by the mixins. Does NOT modify the
+     * vanilla slots — just records the association for shift-click routing.
+     */
+    public static void registerSlotPanelMapping(net.minecraft.world.inventory.AbstractContainerMenu menu,
+                                                 int startInclusive, int endExclusive,
+                                                 String panelName) {
+        int menuId = System.identityHashCode(menu);
+        Map<Integer, String> map = menuSlotPanelMaps.computeIfAbsent(menuId, k -> new HashMap<>());
+        for (int i = startInclusive; i < endExclusive; i++) {
+            map.put(i, panelName);
+        }
+    }
+
+    /**
+     * Returns the panel name for a vanilla slot at the given index in the menu,
+     * or null if the slot has no panel association (not mapped).
+     */
+    public static @Nullable String getSlotPanelName(net.minecraft.world.inventory.AbstractContainerMenu menu,
+                                                      int slotIndex) {
+        int menuId = System.identityHashCode(menu);
+        Map<Integer, String> map = menuSlotPanelMaps.get(menuId);
+        if (map == null) return null;
+        return map.get(slotIndex);
+    }
+
+    /**
+     * Returns the panel name for a slot — checks MKSlotState first (unified registry),
+     * then falls back to the map-based tracking (for vanilla slots without state).
+     */
+    public static @Nullable String getEffectivePanelName(net.minecraft.world.inventory.AbstractContainerMenu menu,
+                                                           net.minecraft.world.inventory.Slot slot) {
+        MKSlotState state = MKSlotStateRegistry.get(slot);
+        if (state != null && state.getPanelName() != null) {
+            return state.getPanelName();
+        }
+        return getSlotPanelName(menu, slot.index);
+    }
+
+    /**
+     * Checks if a vanilla slot (by index) can receive shift-clicked items.
+     * Uses the map-based panel association to look up shift-click flags.
+     */
+    public static boolean canVanillaSlotShiftClickIn(net.minecraft.world.inventory.AbstractContainerMenu menu,
+                                                       int slotIndex) {
+        String panelName = getSlotPanelName(menu, slotIndex);
+        if (panelName == null) return false;  // unmapped vanilla slot — use vanilla logic
+        return isShiftClickIn(panelName);
+    }
+
+    /**
+     * Cleans up slot panel mappings for a menu that's being closed.
+     * Should be called when the menu is removed.
+     */
+    public static void cleanupSlotPanelMapping(net.minecraft.world.inventory.AbstractContainerMenu menu) {
+        menuSlotPanelMaps.remove(System.identityHashCode(menu));
+    }
+
+    // ── Shift-Click Routing Helpers ─────────────────────────────────────────
+
+    /**
+     * Routes an item from a source slot to slots in other panels with
+     * shiftClickIn=true. Unified — handles ALL slots (custom and vanilla)
+     * through the MKSlotState registry and panel map.
+     *
+     * @return true if any items were moved
+     */
+    public static boolean tryRouteToOtherPanels(net.minecraft.world.inventory.AbstractContainerMenu menu,
+                                                 net.minecraft.world.inventory.Slot sourceSlot,
+                                                 ItemStack sourceStack,
+                                                 String sourcePanel) {
+        boolean moved = false;
+
+        // Pass 1: Fill partial stacks in slots with shiftClickIn=true
+        for (int i = 0; i < menu.slots.size(); i++) {
+            if (sourceStack.isEmpty()) break;
+            net.minecraft.world.inventory.Slot targetSlot = menu.slots.get(i);
+            if (targetSlot == sourceSlot) continue;
+
+            // Get the panel for this slot (from state registry or map)
+            String targetPanel = getEffectivePanelName(menu, targetSlot);
+            if (targetPanel == null) continue;
+            if (sourcePanel != null && sourcePanel.equals(targetPanel)) continue;
+            if (!isShiftClickIn(targetPanel)) continue;
+            if (!targetSlot.mayPlace(sourceStack)) continue;
+            if (!targetSlot.isActive()) continue;
+
+            ItemStack targetItem = targetSlot.getItem();
+            if (!targetItem.isEmpty()
+                    && ItemStack.isSameItemSameComponents(sourceStack, targetItem)
+                    && targetItem.getCount() < targetSlot.getMaxStackSize(sourceStack)) {
+                int space = targetSlot.getMaxStackSize(sourceStack) - targetItem.getCount();
+                int toAdd = Math.min(sourceStack.getCount(), space);
+                sourceStack.shrink(toAdd);
+                ItemStack grown = targetItem.copy();
+                grown.setCount(targetItem.getCount() + toAdd);
+                targetSlot.set(grown);
+                moved = true;
+            }
+        }
+
+        // Pass 2: Place into empty slots with shiftClickIn=true
+        for (int i = 0; i < menu.slots.size(); i++) {
+            if (sourceStack.isEmpty()) break;
+            net.minecraft.world.inventory.Slot targetSlot = menu.slots.get(i);
+            if (targetSlot == sourceSlot) continue;
+
+            String targetPanel = getEffectivePanelName(menu, targetSlot);
+            if (targetPanel == null) continue;
+            if (sourcePanel != null && sourcePanel.equals(targetPanel)) continue;
+            if (!isShiftClickIn(targetPanel)) continue;
+            if (!targetSlot.mayPlace(sourceStack)) continue;
+            if (!targetSlot.isActive()) continue;
+
+            if (targetSlot.getItem().isEmpty()) {
+                int toPlace = Math.min(sourceStack.getCount(), targetSlot.getMaxStackSize(sourceStack));
+                targetSlot.set(sourceStack.split(toPlace));
+                moved = true;
+            }
+        }
+
+        return moved;
+    }
+
+    /**
+     * Routes an item from a vanilla slot to MenuKit-managed slots with
+     * shiftClickIn=true. Skips vanilla slots (vanilla handles those).
+     *
+     * @return true if any items were moved
+     */
+    public static boolean tryRouteToCustomSlots(net.minecraft.world.inventory.AbstractContainerMenu menu,
+                                                 net.minecraft.world.inventory.Slot sourceSlot,
+                                                 ItemStack sourceStack) {
+        boolean moved = false;
+
+        // Pass 1: Fill partial stacks in MenuKit-managed slots only
+        for (net.minecraft.world.inventory.Slot targetSlot : menu.slots) {
+            if (sourceStack.isEmpty()) break;
+            MKSlotState state = MKSlotStateRegistry.get(targetSlot);
+            if (state == null || !state.isMenuKitSlot()) continue;
+
+            String targetPanel = state.getPanelName();
+            if (targetPanel == null || !isShiftClickIn(targetPanel)) continue;
+            if (!targetSlot.mayPlace(sourceStack)) continue;
+            if (!targetSlot.isActive()) continue;
+
+            ItemStack targetItem = targetSlot.getItem();
+            if (!targetItem.isEmpty()
+                    && ItemStack.isSameItemSameComponents(sourceStack, targetItem)
+                    && targetItem.getCount() < targetSlot.getMaxStackSize(sourceStack)) {
+                int space = targetSlot.getMaxStackSize(sourceStack) - targetItem.getCount();
+                int toAdd = Math.min(sourceStack.getCount(), space);
+                sourceStack.shrink(toAdd);
+                ItemStack grown = targetItem.copy();
+                grown.setCount(targetItem.getCount() + toAdd);
+                targetSlot.set(grown);
+                moved = true;
+            }
+        }
+
+        // Pass 2: Place into empty MenuKit-managed slots
+        for (net.minecraft.world.inventory.Slot targetSlot : menu.slots) {
+            if (sourceStack.isEmpty()) break;
+            MKSlotState state = MKSlotStateRegistry.get(targetSlot);
+            if (state == null || !state.isMenuKitSlot()) continue;
+
+            String targetPanel = state.getPanelName();
+            if (targetPanel == null || !isShiftClickIn(targetPanel)) continue;
+            if (!targetSlot.mayPlace(sourceStack)) continue;
+            if (!targetSlot.isActive()) continue;
+
+            if (targetSlot.getItem().isEmpty()) {
+                int toPlace = Math.min(sourceStack.getCount(), targetSlot.getMaxStackSize(sourceStack));
+                targetSlot.set(sourceStack.split(toPlace));
+                moved = true;
+            }
+        }
+
+        return moved;
+    }
+
     // ── Hover Tracking (client-only) ──────────────────────────────────────
 
     /**
@@ -365,7 +642,7 @@ public class MenuKit implements ModInitializer {
      * detection that works in all screen contexts (unlike vanilla's hoveredSlot
      * which can miss slots in certain screen subclasses).
      */
-    public static @Nullable MKSlot getHoveredMKSlot() {
+    public static net.minecraft.world.inventory.Slot getHoveredMKSlot() { // nullable
         return hoveredMKSlot;
     }
 
@@ -803,8 +1080,9 @@ public class MenuKit implements ModInitializer {
                 targetSlot = wrapper.menuKit$getTarget();
             }
 
-            if (targetSlot instanceof MKSlot mkSlot) {
-                String key = mkSlot.panelName() + ":" + mkSlot.slotIndexInPanel();
+            MKSlotState slotState = MKSlotStateRegistry.get(targetSlot);
+            if (slotState != null && slotState.isMenuKitSlot() && slotState.getPanelName() != null) {
+                String key = slotState.getPanelName() + ":" + slotState.getSlotIndexInPanel();
                 int[] pos = positionMap.get(key);
 
                 if (pos != null) {
@@ -1113,7 +1391,7 @@ public class MenuKit implements ModInitializer {
 
                 // Find the live MKSlot from the menu by matching position.
                 // Unwrap SlotWrapper (used in creative mode) to reach the real MKSlot.
-                MKSlot liveMKSlot = findLiveMKSlot(menu, slotX, slotY);
+                net.minecraft.world.inventory.Slot liveMKSlot = findLiveMKSlot(menu, slotX, slotY);
 
                 // Render hover highlight (bright white overlay) when mouse is over this slot.
                 // Vanilla's highlight sprites don't render well on MKSlots outside the
@@ -1122,7 +1400,7 @@ public class MenuKit implements ModInitializer {
                         && relMouseY >= slotY - 1 && relMouseY < slotY + 17;
                 if (isHovered) {
                     graphics.fill(slotX, slotY, slotX + 16, slotY + 16, 0x66FFFFFF);
-                    // Track the hovered MKSlot for tooltips and empty-click callbacks
+                    // Track the hovered slot for tooltips and empty-click callbacks
                     if (liveMKSlot != null && liveMKSlot.isActive()) {
                         hoveredMKSlot = liveMKSlot;
                     }
@@ -1148,7 +1426,8 @@ public class MenuKit implements ModInitializer {
      *
      * @return the MKSlot at this position, or null if not found
      */
-    private static @Nullable MKSlot findLiveMKSlot(AbstractContainerMenu menu, int slotX, int slotY) {
+    private static net.minecraft.world.inventory.Slot findLiveMKSlot( // nullable
+            AbstractContainerMenu menu, int slotX, int slotY) {
         for (var menuSlot : menu.slots) {
             if (menuSlot.x == slotX && menuSlot.y == slotY) {
                 // Unwrap SlotWrapper if needed (creative mode wraps slots)
@@ -1156,14 +1435,13 @@ public class MenuKit implements ModInitializer {
                 if (menuSlot instanceof com.trevorschoeny.menukit.mixin.SlotWrapperAccessor wrapper) {
                     target = wrapper.menuKit$getTarget();
                 }
-                if (target instanceof MKSlot ms) {
+                MKSlotState state = MKSlotStateRegistry.get(target);
+                if (state != null && state.isMenuKitSlot()) {
                     // Skip inactive slots — multiple hidden pockets can share
                     // the same position. We want the ACTIVE one, not the first match.
-                    if (!ms.isActive()) continue;
-                    return ms;
+                    if (!state.isSlotActive()) continue;
+                    return target;
                 }
-                // Position matched but not an MKSlot — don't break, another slot
-                // at the same position might be the active MKSlot
             }
         }
         return null;
@@ -1271,6 +1549,155 @@ public class MenuKit implements ModInitializer {
     public static @Nullable Map<String, MKContainer> getAllContainersForPlayer(
             UUID playerId, boolean isServer) {
         return (isServer ? playerServerContainers : playerClientContainers).get(playerId);
+    }
+
+    // ── Unified Container API (vanilla + custom containers) ────────────────
+
+    /**
+     * Gets a vanilla container wrapper by name from a specific menu instance.
+     * Returns null if the container doesn't exist in this menu.
+     *
+     * <p>Works for any vanilla container: "mk:hotbar", "mk:chest",
+     * "mk:furnace_input", "mk:crafting_3x3", etc.
+     *
+     * @param menu the current menu instance
+     * @param name the container name (e.g., "mk:hotbar", "mk:chest")
+     * @return the MKContainer wrapping the vanilla slots, or null
+     */
+    public static @Nullable MKContainer getContainer(AbstractContainerMenu menu, String name) {
+        Map<String, MKContainer> map = menuContainerMaps.get(System.identityHashCode(menu));
+        return map != null ? map.get(name) : null;
+    }
+
+    /**
+     * Gets all vanilla container wrappers for a menu instance.
+     * Returns an empty map if no containers are mapped.
+     */
+    public static Map<String, MKContainer> getActiveContainers(AbstractContainerMenu menu) {
+        Map<String, MKContainer> map = menuContainerMaps.get(System.identityHashCode(menu));
+        return map != null ? Collections.unmodifiableMap(map) : Collections.emptyMap();
+    }
+
+    /**
+     * Gets all containers in a menu that match a specific persistence type.
+     */
+    public static List<MKContainer> getContainersByPersistence(AbstractContainerMenu menu,
+                                                                 MKContainerDef.Persistence persistence) {
+        Map<String, MKContainer> map = menuContainerMaps.get(System.identityHashCode(menu));
+        if (map == null) return Collections.emptyList();
+
+        List<MKContainer> result = new ArrayList<>();
+        for (MKContainer container : map.values()) {
+            MKRegion region = container.getRegion();
+            if (region != null && region.persistence() == persistence) {
+                result.add(container);
+            } else if (region == null && persistence == MKContainerDef.Persistence.PERSISTENT) {
+                // Containers without a region default to persistent
+                result.add(container);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Creates vanilla container wrappers for a menu instance based on its context.
+     * Called automatically during menu construction by the mixin.
+     *
+     * @param menu    the menu instance
+     * @param context the MKContext for this menu
+     * @param player  the player (for player inventory access)
+     */
+    public static void createVanillaContainerWrappers(AbstractContainerMenu menu,
+                                                       @Nullable MKContext context,
+                                                       net.minecraft.world.entity.player.Player player) {
+        if (context == null) return;
+
+        int menuId = System.identityHashCode(menu);
+        Map<String, MKContainer> containers = menuContainerMaps.computeIfAbsent(menuId, k -> new LinkedHashMap<>());
+
+        List<MKContainerMapping.SlotGroup> groups = MKContainerMapping.getSlotGroups(menu, context);
+        for (MKContainerMapping.SlotGroup group : groups) {
+            MKContainer container;
+
+            // Get the backing vanilla Container and create a region-aware proxy
+            net.minecraft.world.Container vanillaContainer;
+            int containerStartSlot;
+
+            if (group.name().startsWith("mk:hotbar") || group.name().equals("mk:main_inventory")
+                    || group.name().equals("mk:armor") || group.name().equals("mk:offhand")) {
+                // Player inventory groups delegate to the player's Inventory object
+                vanillaContainer = player.getInventory();
+                if (group.name().equals("mk:hotbar")) containerStartSlot = 0;
+                else if (group.name().equals("mk:main_inventory")) containerStartSlot = 9;
+                else if (group.name().equals("mk:armor")) containerStartSlot = 36;
+                else if (group.name().equals("mk:offhand")) containerStartSlot = 40;
+                else continue;
+            } else {
+                // Non-player containers — get the vanilla Container from the first slot
+                if (group.menuSlotStart() < menu.slots.size()) {
+                    net.minecraft.world.inventory.Slot firstSlot = menu.slots.get(group.menuSlotStart());
+                    vanillaContainer = firstSlot.container;
+                    containerStartSlot = firstSlot.getContainerSlot();
+                } else {
+                    continue; // slot doesn't exist yet
+                }
+            }
+
+            // Create region and proxy
+            MKRegion region = new MKRegion(group.name(), vanillaContainer,
+                    containerStartSlot, group.size(), group.persistence(),
+                    true, true);
+            region.setMenuSlotRange(group.menuSlotStart(),
+                    group.menuSlotStart() + group.size() - 1);
+            container = new MKContainer(vanillaContainer, region);
+
+            containers.put(group.name(), container);
+
+            // Also register the slot→panel mapping for shift-click routing
+            int start = group.menuSlotStart();
+            int end = Math.min(group.menuSlotEnd() + 1, menu.slots.size()); // +1 for exclusive end
+            if (start < end) {
+                registerSlotPanelMapping(menu, start, end, group.name());
+            }
+        }
+
+        LOGGER.debug("[MenuKit] Created {} vanilla container wrappers for {} (context={})",
+                containers.size(), menu.getClass().getSimpleName(), context);
+    }
+
+    /**
+     * Cleans up vanilla container wrappers when a menu is closed.
+     */
+    public static void cleanupVanillaContainers(AbstractContainerMenu menu) {
+        menuContainerMaps.remove(System.identityHashCode(menu));
+    }
+
+    // ── Container State (Mixin Layer) ────────────────────────────────────────
+
+    /**
+     * Scans all unique Containers in a menu and ensures each has an
+     * {@link MKContainerState} in the registry. Called from both
+     * MKMenuMixin (InventoryMenu) and MKGenericMenuMixin (other menus).
+     *
+     * <p>This gives 100% coverage — every Container that appears in any
+     * menu gets state attached, regardless of implementation class.
+     */
+    public static void discoverAndAttachContainerState(AbstractContainerMenu menu) {
+        java.util.Set<net.minecraft.world.Container> seen = java.util.Collections.newSetFromMap(
+                new java.util.IdentityHashMap<>());
+        for (net.minecraft.world.inventory.Slot slot : menu.slots) {
+            net.minecraft.world.Container c = slot.container;
+            if (c != null && seen.add(c)) {
+                MKContainerStateRegistry.getOrCreate(c);
+            }
+        }
+    }
+
+    /**
+     * Returns the container names available in a given context (static lookup).
+     */
+    public static List<String> getContainerNamesForContext(MKContext context) {
+        return MKContainerMapping.getContainerNames(context);
     }
 
     // ── Cross-UI Data Access (for HUD elements reading panel slot data) ────
