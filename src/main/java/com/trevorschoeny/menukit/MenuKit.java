@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /**
  * Central registry and lifecycle manager for the MenuKit framework.
@@ -423,15 +424,27 @@ public class MenuKit implements ModInitializer {
 
     // ── Panel Visibility ───────────────────────────────────────────────────
 
-    /** Shows a hidden panel by name. */
+    /** Shows a hidden panel by name. Fires a PANEL_SHOW event. */
     public static void showPanel(String name) {
         hiddenPanels.remove(name);
+        // Fire panel visibility event
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.player != null) {
+            MKContext ctx = resolveCurrentContext();
+            MKEventBus.fire(MKUIEvent.panelShow(name, ctx, mc.player));
+        }
     }
 
     /** Hides a panel by name. Hidden panels' slots become inactive and
-     *  their backgrounds and buttons are not rendered. */
+     *  their backgrounds and buttons are not rendered. Fires a PANEL_HIDE event. */
     public static void hidePanel(String name) {
         hiddenPanels.add(name);
+        // Fire panel visibility event
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.player != null) {
+            MKContext ctx = resolveCurrentContext();
+            MKEventBus.fire(MKUIEvent.panelHide(name, ctx, mc.player));
+        }
     }
 
     /**
@@ -447,12 +460,12 @@ public class MenuKit implements ModInitializer {
         }
     }
 
-    /** Toggles a panel's visibility. */
+    /** Toggles a panel's visibility. Delegates to show/hide, which fire events. */
     public static void togglePanel(String name) {
         if (hiddenPanels.contains(name)) {
-            hiddenPanels.remove(name);
+            showPanel(name);
         } else {
-            hiddenPanels.add(name);
+            hidePanel(name);
         }
     }
 
@@ -470,6 +483,70 @@ public class MenuKit implements ModInitializer {
         return def != null && def.disabledWhen() != null && def.disabledWhen().getAsBoolean();
     }
 
+    // ── Element Visibility API ────────────────────────────────────────────────
+
+    /**
+     * Sets an element's visibility within a panel by its element ID.
+     * Fires an ELEMENT_SHOW or ELEMENT_HIDE event.
+     *
+     * @param panelName the panel the element belongs to
+     * @param elementId the element's ID (set via {@code .id("name")} in the builder)
+     * @param visible   true to show, false to hide
+     */
+    public static void setElementVisible(String panelName, String elementId, boolean visible) {
+        MKPanelStateRegistry.getOrCreate(panelName).setVisible(elementId, visible);
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.player != null) {
+            MKContext ctx = resolveCurrentContext();
+            if (visible) {
+                MKEventBus.fire(MKUIEvent.elementShow(panelName, elementId, ctx, mc.player));
+            } else {
+                MKEventBus.fire(MKUIEvent.elementHide(panelName, elementId, ctx, mc.player));
+            }
+        }
+    }
+
+    /**
+     * Clears a visibility override for an element, reverting to its
+     * {@code disabledWhen} predicate behavior.
+     *
+     * @param panelName the panel the element belongs to
+     * @param elementId the element's ID
+     */
+    public static void clearElementOverride(String panelName, String elementId) {
+        MKPanelState state = MKPanelStateRegistry.get(panelName);
+        if (state != null) state.clearOverride(elementId);
+    }
+
+    /**
+     * Returns whether an element is currently visible. Checks panel state
+     * overrides first, then returns true by default (visible if no override).
+     *
+     * @param panelName the panel the element belongs to
+     * @param elementId the element's ID
+     * @return true if visible
+     */
+    public static boolean isElementVisible(String panelName, String elementId) {
+        MKPanelState state = MKPanelStateRegistry.get(panelName);
+        if (state != null) {
+            Boolean override = state.getVisible(elementId);
+            if (override != null) return override;
+        }
+        return true; // visible by default
+    }
+
+    /**
+     * Resolves the current MKContext from the active screen.
+     * Returns null if no container screen is open.
+     */
+    private static @Nullable MKContext resolveCurrentContext() {
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> acs) {
+            return MKContext.fromScreen(acs);
+        }
+        return null;
+    }
+
     /**
      * Returns true if the named panel should NOT be shown — either because it's
      * hidden (imperative) or disabled (predicate). Use this for all visibility checks.
@@ -480,22 +557,28 @@ public class MenuKit implements ModInitializer {
 
     /**
      * Returns true if the named panel allows items to be shift-clicked INTO it.
-     * Returns false if the panel doesn't exist, is inactive, or has shiftClickIn=false.
+     * Unknown panels (no MKPanelDef) return true — they represent external vanilla
+     * containers (chests, crafting tables, etc.) that should preserve vanilla behavior
+     * by default. Only panels with explicit MKPanelDef registrations can restrict
+     * shift-click behavior.
      */
     public static boolean isShiftClickIn(String name) {
         MKPanelDef def = panels.get(name);
-        if (def == null) return false;
+        if (def == null) return true; // unknown panel = vanilla behavior (open by default)
         if (isPanelInactive(name)) return false;
         return def.shiftClickIn();
     }
 
     /**
      * Returns true if the named panel allows items to be shift-clicked OUT OF it.
-     * Returns false if the panel doesn't exist, is inactive, or has shiftClickOut=false.
+     * Unknown panels (no MKPanelDef) return true — they represent external vanilla
+     * containers (chests, crafting tables, etc.) that should preserve vanilla behavior
+     * by default. Only panels with explicit MKPanelDef registrations can restrict
+     * shift-click behavior.
      */
     public static boolean isShiftClickOut(String name) {
         MKPanelDef def = panels.get(name);
-        if (def == null) return false;
+        if (def == null) return true; // unknown panel = vanilla behavior (open by default)
         if (isPanelInactive(name)) return false;
         return def.shiftClickOut();
     }
@@ -559,6 +642,101 @@ public class MenuKit implements ModInitializer {
      */
     public static void cleanupSlotPanelMapping(net.minecraft.world.inventory.AbstractContainerMenu menu) {
         menuSlotPanelMaps.remove(System.identityHashCode(menu));
+    }
+
+    // ── Shift-Click Priority Routes ──────────────────────────────────────────
+    // Registered at mod init time. When a player shift-clicks an item, these
+    // are checked IN ORDER before the generic tryRouteToCustomSlots logic.
+    // If a priority route matches (predicate returns true) AND the target slot
+    // is empty + active + accepts the item, the item goes directly there.
+    // This bypasses shiftClickIn=false on the target panel — the priority route
+    // is an explicit "yes, this item type belongs in this specific slot."
+
+    /**
+     * A registered priority route for shift-click. When a shift-clicked item
+     * matches the predicate, MenuKit tries to place it in the target slot
+     * (identified by panel name + container slot index) before generic routing.
+     */
+    record ShiftClickPriority(
+            Predicate<ItemStack> itemMatcher,
+            String targetPanelName,
+            int targetContainerSlot
+    ) {}
+
+    private static final List<ShiftClickPriority> shiftClickPriorities = new ArrayList<>();
+
+    /**
+     * Registers a shift-click priority route. When a player shift-clicks an
+     * item that matches {@code itemMatcher}, MenuKit will try to place it in
+     * the specified panel's slot BEFORE any generic routing logic runs.
+     *
+     * <p>This is designed for items that have a "natural home" — like elytras
+     * belonging in an equipment slot, or totems belonging in an offhand slot.
+     * The priority route bypasses the panel's {@code shiftClickIn} flag, since
+     * the registration itself is the explicit opt-in.
+     *
+     * <p>If the target slot is occupied, disabled, or rejects the item, the
+     * priority is skipped and normal routing continues.
+     *
+     * <p>Priorities are checked in registration order. First match wins.
+     *
+     * @param itemMatcher        predicate that returns true for items this route handles
+     * @param targetPanelName    the panel containing the target slot
+     * @param targetContainerSlot the container-relative slot index within that panel
+     */
+    public static void shiftClickPriority(Predicate<ItemStack> itemMatcher,
+                                           String targetPanelName,
+                                           int targetContainerSlot) {
+        shiftClickPriorities.add(new ShiftClickPriority(itemMatcher, targetPanelName, targetContainerSlot));
+    }
+
+    /**
+     * Tries to route an item to a priority target slot. Called from the
+     * quickMoveStack intercept BEFORE generic routing.
+     *
+     * <p>Iterates registered priorities in order. For each match:
+     * <ol>
+     *   <li>Finds the MKSlot in the menu that belongs to the target panel
+     *       and has the matching container slot index</li>
+     *   <li>Checks that the slot is active, empty, and accepts the item</li>
+     *   <li>If all checks pass, moves the item and returns true</li>
+     * </ol>
+     *
+     * @param menu        the container menu
+     * @param sourceStack the item being shift-clicked (mutated if moved)
+     * @return true if the item was successfully routed to a priority slot
+     */
+    public static boolean tryPriorityRoute(AbstractContainerMenu menu,
+                                            ItemStack sourceStack) {
+        if (shiftClickPriorities.isEmpty() || sourceStack.isEmpty()) return false;
+
+        for (ShiftClickPriority priority : shiftClickPriorities) {
+            if (!priority.itemMatcher().test(sourceStack)) continue;
+
+            // Find the target MKSlot in this menu that matches the panel + container index
+            for (net.minecraft.world.inventory.Slot slot : menu.slots) {
+                MKSlotState state = MKSlotStateRegistry.get(slot);
+                if (state == null || !state.isMenuKitSlot()) continue;
+
+                // Match by panel name
+                String panelName = state.getPanelName();
+                if (!priority.targetPanelName().equals(panelName)) continue;
+
+                // Match by container slot index (the slot's position within its container)
+                if (slot.getContainerSlot() != priority.targetContainerSlot()) continue;
+
+                // Target found — check if it can accept the item
+                if (!slot.isActive()) continue;        // slot is disabled (config toggle)
+                if (!slot.mayPlace(sourceStack)) continue; // filter rejects item
+                if (slot.hasItem()) continue;           // already occupied
+
+                // All checks pass — move the item into the priority slot
+                int toPlace = Math.min(sourceStack.getCount(), slot.getMaxStackSize(sourceStack));
+                slot.set(sourceStack.split(toPlace));
+                return true;
+            }
+        }
+        return false;
     }
 
     // ── Shift-Click Routing Helpers ─────────────────────────────────────────
@@ -972,6 +1150,10 @@ public class MenuKit implements ModInitializer {
             MKButton btn = btnDef.createButton(
                     0, 0, def.effectivePadding(),
                     leftPos, topPos, groups);
+            btn.panelName = def.name();
+            // Standalone screens don't have a context, but set the player for events
+            btn.eventContext = null;
+            btn.eventPlayer = net.minecraft.client.Minecraft.getInstance().player;
             buttons.add(btn);
         }
 
@@ -1257,6 +1439,9 @@ public class MenuKit implements ModInitializer {
                         btnFlowPos[fi][0], btnFlowPos[fi][1],
                         activeGroups);
                 btn.panelName = def.name();
+                // Set event context for bus dispatch
+                btn.eventContext = context;
+                btn.eventPlayer = net.minecraft.client.Minecraft.getInstance().player;
                 panelButtons.add(btn);
                 buttons.add(btn);
 
@@ -1341,6 +1526,10 @@ public class MenuKit implements ModInitializer {
 
             // Use collision-avoided position
             int[] pos = getResolvedPosition(def, context);
+
+            // Skip region-following panels that have no matching region (-9999 sentinel)
+            if (pos[0] == -9999) continue;
+
             int panelX = offsetX + pos[0];
             int panelY = offsetY + pos[1];
             // Use livePanelSizes when available (has real widget dimensions from screen init),
@@ -1477,6 +1666,16 @@ public class MenuKit implements ModInitializer {
                         // Alpha channel controls transparency — 0x40 = 25%.
                         graphics.fill(slotX, slotY, slotX + 16, slotY + 16,
                                 dState.getBackgroundTint());
+                    }
+
+                    // ── Lock Tint (dark overlay on locked slots) ─────────────
+                    // When a slot is locked (Ctrl+click), draw a semi-transparent
+                    // dark overlay so the player can visually identify which slots
+                    // are pinned. 0x40000000 = ~25% opacity black — visible but
+                    // doesn't obscure the item icon underneath.
+                    if (dState != null && dState.isLocked()) {
+                        graphics.fill(slotX, slotY, slotX + 16, slotY + 16,
+                                0x40000000);
                     }
                 }
             }
@@ -1927,6 +2126,7 @@ public class MenuKit implements ModInitializer {
         boolean exclusiveBelowLeft = false, exclusiveBelowRight = false;
         for (MKPanelDef def : panels.values()) {
             if (!def.exclusive() || !def.isAutoStacked()) continue;
+            if (def.isRegionFollowing()) continue; // region-following panels don't participate in exclusive stacking
             if (!def.needsMenuClass(context.menuClass())) continue;
             if (def.isStandaloneScreen()) continue;
             if (!def.appliesTo(context)) continue;
@@ -2018,6 +2218,30 @@ public class MenuKit implements ModInitializer {
                         px = pos[0]; py = pos[1];
                     }
                 }
+            } else if (def.isRegionFollowing()) {
+                // ── Region-following positioning ────────────────────────────
+                // Compute the panel's position from the target region's bounding box.
+                // If the region doesn't exist in the current menu, hide the panel.
+                net.minecraft.world.inventory.AbstractContainerMenu activeMenu = null;
+                var mcRF = net.minecraft.client.Minecraft.getInstance();
+                if (mcRF != null && mcRF.player != null) {
+                    activeMenu = mcRF.player.containerMenu;
+                }
+                if (activeMenu == null) {
+                    resolvedPositions.put(def.name(), new int[]{ -9999, -9999 });
+                    continue;
+                }
+                MKRegionFollowDef rfd = def.followsRegion();
+                MKRegion followedRegion = MKRegionRegistry.getRegion(activeMenu, rfd.regionName());
+                if (followedRegion == null || followedRegion.getMenuSlotStart() < 0) {
+                    // Region not in this menu — hide panel
+                    resolvedPositions.put(def.name(), new int[]{ -9999, -9999 });
+                    continue;
+                }
+                int[] bbox = computeRegionBBox(activeMenu, followedRegion);
+                size = def.computeSize(); // reassign outer `size` — no redeclaration needed
+                px = computeRegionFollowX(bbox, rfd.direction(), rfd.gap(), size[0]);
+                py = computeRegionFollowY(bbox, rfd.direction(), rfd.gap(), size[1]);
             } else {
                 // ── Manual positioning ──────────────────────────────────────
                 int[] pos = def.resolvePosition(context);
@@ -2098,6 +2322,58 @@ public class MenuKit implements ModInitializer {
         lastResolvedWidth = -1;
     }
 
+    // ── Region-Following Positioning Helpers ─────────────────────────────────
+
+    /**
+     * Computes the bounding box of a region's slots in container-relative
+     * coordinates. Returns {minX, minY, maxX, maxY} where max values include
+     * the 16×16 item area (slot.x + 16, slot.y + 16).
+     */
+    private static int[] computeRegionBBox(net.minecraft.world.inventory.AbstractContainerMenu menu,
+                                             MKRegion region) {
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE;
+        int start = region.getMenuSlotStart();
+        int end   = region.getMenuSlotEnd();
+        for (int i = start; i <= end && i < menu.slots.size(); i++) {
+            net.minecraft.world.inventory.Slot slot = menu.slots.get(i);
+            minX = Math.min(minX, slot.x);
+            minY = Math.min(minY, slot.y);
+            maxX = Math.max(maxX, slot.x + 16);
+            maxY = Math.max(maxY, slot.y + 16);
+        }
+        if (minX == Integer.MAX_VALUE) return new int[]{ 0, 0, 0, 0 };
+        return new int[]{ minX, minY, maxX, maxY };
+    }
+
+    /**
+     * Computes the X coordinate for a region-following panel.
+     * ABOVE/BELOW: center the panel horizontally on the region.
+     * LEFT: left edge of panel = region left edge - gap - panelWidth.
+     * RIGHT: left edge of panel = region right edge + gap.
+     */
+    private static int computeRegionFollowX(int[] bbox, MKAnchor direction, int gap, int panelWidth) {
+        return switch (direction) {
+            case ABOVE, BELOW -> (bbox[0] + bbox[2]) / 2 - panelWidth / 2;
+            case LEFT         -> bbox[0] - gap - panelWidth;
+            case RIGHT        -> bbox[2] + gap;
+        };
+    }
+
+    /**
+     * Computes the Y coordinate for a region-following panel.
+     * ABOVE: bottom edge of panel = region top edge - gap.
+     * BELOW: top edge of panel = region bottom edge + gap.
+     * LEFT/RIGHT: center the panel vertically on the region.
+     */
+    private static int computeRegionFollowY(int[] bbox, MKAnchor direction, int gap, int panelHeight) {
+        return switch (direction) {
+            case ABOVE        -> bbox[1] - gap - panelHeight;
+            case BELOW        -> bbox[3] + gap;
+            case LEFT, RIGHT  -> (bbox[1] + bbox[3]) / 2 - panelHeight / 2;
+        };
+    }
+
     // ── Dynamic Position Updates (slots + buttons follow resolved positions) ──
 
     /**
@@ -2139,6 +2415,18 @@ public class MenuKit implements ModInitializer {
             }
 
             int[] pos = getResolvedPosition(def, context);
+
+            // Region-following panels that have no matching region get -9999.
+            // Hide all buttons when this sentinel is set.
+            if (pos[0] == -9999) {
+                for (var child : screen.children()) {
+                    if (child instanceof MKButton mkBtn && mkBtn.panelName != null
+                            && mkBtn.panelName.equals(def.name())) {
+                        mkBtn.visible = false;
+                    }
+                }
+                continue;
+            }
 
             int[][] flowPos = def.computeFlowPositions();
             for (int i = 0; i < def.buttonDefs().size(); i++) {
@@ -2302,7 +2590,7 @@ public class MenuKit implements ModInitializer {
      *
      * <p><b>Example:</b>
      * <pre>{@code
-     * MenuKit.on(MKSlotEvent.Type.LEFT_CLICK, MKSlotEvent.Type.RIGHT_CLICK)
+     * MenuKit.on(MKEvent.Type.LEFT_CLICK, MKEvent.Type.RIGHT_CLICK)
      *     .region("storage")
      *     .handler(event -> {
      *         // custom logic here
@@ -2313,7 +2601,7 @@ public class MenuKit implements ModInitializer {
      * @param types one or more event types to listen for
      * @return a builder for configuring filters and the handler
      */
-    public static MKEventBuilder on(MKSlotEvent.Type... types) {
+    public static MKEventBuilder on(MKEvent.Type... types) {
         return new MKEventBuilder(types);
     }
 
