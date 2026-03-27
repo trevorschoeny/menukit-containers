@@ -59,6 +59,11 @@ public class MenuKit implements ModInitializer {
     public static final int CREATIVE_WIDTH = 195;
     public static final int CREATIVE_HEIGHT = 136;
 
+    /** Offscreen coordinate used to hide slots that are scrolled outside their viewport.
+     *  Not a disabled-element sentinel — these slots are still "active" in the layout,
+     *  just physically moved out of view for viewport clipping. */
+    public static final int SCROLL_OFFSCREEN = -999;
+
     // ── Panel definitions (registered at mod init, immutable after startup) ──
     private static final Map<String, MKPanelDef> panels = new LinkedHashMap<>();
 
@@ -101,6 +106,11 @@ public class MenuKit implements ModInitializer {
     // Key: panel name. Resolved each frame with collision avoidance applied.
     // Values are container-relative {x, y}.
     private static final Map<String, int[]> resolvedPositions = new LinkedHashMap<>();
+
+    // Panels suppressed by exclusive-panel logic or missing region targets.
+    // Checked by isPanelSuppressed() — replaces the old {-9999, -9999} sentinel
+    // in resolvedPositions.
+    private static final Set<String> suppressedPanels = new HashSet<>();
     private static int lastResolvedWidth = -1, lastResolvedHeight = -1;
     private static @Nullable MKContext lastResolvedContext = null;
 
@@ -125,6 +135,32 @@ public class MenuKit implements ModInitializer {
     private static net.minecraft.world.inventory.Slot hoveredMKSlot = null; // nullable
     private static @Nullable String hoveredPanelName = null;
 
+
+    // ── Scroll / Tab region tracking (client-only, updated each frame) ─────
+    // Collected by walking panel layout trees during renderPanelBackgrounds.
+    // Used by renderSlotBackgrounds (scissor clipping), scroll input handling,
+    // and tab click handling.
+    //
+    // Each entry maps: panelName -> list of scroll/tab regions with absolute
+    // screen-space coordinates (panel position + padding + content-relative offset).
+
+    /** Per-panel scroll regions computed each frame. Key = panelName. */
+    private static final Map<String, List<MKGroupDef.ScrollRegion>> scrollRegionsByPanel = new HashMap<>();
+
+    /** Per-panel tab regions computed each frame. Key = panelName. */
+    private static final Map<String, List<MKGroupDef.TabsRegion>> tabsRegionsByPanel = new HashMap<>();
+
+    /**
+     * Sorts scroll regions by viewport area (smallest first) so that nested
+     * inner scroll regions match before their enclosing parent regions.
+     * Parent regions have larger content/viewport bounds that encompass child
+     * regions, so without this sort a slot inside an inner scroll could
+     * incorrectly match the outer scroll first.
+     */
+    private static void sortScrollRegionsSmallestFirst(List<MKGroupDef.ScrollRegion> regions) {
+        regions.sort(Comparator.comparingInt(
+                sr -> sr.viewportWidth() * sr.viewportHeight()));
+    }
 
     // Last known good mouse position in screen space.
     // Captured from renderContents() — the single reliable source across all
@@ -162,6 +198,23 @@ public class MenuKit implements ModInitializer {
      * Registered via {@link #registerPersistence(String, Consumer, Consumer)}.
      */
     private record PersistenceHandler(Consumer<ValueOutput> save, Consumer<ValueInput> load) {}
+
+    // ── Conditional element rules ──────────────────────────────────────────
+    // Rules that insert elements into the panel tree when their predicate
+    // matches an existing element. Evaluated after menu resolution.
+    private static final List<MKConditionalRule> conditionalRules = new ArrayList<>();
+    // Tracks which rule+element pairs have already been inserted, preventing
+    // duplicate insertion on re-evaluation. Key format: "ruleId:elementId".
+    private static final Set<String> conditionalInsertions = new HashSet<>();
+
+    // ── Button Attachments ───────────────────────────────────────────────────
+    // Registered button sets that auto-attach to containers by type.
+    // In-tree injection happens at panel build time; overlay panels are
+    // created at menu resolution for vanilla wrapper panels.
+    private static final List<MKButtonAttachment> buttonAttachments = new ArrayList<>();
+    // Tracks which overlay panels have been created for button attachments,
+    // so we don't create duplicates. Key format: "att:<id>:<regionName>".
+    private static final Set<String> createdOverlayPanels = new HashSet<>();
 
     // ── Family registry ─────────────────────────────────────────────────────
     // Families group multiple mods under a shared config screen + keybind
@@ -208,7 +261,11 @@ public class MenuKit implements ModInitializer {
         // They exist purely for shift-click routing and feature association.
         registerVanillaInventoryPanels();
 
-        LOGGER.info("[MenuKit] Registered MK_MENU_TYPE + vanilla inventory panels");
+        // Register built-in region groups — logical groupings of vanilla regions
+        // that mods can query for aggregate item counts, sorting, etc.
+        registerBuiltInRegionGroups();
+
+        LOGGER.info("[MenuKit] Registered MK_MENU_TYPE + vanilla inventory panels + region groups");
     }
 
     /**
@@ -294,10 +351,12 @@ public class MenuKit implements ModInitializer {
      */
     private static void registerVanillaInventoryPanels() {
         // Hotbar — always shift-clickable in both directions
+        // Position is irrelevant: Style.NONE panels don't render, and these
+        // panels have zero slot defs (slots come from vanilla via MKSlotWrapper).
         MKPanel.builder(PANEL_HOTBAR)
                 .showIn(MKContext.ALL_WITH_PLAYER_INVENTORY)
                 .style(MKPanel.Style.NONE)
-                .pos(-9999, -9999)  // off-screen — no visual rendering
+                .pos(0, 0)
                 .shiftClickIn(true)
                 .shiftClickOut(true)
                 .column().build();
@@ -306,7 +365,7 @@ public class MenuKit implements ModInitializer {
         MKPanel.builder(PANEL_MAIN_INVENTORY)
                 .showIn(MKContext.ALL_WITH_PLAYER_INVENTORY)
                 .style(MKPanel.Style.NONE)
-                .pos(-9999, -9999)
+                .pos(0, 0)
                 .shiftClickIn(true)
                 .shiftClickOut(true)
                 .column().build();
@@ -315,7 +374,7 @@ public class MenuKit implements ModInitializer {
         MKPanel.builder(PANEL_ARMOR)
                 .showIn(MKContext.PERSONAL)
                 .style(MKPanel.Style.NONE)
-                .pos(-9999, -9999)
+                .pos(0, 0)
                 .shiftClickIn(true)
                 .shiftClickOut(true)
                 .column().build();
@@ -324,17 +383,17 @@ public class MenuKit implements ModInitializer {
         MKPanel.builder(PANEL_OFFHAND)
                 .showIn(MKContext.PERSONAL)
                 .style(MKPanel.Style.NONE)
-                .pos(-9999, -9999)
+                .pos(0, 0)
                 .shiftClickIn(true)
                 .shiftClickOut(true)
                 .column().build();
 
-        // 2x2 crafting grid — transient workspace, shift-clickable
+        // 2x2 crafting grid — transient workspace, can shift OUT but not IN
         MKPanel.builder(PANEL_CRAFT_2X2)
                 .showIn(MKContext.PERSONAL)
                 .style(MKPanel.Style.NONE)
-                .pos(-9999, -9999)
-                .shiftClickIn(true)
+                .pos(0, 0)
+                .shiftClickIn(false)
                 .shiftClickOut(true)
                 .column().build();
 
@@ -342,10 +401,32 @@ public class MenuKit implements ModInitializer {
         MKPanel.builder(PANEL_CRAFT_RESULT)
                 .showIn(MKContext.PERSONAL)
                 .style(MKPanel.Style.NONE)
-                .pos(-9999, -9999)
+                .pos(0, 0)
                 .shiftClickIn(false)
                 .shiftClickOut(true)
                 .column().build();
+    }
+
+    // ── Built-in Region Groups ──────────────────────────────────────────────
+
+    /**
+     * Registers built-in region groups for common vanilla region combinations.
+     * These are available in any menu that has the relevant regions.
+     */
+    private static void registerBuiltInRegionGroups() {
+        // player_storage: hotbar + main inventory — the two main item storage regions
+        regionGroup("player_storage")
+                .region(PANEL_HOTBAR, 1)
+                .region(PANEL_MAIN_INVENTORY, 2)
+                .register();
+
+        // player_all: all four player inventory regions
+        regionGroup("player_all")
+                .region(PANEL_HOTBAR, 1)
+                .region(PANEL_MAIN_INVENTORY, 2)
+                .region(PANEL_ARMOR, 3)
+                .region(PANEL_OFFHAND, 4)
+                .register();
     }
 
     // ── Container Registration ─────────────────────────────────────────────
@@ -361,6 +442,36 @@ public class MenuKit implements ModInitializer {
      */
     public static MKContainerDef.Builder container(String name) {
         return new MKContainerDef.Builder(name);
+    }
+
+    // ── Region Group Registration ───────────────────────────────────────────
+
+    /**
+     * Creates a region group builder. Region groups treat multiple regions as
+     * one logical unit for aggregate queries (item counts, empty slots, etc.)
+     * and cross-region sorting.
+     *
+     * <p>Usage:
+     * <pre>{@code
+     * MenuKit.regionGroup("player_storage")
+     *     .region("mk:hotbar", 1)
+     *     .region("mk:main_inventory", 2)
+     *     .register();
+     * }</pre>
+     *
+     * @param name the group name (e.g., "player_storage")
+     * @return a fluent builder
+     */
+    public static RegionGroupBuilder regionGroup(String name) {
+        return new RegionGroupBuilder(name);
+    }
+
+    /**
+     * Registers a region group definition. Called by {@link RegionGroupBuilder#register()}.
+     * Package-private — external code uses the builder API.
+     */
+    static void registerRegionGroup(MKRegionGroupDef def) {
+        MKRegionRegistry.registerGroupDef(def);
     }
 
     /**
@@ -415,6 +526,451 @@ public class MenuKit implements ModInitializer {
         LOGGER.info("[MenuKit] Registered persistence handler '{}'", key);
     }
 
+    // ── Conditional Element API ────────────────────────────────────────────
+
+    /**
+     * Entry point for building a conditional element rule.
+     * The rule will be evaluated after menu resolution to insert elements
+     * into the panel tree wherever the condition matches.
+     *
+     * <p>Example:
+     * <pre>{@code
+     * MenuKit.conditionalElement("sort_button")
+     *     .when(child -> child instanceof MKGroupChild.SlotGroup sg
+     *             && sg.containerType() == MKContainerType.SIMPLE)
+     *     .insertAfter()
+     *     .element(ctx -> new MKGroupChild.Button(sortButtonDef, "sort:" + ctx.matchedElementId()))
+     *     .register();
+     * }</pre>
+     *
+     * @param ruleId unique identifier for this rule
+     * @return a builder for the conditional rule
+     */
+    public static MKConditionalRule.Builder conditionalElement(String ruleId) {
+        return MKConditionalRule.builder(ruleId);
+    }
+
+    /**
+     * Registers a conditional rule. Called by {@link MKConditionalRule.Builder#register()}.
+     * Package-private -- external code uses the builder API.
+     */
+    static void registerConditionalRule(MKConditionalRule rule) {
+        conditionalRules.add(rule);
+        LOGGER.info("[MenuKit] Registered conditional rule '{}'", rule.id());
+    }
+
+    // ── Button Attachment API ────────────────────────────────────────────────
+
+    /**
+     * Starts building a button attachment — a set of buttons that
+     * automatically attach to containers of a given type.
+     *
+     * <p>For MenuKit panels, buttons are injected into the tree at build time.
+     * For vanilla panels, overlay panels are created at menu resolution.
+     *
+     * <p>Example:
+     * <pre>{@code
+     * MenuKit.buttonAttachment("sort_buttons")
+     *     .forContainerType(MKContainerType.SIMPLE)
+     *     .above()
+     *     .gap(2)
+     *     .buttons(regionName -> List.of(sortBtn, moveBtn))
+     *     .register();
+     * }</pre>
+     *
+     * @param attachmentId unique identifier
+     * @return a builder
+     */
+    public static MKButtonAttachment.Builder buttonAttachment(String attachmentId) {
+        return MKButtonAttachment.builder(attachmentId);
+    }
+
+    /**
+     * Registers a button attachment. Called by the builder's register().
+     * Package-private.
+     */
+    static void registerButtonAttachment(MKButtonAttachment attachment) {
+        buttonAttachments.add(attachment);
+        LOGGER.info("[MenuKit] Registered button attachment '{}' for type {}",
+                attachment.id(), attachment.containerType());
+    }
+
+    /**
+     * Applies registered button attachments to a panel's tree.
+     * Walks the tree looking for SlotGroups matching each attachment's
+     * container type. For each match, creates a button row and inserts
+     * it before/after the SlotGroup in its parent group.
+     *
+     * <p>Called from {@link MKPanel.Builder#build()} so buttons are part
+     * of the tree from birth — no post-hoc injection needed.
+     *
+     * @param root the panel's root group
+     * @param panelName the panel name (for logging)
+     */
+    static void applyButtonAttachments(MKGroupDef root, String panelName) {
+        if (buttonAttachments.isEmpty()) return;
+        applyAttachmentsToGroup(root, panelName);
+    }
+
+    /**
+     * Recursively walks a group looking for SlotGroups that match
+     * button attachments. When found, creates the button row and
+     * inserts it into the parent group.
+     */
+    private static void applyAttachmentsToGroup(MKGroupDef group, String panelName) {
+        // Snapshot children to avoid ConcurrentModificationException
+        List<MKGroupChild> snapshot = new ArrayList<>(group.children());
+
+        for (MKGroupChild child : snapshot) {
+            if (child instanceof MKGroupChild.SlotGroup sg) {
+                // Check each attachment against this SlotGroup
+                for (MKButtonAttachment att : buttonAttachments) {
+                    if (sg.containerType() != att.containerType()) continue;
+                    if (att.isExcluded(sg.id())) continue;
+
+                    String regionName = sg.id();
+                    MKGroupDef buttonRow = att.createButtonRow(regionName);
+                    if (buttonRow == null) continue;
+
+                    String groupId = "att:" + att.id() + ":" + regionName;
+                    MKGroupChild rowChild = new MKGroupChild.Group(buttonRow, groupId);
+
+                    if (att.above()) {
+                        group.insertBefore(regionName, rowChild);
+                    } else {
+                        group.insertAfter(regionName, rowChild);
+                    }
+
+                    LOGGER.debug("[MenuKit] Attached '{}' buttons to SlotGroup '{}' in panel '{}'",
+                            att.id(), regionName, panelName);
+                }
+            }
+
+            // Recurse into nested groups
+            switch (child) {
+                case MKGroupChild.Group g -> applyAttachmentsToGroup(g.def(), panelName);
+                case MKGroupChild.SlotGroup sg -> applyAttachmentsToGroup(sg.group(), panelName);
+                case MKGroupChild.Dynamic d -> applyAttachmentsToGroup(d.def().expandedGroup(), panelName);
+                case MKGroupChild.Scroll sc -> applyAttachmentsToGroup(sc.def().contentGroup(), panelName);
+                case MKGroupChild.Tabs tb -> {
+                    for (MKTabDef tab : tb.def().tabs()) {
+                        applyAttachmentsToGroup(tab.contentGroup(), panelName);
+                    }
+                }
+                case MKGroupChild.Spanning s -> {
+                    if (s.inner() instanceof MKGroupChild.Group g)
+                        applyAttachmentsToGroup(g.def(), panelName);
+                    else if (s.inner() instanceof MKGroupChild.SlotGroup sg)
+                        applyAttachmentsToGroup(sg.group(), panelName);
+                }
+                default -> {} // Slot, Button, Text — no children
+            }
+        }
+    }
+
+    /**
+     * Creates overlay panels for button attachments that match vanilla
+     * regions (regions not owned by a MenuKit panel's tree).
+     *
+     * <p>Called from {@link #onMenuResolved} after regions are populated.
+     *
+     * @param menu the current container menu
+     */
+    static void createAttachmentOverlays(net.minecraft.world.inventory.AbstractContainerMenu menu) {
+        if (buttonAttachments.isEmpty()) return;
+
+        for (MKRegion region : MKRegionRegistry.getRegions(menu)) {
+            for (MKButtonAttachment att : buttonAttachments) {
+                if (region.containerType() != att.containerType()) continue;
+                if (att.isExcluded(region.name())) continue;
+
+                String overlayName = att.overlayPanelName(region.name());
+
+                // Skip if already created or if a MenuKit panel owns this region
+                // (the in-tree injection already handles it)
+                if (createdOverlayPanels.contains(overlayName)) continue;
+                if (isRegionOwnedByMenuKitPanel(region.name())) continue;
+
+                // Create an overlay panel positioned above/below the region
+                MKGroupDef buttonRow = att.createButtonRow(region.name());
+                if (buttonRow == null) continue;
+
+                MKPanel.builder(overlayName)
+                        .showIn(MKContext.ALL)
+                        .autoSize()
+                        .style(MKPanel.Style.NONE)
+                        .followsRegion(region.name(), att.overlayPlacement(), 1,
+                                att.overlayOffsetX(), att.overlayOffsetY())
+                        .injectRootGroup(buttonRow)
+                        .build();
+
+                createdOverlayPanels.add(overlayName);
+                LOGGER.debug("[MenuKit] Created overlay '{}' for region '{}'",
+                        overlayName, region.name());
+            }
+        }
+    }
+
+    /**
+     * Returns true if the given region name corresponds to a SlotGroup
+     * in any MenuKit panel's tree (i.e., the panel has buttons attached
+     * in-tree and doesn't need an overlay).
+     */
+    private static boolean isRegionOwnedByMenuKitPanel(String regionName) {
+        for (MKPanelDef def : panels.values()) {
+            if (def.rootGroup() == null) continue;
+            // Empty wrapper panels (vanilla) have no real children —
+            // check if the panel has a SlotGroup with this region name
+            if (hasSlotGroupInTree(def.rootGroup(), regionName)) return true;
+        }
+        return false;
+    }
+
+    /** Recursively checks if a tree contains a SlotGroup with the given ID. */
+    private static boolean hasSlotGroupInTree(MKGroupDef group, String regionName) {
+        for (MKGroupChild child : group.children()) {
+            if (child instanceof MKGroupChild.SlotGroup sg && regionName.equals(sg.id())) {
+                return true;
+            }
+            switch (child) {
+                case MKGroupChild.Group g -> { if (hasSlotGroupInTree(g.def(), regionName)) return true; }
+                case MKGroupChild.SlotGroup sg -> { if (hasSlotGroupInTree(sg.group(), regionName)) return true; }
+                case MKGroupChild.Dynamic d -> { if (hasSlotGroupInTree(d.def().expandedGroup(), regionName)) return true; }
+                case MKGroupChild.Scroll sc -> { if (hasSlotGroupInTree(sc.def().contentGroup(), regionName)) return true; }
+                case MKGroupChild.Tabs tb -> {
+                    for (MKTabDef tab : tb.def().tabs()) {
+                        if (hasSlotGroupInTree(tab.contentGroup(), regionName)) return true;
+                    }
+                }
+                default -> {}
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Evaluates all registered conditional rules against the panel trees.
+     * For each panel definition with a rootGroup, walks the tree and checks
+     * each child against each rule's predicate. If a match is found and
+     * the elements haven't already been inserted (tracked by rule+element ID),
+     * creates and inserts the new children.
+     *
+     * <p>Called after {@code resolveForMenu()} and when new regions appear.
+     *
+     * @param menu the current container menu
+     */
+    static void evaluateConditionalRules(AbstractContainerMenu menu) {
+        if (conditionalRules.isEmpty()) return;
+
+        for (MKPanelDef panelDef : panels.values()) {
+            MKGroupDef root = panelDef.rootGroup();
+            if (root == null) continue;
+
+            // Walk the tree and evaluate rules against each child
+            evaluateRulesOnGroup(root, panelDef.name(), menu);
+        }
+    }
+
+    /**
+     * Recursively walks a group's children and evaluates conditional rules.
+     * When a rule matches, inserts the new elements using the group's
+     * mutation methods.
+     */
+    private static void evaluateRulesOnGroup(MKGroupDef group, String panelName,
+                                              AbstractContainerMenu menu) {
+        // Snapshot the children list to avoid ConcurrentModificationException
+        // since we may insert new children during iteration.
+        List<MKGroupChild> snapshot = new ArrayList<>(group.children());
+
+        for (MKGroupChild child : snapshot) {
+            // Extract the child's ID for insertion tracking
+            String childId = extractChildId(child);
+
+            // Check each rule against this child
+            if (childId != null) {
+                for (MKConditionalRule rule : conditionalRules) {
+                    // Skip disabled rules
+                    if (rule.disabledWhen() != null && rule.disabledWhen().getAsBoolean()) continue;
+
+                    // Check duplicate prevention
+                    String insertionKey = rule.id() + ":" + childId;
+                    if (conditionalInsertions.contains(insertionKey)) continue;
+
+                    // Test the predicate
+                    if (!rule.condition().test(child)) continue;
+
+                    // Match found -- build context
+                    String regionName = null;
+                    MKContainerType containerType = null;
+                    if (child instanceof MKGroupChild.SlotGroup sg) {
+                        regionName = sg.id();
+                        containerType = sg.containerType();
+                    }
+
+                    MKConditionalContext ctx = new MKConditionalContext(
+                            childId, child, panelName, regionName, containerType);
+
+                    // Create new elements from factories
+                    List<MKGroupChild> newChildren = new ArrayList<>();
+                    for (MKConditionalRule.ElementFactory factory : rule.elements()) {
+                        MKGroupChild created = factory.create(ctx);
+                        if (created != null) newChildren.add(created);
+                    }
+
+                    if (newChildren.isEmpty()) continue;
+
+                    // Insert the new children
+                    if (rule.placement() == MKConditionalRule.Placement.BEFORE) {
+                        // Insert all in reverse order so they end up in the correct order
+                        for (int i = newChildren.size() - 1; i >= 0; i--) {
+                            group.insertBefore(childId, newChildren.get(i));
+                        }
+                    } else {
+                        // Insert after -- each successive element goes after the previous
+                        // Find the target ID to insert after. For the first element, it's
+                        // the matched child. For subsequent elements, we need to insert
+                        // after the previously inserted element (if it has an ID) or
+                        // after the original matched child.
+                        String afterId = childId;
+                        for (MKGroupChild newChild : newChildren) {
+                            group.insertAfter(afterId, newChild);
+                            // If the newly inserted child has an ID, subsequent elements
+                            // go after it to maintain order
+                            String newId = extractChildId(newChild);
+                            if (newId != null) afterId = newId;
+                        }
+                    }
+
+                    // Mark as inserted
+                    conditionalInsertions.add(insertionKey);
+                }
+            }
+
+            // Recurse into nested groups
+            recurseIntoChild(child, panelName, menu);
+        }
+    }
+
+    /** Recursively evaluates conditional rules inside nested group structures. */
+    private static void recurseIntoChild(MKGroupChild child, String panelName,
+                                          AbstractContainerMenu menu) {
+        switch (child) {
+            case MKGroupChild.Group g ->
+                evaluateRulesOnGroup(g.def(), panelName, menu);
+            case MKGroupChild.SlotGroup sg ->
+                evaluateRulesOnGroup(sg.group(), panelName, menu);
+            case MKGroupChild.Dynamic d ->
+                evaluateRulesOnGroup(d.def().expandedGroup(), panelName, menu);
+            case MKGroupChild.Scroll sc ->
+                evaluateRulesOnGroup(sc.def().contentGroup(), panelName, menu);
+            case MKGroupChild.Tabs tb -> {
+                for (MKTabDef tab : tb.def().tabs()) {
+                    evaluateRulesOnGroup(tab.contentGroup(), panelName, menu);
+                }
+            }
+            case MKGroupChild.Spanning s ->
+                recurseIntoChild(s.inner(), panelName, menu);
+            default -> {} // Slot, Button, Text -- no nesting
+        }
+    }
+
+    /** Extracts the ID from any MKGroupChild variant. Returns null if no ID. */
+    private static @Nullable String extractChildId(MKGroupChild child) {
+        return switch (child) {
+            case MKGroupChild.Slot s -> s.id();
+            case MKGroupChild.Button b -> b.id();
+            case MKGroupChild.Text t -> t.id();
+            case MKGroupChild.Group g -> g.id();
+            case MKGroupChild.SlotGroup sg -> sg.id();
+            case MKGroupChild.Spanning s -> null;
+            case MKGroupChild.Dynamic d -> d.id();
+            case MKGroupChild.Scroll sc -> sc.id();
+            case MKGroupChild.Tabs tb -> tb.id();
+        };
+    }
+
+    /**
+     * Injects virtual {@link MKGroupChild.SlotGroup} children into vanilla
+     * wrapper panels whose trees are empty. This gives the conditional rule
+     * system something to match against in vanilla panels.
+     *
+     * <p>Called after {@code resolveForMenu()}, before {@code evaluateConditionalRules()}.
+     *
+     * @param menu the current container menu
+     */
+    static void injectVirtualSlotGroups(AbstractContainerMenu menu) {
+        // For each resolved region, check if a vanilla wrapper panel exists
+        List<MKRegion> regions = MKRegionRegistry.getRegions(menu);
+        for (MKRegion region : regions) {
+            // Find the panel that wraps this region, if any
+            // Convention: vanilla wrapper panels are named after the region
+            // (e.g., panel "mk:chest" wraps region "mk:chest")
+            MKPanelDef panelDef = panels.get(region.name());
+            if (panelDef == null) continue;
+
+            MKGroupDef root = panelDef.rootGroup();
+            if (root == null) continue;
+
+            // Only inject if the tree is empty (no existing children)
+            if (!root.children().isEmpty()) continue;
+
+            // Create a virtual SlotGroup -- empty inner group (no actual slot defs)
+            String slotGroupId = "slots:" + region.name();
+            MKGroupDef emptyGroup = new MKGroupDef(
+                    MKGroupDef.LayoutMode.COLUMN, 0, 18, 9, false,
+                    List.of(), null, null, null);
+
+            MKGroupChild.SlotGroup virtualSlotGroup = new MKGroupChild.SlotGroup(
+                    slotGroupId, region.containerType(), emptyGroup);
+
+            root.children().add(virtualSlotGroup);
+            LOGGER.debug("[MenuKit] Injected virtual SlotGroup '{}' into panel '{}'",
+                    slotGroupId, panelDef.name());
+        }
+    }
+
+    /**
+     * Clears conditional insertion tracking. Called when the menu changes
+     * so rules can be re-evaluated for the new context.
+     */
+    static void resetConditionalInsertions() {
+        conditionalInsertions.clear();
+    }
+
+    /**
+     * Called after regions are resolved for a menu. Injects virtual SlotGroups
+     * into vanilla wrapper panels and evaluates conditional rules.
+     *
+     * <p>This is the main entry point for the conditional element system
+     * during menu construction. Also called when dynamic regions appear
+     * (e.g., peek containers becoming visible).
+     *
+     * @param menu the container menu that was just resolved
+     */
+    public static void onMenuResolved(AbstractContainerMenu menu) {
+        resetConditionalInsertions();
+        createdOverlayPanels.clear();
+        injectVirtualSlotGroups(menu);
+        evaluateConditionalRules(menu);
+        createAttachmentOverlays(menu);
+    }
+
+    /**
+     * Re-evaluates conditional rules for a specific menu. Called when
+     * new regions appear (e.g., dynamic region registration) so that
+     * rules can react to newly-available containers.
+     *
+     * @param menu the container menu to re-evaluate
+     */
+    public static void onRegionPopulated(AbstractContainerMenu menu) {
+        // Re-inject virtual slot groups (new regions may have appeared)
+        injectVirtualSlotGroups(menu);
+        // Re-evaluate rules (new matches may be possible)
+        evaluateConditionalRules(menu);
+        // Create overlays for newly-appeared regions
+        createAttachmentOverlays(menu);
+    }
+
     // ── Panel Queries ──────────────────────────────────────────────────────
 
     /** Returns a panel definition by name, or null if not found. */
@@ -424,7 +980,10 @@ public class MenuKit implements ModInitializer {
 
     // ── Panel Visibility ───────────────────────────────────────────────────
 
-    /** Shows a hidden panel by name. Fires a PANEL_SHOW event. */
+    /** Shows a hidden panel by name. Fires a PANEL_SHOW event.
+     *  Also registers dynamic regions for any container-backed slots in
+     *  this panel that don't already have a region (e.g., peek containers
+     *  activated after initial menu construction). */
     public static void showPanel(String name) {
         hiddenPanels.remove(name);
         // Fire panel visibility event
@@ -432,6 +991,67 @@ public class MenuKit implements ModInitializer {
         if (mc.player != null) {
             MKContext ctx = resolveCurrentContext();
             MKEventBus.fire(MKUIEvent.panelShow(name, ctx, mc.player));
+
+            // Register dynamic regions for container-backed slots in this panel.
+            // Panels that are initially hidden (e.g., peek) have their slots in
+            // the menu but no region — because resolveForMenu() only creates
+            // regions from MKContextLayout (vanilla containers). This ensures
+            // dynamically-shown panels get proper regions for item tips, etc.
+            registerDynamicRegionsForPanel(name, mc.player);
+        }
+    }
+
+    /**
+     * Checks a panel's slot definitions for containers that don't yet have
+     * a region in the current menu, and creates regions for them.
+     *
+     * <p>Called from {@link #showPanel(String)} to ensure dynamically-activated
+     * containers (peek, etc.) get regions. Generic — works for any container.
+     */
+    private static void registerDynamicRegionsForPanel(String panelName,
+                                                        net.minecraft.world.entity.player.Player player) {
+        MKPanelDef def = panels.get(panelName);
+        if (def == null || def.slotDefs().isEmpty()) return;
+
+        net.minecraft.world.inventory.AbstractContainerMenu menu = player.containerMenu;
+        if (menu == null) return;
+
+        // Collect unique container names referenced by this panel's slots
+        java.util.Set<String> containerNames = new java.util.LinkedHashSet<>();
+        for (MKSlotDef slotDef : def.slotDefs()) {
+            if (!slotDef.isVanillaSlot()) {
+                containerNames.add(slotDef.containerName());
+            }
+        }
+
+        // For each container name, check if a region already exists. If not,
+        // look up the container definition and the live container instance,
+        // then register a dynamic region.
+        boolean isServer = player instanceof net.minecraft.server.level.ServerPlayer;
+        for (String containerName : containerNames) {
+            // Skip if region already exists for this container name
+            if (MKRegionRegistry.getRegion(menu, containerName) != null) continue;
+
+            MKContainerDef containerDef = containerDefs.get(containerName);
+            if (containerDef == null) continue;
+
+            // Get the live container — for player-bound and ephemeral containers
+            MKContainer mkContainer = getContainerForPlayer(
+                    containerName, player.getUUID(), isServer);
+            if (mkContainer == null) continue;
+
+            // Use the delegate Container (what the actual MKSlots reference)
+            net.minecraft.world.Container delegate = mkContainer.getDelegate();
+
+            // Use the overload that fires REGION_POPULATED so listeners
+            // (e.g., dynamic sort button creation) can react to new regions.
+            MKContext ctx = resolveCurrentContext();
+            MKRegionRegistry.registerDynamicRegion(
+                    menu, containerName, delegate,
+                    containerDef.size(), containerDef.persistence(),
+                    def.shiftClickIn(), def.shiftClickOut(),
+                    player, ctx
+            );
         }
     }
 
@@ -556,6 +1176,18 @@ public class MenuKit implements ModInitializer {
     }
 
     /**
+     * Returns true if the named panel was suppressed during position resolution.
+     * Suppressed panels are those hidden by exclusive-panel logic (a competing
+     * exclusive panel is active on the same side) or region-following panels
+     * whose target region/group doesn't exist in the current menu.
+     *
+     * <p>This replaces the old pattern of storing {-9999, -9999} in resolvedPositions.
+     */
+    public static boolean isPanelSuppressed(String name) {
+        return suppressedPanels.contains(name);
+    }
+
+    /**
      * Returns true if the named panel allows items to be shift-clicked INTO it.
      * Unknown panels (no MKPanelDef) return true — they represent external vanilla
      * containers (chests, crafting tables, etc.) that should preserve vanilla behavior
@@ -565,7 +1197,11 @@ public class MenuKit implements ModInitializer {
     public static boolean isShiftClickIn(String name) {
         MKPanelDef def = panels.get(name);
         if (def == null) return true; // unknown panel = vanilla behavior (open by default)
-        if (isPanelInactive(name)) return false;
+        if (isPanelInactive(name)) {
+            LOGGER.debug("[MenuKit] isShiftClickIn('{}') = false (panel inactive: hidden={}, disabled={})",
+                    name, isPanelHidden(name), isPanelDisabled(name));
+            return false;
+        }
         return def.shiftClickIn();
     }
 
@@ -579,7 +1215,11 @@ public class MenuKit implements ModInitializer {
     public static boolean isShiftClickOut(String name) {
         MKPanelDef def = panels.get(name);
         if (def == null) return true; // unknown panel = vanilla behavior (open by default)
-        if (isPanelInactive(name)) return false;
+        if (isPanelInactive(name)) {
+            LOGGER.debug("[MenuKit] isShiftClickOut('{}') = false (panel inactive: hidden={}, disabled={})",
+                    name, isPanelHidden(name), isPanelDisabled(name));
+            return false;
+        }
         return def.shiftClickOut();
     }
 
@@ -753,6 +1393,8 @@ public class MenuKit implements ModInitializer {
                                                  ItemStack sourceStack,
                                                  String sourcePanel) {
         boolean moved = false;
+        LOGGER.debug("[MenuKit] tryRouteToOtherPanels: sourcePanel='{}', item={}, count={}, totalSlots={}",
+                sourcePanel, sourceStack.getItem(), sourceStack.getCount(), menu.slots.size());
 
         // Pass 1: Fill partial stacks in slots with shiftClickIn=true
         for (int i = 0; i < menu.slots.size(); i++) {
@@ -767,6 +1409,11 @@ public class MenuKit implements ModInitializer {
             if (!isShiftClickIn(targetPanel)) continue;
             if (!targetSlot.mayPlace(sourceStack)) continue;
             if (!targetSlot.isActive()) continue;
+
+            // Skip sort-locked slots — they are pinned in place for sorting
+            // and should not receive shift-clicked items
+            MKSlotState targetState = MKSlotStateRegistry.get(targetSlot);
+            if (targetState != null && targetState.isSortLocked()) continue;
 
             ItemStack targetItem = targetSlot.getItem();
             if (!targetItem.isEmpty()
@@ -795,6 +1442,10 @@ public class MenuKit implements ModInitializer {
             if (!targetSlot.mayPlace(sourceStack)) continue;
             if (!targetSlot.isActive()) continue;
 
+            // Skip sort-locked slots — pinned in place, don't receive shift-clicked items
+            MKSlotState targetState = MKSlotStateRegistry.get(targetSlot);
+            if (targetState != null && targetState.isSortLocked()) continue;
+
             if (targetSlot.getItem().isEmpty()) {
                 int toPlace = Math.min(sourceStack.getCount(), targetSlot.getMaxStackSize(sourceStack));
                 targetSlot.set(sourceStack.split(toPlace));
@@ -802,6 +1453,8 @@ public class MenuKit implements ModInitializer {
             }
         }
 
+        LOGGER.debug("[MenuKit] tryRouteToOtherPanels: result moved={}, remaining={}",
+                moved, sourceStack.getCount());
         return moved;
     }
 
@@ -827,6 +1480,9 @@ public class MenuKit implements ModInitializer {
             if (!targetSlot.mayPlace(sourceStack)) continue;
             if (!targetSlot.isActive()) continue;
 
+            // Skip sort-locked slots — pinned in place, don't receive shift-clicked items
+            if (state.isSortLocked()) continue;
+
             ItemStack targetItem = targetSlot.getItem();
             if (!targetItem.isEmpty()
                     && ItemStack.isSameItemSameComponents(sourceStack, targetItem)
@@ -851,6 +1507,9 @@ public class MenuKit implements ModInitializer {
             if (targetPanel == null || !isShiftClickIn(targetPanel)) continue;
             if (!targetSlot.mayPlace(sourceStack)) continue;
             if (!targetSlot.isActive()) continue;
+
+            // Skip sort-locked slots — pinned in place, don't receive shift-clicked items
+            if (state.isSortLocked()) continue;
 
             if (targetSlot.getItem().isEmpty()) {
                 int toPlace = Math.min(sourceStack.getCount(), targetSlot.getMaxStackSize(sourceStack));
@@ -1118,12 +1777,12 @@ public class MenuKit implements ModInitializer {
         var lookup = containerLookup(player.getUUID(), isServer);
 
         // Create live slots using flow-computed positions
-        int[][] flowPos = def.computeFlowPositions();
+        MKLayoutResult layout = def.computeFlowPositions();
         for (int i = 0; i < def.slotDefs().size(); i++) {
             MKSlotDef slotDef = def.slotDefs().get(i);
             MKSlot slot = slotDef.createSlotAt(lookup,
                     0, 0, def.effectivePadding(),
-                    flowPos[i][0], flowPos[i][1], panelName, player);
+                    layout.x(i), layout.y(i), panelName, player);
             if (slot != null) {
                 slot.setSlotIndexInPanel(i);
                 slots.add(slot);
@@ -1146,11 +1805,13 @@ public class MenuKit implements ModInitializer {
         List<MKButton> buttons = new ArrayList<>();
         Map<String, MKButtonGroup> groups = new HashMap<>();
 
-        for (MKButtonDef btnDef : def.buttonDefs()) {
+        for (int bi = 0; bi < def.buttonDefs().size(); bi++) {
+            MKButtonDef btnDef = def.buttonDefs().get(bi);
             MKButton btn = btnDef.createButton(
                     0, 0, def.effectivePadding(),
                     leftPos, topPos, groups);
             btn.panelName = def.name();
+            btn.buttonIndex = bi;
             // Standalone screens don't have a context, but set the player for events
             btn.eventContext = null;
             btn.eventPlayer = net.minecraft.client.Minecraft.getInstance().player;
@@ -1198,12 +1859,12 @@ public class MenuKit implements ModInitializer {
             int[] pos = def.resolvePosition(context);
 
             // Create live slots using flow-computed positions
-            int[][] flowPos = def.computeFlowPositions();
+            MKLayoutResult layout = def.computeFlowPositions();
             for (int i = 0; i < def.slotDefs().size(); i++) {
                 MKSlotDef slotDef = def.slotDefs().get(i);
                 MKSlot slot = slotDef.createSlotAt(lookup,
                         pos[0], pos[1], def.effectivePadding(),
-                        flowPos[i][0], flowPos[i][1], def.name(), player);
+                        layout.x(i), layout.y(i), def.name(), player);
                 if (slot != null) {
                     slot.setSlotIndexInPanel(i);
                     slots.add(slot);
@@ -1242,12 +1903,12 @@ public class MenuKit implements ModInitializer {
             int[] pos = def.resolvePosition(context);
 
             // Create live slots using flow-computed positions
-            int[][] flowPos = def.computeFlowPositions();
+            MKLayoutResult layout = def.computeFlowPositions();
             for (int i = 0; i < def.slotDefs().size(); i++) {
                 MKSlotDef slotDef = def.slotDefs().get(i);
                 MKSlot slot = slotDef.createSlotAt(lookup,
                         pos[0], pos[1], def.effectivePadding(),
-                        flowPos[i][0], flowPos[i][1], def.name(), player);
+                        layout.x(i), layout.y(i), def.name(), player);
                 if (slot != null) {
                     slot.setSlotIndexInPanel(i);
                     slots.add(slot);
@@ -1322,13 +1983,9 @@ public class MenuKit implements ModInitializer {
                             .menuKit$setX(pos[0]);
                     ((com.trevorschoeny.menukit.mixin.SlotPositionAccessor) slot)
                             .menuKit$setY(pos[1]);
-                } else {
-                    // No position found — move offscreen
-                    ((com.trevorschoeny.menukit.mixin.SlotPositionAccessor) slot)
-                            .menuKit$setX(-999);
-                    ((com.trevorschoeny.menukit.mixin.SlotPositionAccessor) slot)
-                            .menuKit$setY(-999);
                 }
+                // Slots with no position entry are inactive — their isActive()
+                // flag prevents all interaction, so no need to move offscreen.
             }
         }
     }
@@ -1357,7 +2014,10 @@ public class MenuKit implements ModInitializer {
      * Used by {@link #repositionSlots} for identity-based slot matching
      * instead of fragile sequential matching.
      *
-     * <p>Panels that don't apply to the context get offscreen positions (-999, -999).
+     * <p>Panels that don't apply to the context are omitted entirely from the map.
+     * Their slots' {@code isActive()} flag prevents all interaction. Slots scrolled
+     * outside a scroll viewport are mapped to offscreen positions so vanilla doesn't
+     * render them.
      *
      * @param context the active MKContext
      * @return map from "panelName:slotIndex" → [x, y]
@@ -1371,26 +2031,86 @@ public class MenuKit implements ModInitializer {
             if (def.isStandaloneScreen()) continue;
 
             if (!def.appliesTo(context) || isPanelInactive(def.name())) {
-                // Panels that don't apply OR are hidden get offscreen positions.
-                // Hidden panels (e.g., inactive pockets) must be offscreen to prevent
-                // position collisions — multiple pockets share the same layout position
-                // but only one is active at a time.
-                for (int i = 0; i < def.slotDefs().size(); i++) {
-                    // Skip vanilla-backed slots (not MKContainer) — they don't appear
-                    // in the menu for non-applicable contexts
-                    if (def.slotDefs().get(i).isVanillaSlot()) continue;
-                    map.put(def.name() + ":" + i, new int[]{ -999, -999 });
-                }
+                // Panels that don't apply or are hidden are omitted entirely.
+                // Their slots' isActive() flag prevents all interaction, so no
+                // position entry is needed. repositionSlots() skips slots with
+                // no map entry.
                 continue;
             }
 
             int[] pos = getResolvedPosition(def, context);
-            int[][] flowPos = def.computeFlowPositions();
+            MKLayoutResult layout = def.computeFlowPositions();
+            int ep = def.effectivePadding();
+
+            // Collect scroll regions for this panel (if any) so we can apply
+            // scroll offsets to slot positions inside scroll containers.
+            // Sorted smallest-first so nested inner regions match before parents.
+            List<MKGroupDef.ScrollRegion> scrollRegions = null;
+            if (def.rootGroup() != null) {
+                scrollRegions = new ArrayList<>();
+                def.rootGroup().collectScrollRegions(0, 0, def.name(), scrollRegions);
+                sortScrollRegionsSmallestFirst(scrollRegions);
+            }
+
             for (int i = 0; i < def.slotDefs().size(); i++) {
-                map.put(def.name() + ":" + i, new int[]{
-                        pos[0] + def.effectivePadding() + flowPos[i][0],
-                        pos[1] + def.effectivePadding() + flowPos[i][1]
-                });
+                // Skip inactive slots — omit from map entirely.
+                // repositionSlots() skips missing entries, and isActive() prevents interaction.
+                if (!layout.isActive(i)) continue;
+
+                int slotX = pos[0] + ep + layout.x(i);
+                int slotY = pos[1] + ep + layout.y(i);
+
+                // Check if this slot is inside a scroll container and apply offset.
+                // The slot's flowPos is in content space (full layout, no scroll).
+                // We need to translate by the scroll offset and hide slots outside
+                // the viewport so vanilla doesn't render them.
+                if (scrollRegions != null) {
+                    for (MKGroupDef.ScrollRegion sr : scrollRegions) {
+                        // Check if the slot's content-relative position falls within
+                        // this scroll region's content area (viewport origin + content extent)
+                        int contentRelX = layout.x(i) - sr.viewportX();
+                        int contentRelY = layout.y(i) - sr.viewportY();
+
+                        // Slot is inside this scroll region's content area if its
+                        // top-left corner is within the content bounds
+                        if (contentRelX >= 0 && contentRelX < sr.contentWidth()
+                                && contentRelY >= 0 && contentRelY < sr.contentHeight()) {
+
+                            // Apply scroll offset (scroll offset is positive = scrolled down,
+                            // so we subtract it from the position to move content upward)
+                            MKPanelState state = MKPanelStateRegistry.get(def.name());
+                            float[] scrollOffset = state != null
+                                    ? state.getScrollOffset(sr.id())
+                                    : new float[]{0f, 0f};
+
+                            int scrolledX = slotX - (int) scrollOffset[0];
+                            int scrolledY = slotY - (int) scrollOffset[1];
+
+                            // Check if the scrolled slot is within the viewport.
+                            // The viewport in container-relative coords:
+                            int vpLeft = pos[0] + ep + sr.viewportX();
+                            int vpTop = pos[1] + ep + sr.viewportY();
+                            int vpRight = vpLeft + sr.viewportWidth();
+                            int vpBottom = vpTop + sr.viewportHeight();
+
+                            // Slot is 18x18 (with the +1 offset baked in, content is 16x16).
+                            // Check if any part of the slot is within the viewport.
+                            if (scrolledX + 17 < vpLeft || scrolledX > vpRight
+                                    || scrolledY + 17 < vpTop || scrolledY > vpBottom) {
+                                // Entirely outside viewport -- move offscreen
+                                slotX = SCROLL_OFFSCREEN;
+                                slotY = SCROLL_OFFSCREEN;
+                            } else {
+                                // Partially or fully inside -- use scrolled position
+                                slotX = scrolledX;
+                                slotY = scrolledY;
+                            }
+                            break; // Found the scroll region for this slot
+                        }
+                    }
+                }
+
+                map.put(def.name() + ":" + i, new int[]{slotX, slotY});
             }
         }
 
@@ -1427,18 +2147,22 @@ public class MenuKit implements ModInitializer {
             // Resolve position for the given context
             int[] pos = def.resolvePosition(context);
 
-            // Create buttons from definitions using resolved position
+            // Create buttons from the tree-derived list, which includes
+            // conditionally-injected buttons (not just the original flat list).
+            List<MKButtonDef> treeButtonDefs = def.getTreeButtonDefs();
+            int treeSlotCount = def.getTreeSlotCount();
             List<MKButton> panelButtons = new ArrayList<>();
-            int[][] btnFlowPos = def.computeFlowPositions();
-            for (int bi = 0; bi < def.buttonDefs().size(); bi++) {
-                MKButtonDef btnDef = def.buttonDefs().get(bi);
-                int fi = def.slotDefs().size() + bi;
+            MKLayoutResult btnLayout = def.computeFlowPositions();
+            for (int bi = 0; bi < treeButtonDefs.size(); bi++) {
+                MKButtonDef btnDef = treeButtonDefs.get(bi);
+                int fi = treeSlotCount + bi;
                 MKButton btn = btnDef.createButtonAt(
                         pos[0], pos[1], def.effectivePadding(),
                         leftPos, topPos,
-                        btnFlowPos[fi][0], btnFlowPos[fi][1],
+                        btnLayout.x(fi), btnLayout.y(fi),
                         activeGroups);
                 btn.panelName = def.name();
+                btn.buttonIndex = bi;
                 // Set event context for bus dispatch
                 btn.eventContext = context;
                 btn.eventPlayer = net.minecraft.client.Minecraft.getInstance().player;
@@ -1446,7 +2170,7 @@ public class MenuKit implements ModInitializer {
                 buttons.add(btn);
 
                 // Hide buttons belonging to hidden/disabled panels or disabled by flow
-                if (isPanelInactive(def.name()) || btnFlowPos[fi][0] == -9999) {
+                if (isPanelInactive(def.name()) || !btnLayout.isActive(fi)) {
                     btn.visible = false;
                 }
             }
@@ -1457,32 +2181,32 @@ public class MenuKit implements ModInitializer {
             if (def.autoSize()) {
                 int maxRight = 0;
                 int maxBottom = 0;
-                int[][] flowPos = def.computeFlowPositions();
 
-                // Slots are 18×18 — use flow positions
-                for (int si = 0; si < def.slotDefs().size(); si++) {
-                    if (flowPos[si][0] == -9999) continue;
-                    maxRight = Math.max(maxRight, flowPos[si][0] + 18);
-                    maxBottom = Math.max(maxBottom, flowPos[si][1] + 18);
+                // Slots are 18x18 — use flow positions (tree-derived count)
+                for (int si = 0; si < treeSlotCount; si++) {
+                    if (!btnLayout.isActive(si)) continue;
+                    maxRight = Math.max(maxRight, btnLayout.x(si) + 18);
+                    maxBottom = Math.max(maxBottom, btnLayout.y(si) + 18);
                 }
 
                 // Include buttons (use live widget dimensions + flow positions)
-                for (int bi = 0; bi < panelButtons.size() && bi < def.buttonDefs().size(); bi++) {
+                for (int bi = 0; bi < panelButtons.size(); bi++) {
                     MKButton btn = panelButtons.get(bi);
                     if (!btn.visible) continue;
-                    int fi = def.slotDefs().size() + bi;
-                    if (flowPos[fi][0] == -9999) continue;
-                    maxRight = Math.max(maxRight, flowPos[fi][0] + btn.getWidth());
-                    maxBottom = Math.max(maxBottom, flowPos[fi][1] + btn.getHeight());
+                    int fi = treeSlotCount + bi;
+                    if (!btnLayout.isActive(fi)) continue;
+                    maxRight = Math.max(maxRight, btnLayout.x(fi) + btn.getWidth());
+                    maxBottom = Math.max(maxBottom, btnLayout.y(fi) + btn.getHeight());
                 }
 
-                // Include text elements
+                // Include text elements (tree-derived counts for offset)
+                int treeButtonCount = treeButtonDefs.size();
                 for (int ti = 0; ti < def.textDefs().size(); ti++) {
-                    int fi = def.slotDefs().size() + def.buttonDefs().size() + ti;
-                    if (fi >= flowPos.length || flowPos[fi][0] == -9999) continue;
+                    int fi = treeSlotCount + treeButtonCount + ti;
+                    if (!btnLayout.isActive(fi)) continue;
                     MKTextDef textDef = def.textDefs().get(ti);
-                    maxRight = Math.max(maxRight, flowPos[fi][0] + textDef.estimateWidth());
-                    maxBottom = Math.max(maxBottom, flowPos[fi][1] + MKTextDef.TEXT_HEIGHT);
+                    maxRight = Math.max(maxRight, btnLayout.x(fi) + textDef.estimateWidth());
+                    maxBottom = Math.max(maxBottom, btnLayout.y(fi) + MKTextDef.TEXT_HEIGHT);
                 }
 
                 livePanelSizes.put(def.name(), new int[]{
@@ -1493,6 +2217,86 @@ public class MenuKit implements ModInitializer {
         }
 
         return buttons;
+    }
+
+    /**
+     * Creates MKButton widgets for panels that were registered AFTER the
+     * screen's {@code init()} ran. This handles dynamically-registered panels
+     * (e.g., sort/move-matching buttons created in response to REGION_POPULATED
+     * events from peek containers) that missed the initial button creation pass.
+     *
+     * <p>Checks each panel with buttons against the screen's current children.
+     * If a panel has button definitions but no matching MKButton widgets exist
+     * on the screen, creates and returns them. The caller (MKScreenMixin) adds
+     * them via {@code addRenderableWidget}.
+     *
+     * <p>Called every frame from the render pipeline, but only creates buttons
+     * once per panel (subsequent frames find existing widgets and return empty).
+     *
+     * @param screen  the active container screen
+     * @param context the active MKContext
+     * @param leftPos screen-space left offset
+     * @param topPos  screen-space top offset
+     * @return list of newly-created MKButton widgets to add to the screen
+     */
+    public static List<MKButton> createMissingButtons(
+            AbstractContainerScreen<?> screen, MKContext context,
+            int leftPos, int topPos) {
+        List<MKButton> newButtons = new ArrayList<>();
+
+        for (MKPanelDef def : panels.values()) {
+            if (!def.needsMenuClass(context.menuClass())) continue;
+            if (def.isStandaloneScreen()) continue;
+            if (!def.appliesTo(context)) continue;
+
+            // Use tree-derived button defs to capture conditionally-injected buttons
+            List<MKButtonDef> treeButtonDefs = def.getTreeButtonDefs();
+            if (treeButtonDefs.isEmpty()) continue;
+
+            // Check if any MKButton for this panel already exists on the screen.
+            // If so, skip — buttons were already created during init() or a
+            // previous frame's createMissingButtons call.
+            boolean hasExistingButton = false;
+            for (var child : screen.children()) {
+                if (child instanceof MKButton mkBtn && mkBtn.panelName != null
+                        && mkBtn.panelName.equals(def.name())) {
+                    hasExistingButton = true;
+                    break;
+                }
+            }
+            if (hasExistingButton) continue;
+
+            // No buttons exist for this panel — create them now.
+            // Use a placeholder position; updateButtonPositions() will set the
+            // correct position on this same frame (it runs right after this).
+            int treeSlotCount = def.getTreeSlotCount();
+            int[] pos = def.resolvePosition(context);
+            MKLayoutResult newBtnLayout = def.computeFlowPositions();
+            for (int bi = 0; bi < treeButtonDefs.size(); bi++) {
+                MKButtonDef btnDef = treeButtonDefs.get(bi);
+                int fi = treeSlotCount + bi;
+                MKButton btn = btnDef.createButtonAt(
+                        pos[0], pos[1], def.effectivePadding(),
+                        leftPos, topPos,
+                        newBtnLayout.x(fi), newBtnLayout.y(fi),
+                        activeGroups);
+                btn.panelName = def.name();
+                btn.buttonIndex = bi;
+                btn.eventContext = context;
+                btn.eventPlayer = net.minecraft.client.Minecraft.getInstance().player;
+                newButtons.add(btn);
+
+                // Start hidden if panel is inactive or button is disabled by flow
+                if (isPanelInactive(def.name()) || !newBtnLayout.isActive(fi)) {
+                    btn.visible = false;
+                }
+            }
+
+            LOGGER.debug("[MenuKit] Created {} missing button(s) for dynamically-registered panel '{}'",
+                    treeButtonDefs.size(), def.name());
+        }
+
+        return newButtons;
     }
 
     // ── Panel Rendering (called by MKScreenMixin, client only) ──────────────
@@ -1518,17 +2322,21 @@ public class MenuKit implements ModInitializer {
         // Reset panel hover tracking — will be set if mouse is over a panel
         hoveredPanelName = null;
 
+        // Reset scroll/tab region tracking for this frame
+        scrollRegionsByPanel.clear();
+        tabsRegionsByPanel.clear();
+
         for (MKPanelDef def : panels.values()) {
             if (!def.needsMenuClass(context.menuClass())) continue;
             if (def.isStandaloneScreen()) continue;
             if (!def.appliesTo(context)) continue;
             if (isPanelInactive(def.name())) continue;
 
+            // Skip suppressed panels (exclusive-panel logic or missing region)
+            if (isPanelSuppressed(def.name())) continue;
+
             // Use collision-avoided position
             int[] pos = getResolvedPosition(def, context);
-
-            // Skip region-following panels that have no matching region (-9999 sentinel)
-            if (pos[0] == -9999) continue;
 
             int panelX = offsetX + pos[0];
             int panelY = offsetY + pos[1];
@@ -1538,7 +2346,7 @@ public class MenuKit implements ModInitializer {
                     ? livePanelSizes.get(def.name())
                     : def.computeSize();
 
-            // Don't render the panel if all elements are disabled (size is 0×0)
+            // Don't render the panel if all elements are disabled (size is 0x0)
             if (size[0] <= 0 || size[1] <= 0) continue;
 
             MKPanel.renderPanel(graphics, panelX, panelY,
@@ -1547,18 +2355,76 @@ public class MenuKit implements ModInitializer {
             // Render text labels
             if (!def.textDefs().isEmpty()) {
                 var mc = net.minecraft.client.Minecraft.getInstance();
-                int[][] flowPos = def.computeFlowPositions();
+                MKLayoutResult textLayout = def.computeFlowPositions();
                 int ep = def.effectivePadding();
+                // Text indices follow slots + buttons in the layout — use tree-derived
+                // counts so conditionally-injected buttons don't shift text positions
+                int textOffset = def.getTreeSlotCount() + def.getTreeButtonDefs().size();
                 for (int i = 0; i < def.textDefs().size(); i++) {
-                    int fi = def.slotDefs().size() + def.buttonDefs().size() + i;
-                    if (fi >= flowPos.length || flowPos[fi][0] == -9999) continue;
+                    int fi = textOffset + i;
+                    if (!textLayout.isActive(fi)) continue;
                     MKTextDef textDef = def.textDefs().get(i);
                     net.minecraft.network.chat.Component text = textDef.content().get();
                     if (text != null) {
-                        int textX = panelX + ep + flowPos[fi][0];
-                        int textY = panelY + ep + flowPos[fi][1];
+                        int textX = panelX + ep + textLayout.x(fi);
+                        int textY = panelY + ep + textLayout.y(fi);
                         graphics.drawString(mc.font, text, textX, textY,
                                 textDef.color(), textDef.shadow());
+                    }
+                }
+            }
+
+            // ── Collect scroll and tab regions from the layout tree ──────────
+            // Walk the root group (if present) to find scroll/tab containers.
+            // Their viewport/bar bounds are stored for use by renderSlotBackgrounds
+            // (scissor clipping) and input handling (mouse wheel, tab clicks).
+            int ep = def.effectivePadding();
+            if (def.rootGroup() != null) {
+                // Collect scroll regions, sorted smallest-first so nested
+                // inner regions match before their enclosing parents.
+                List<MKGroupDef.ScrollRegion> scrollRegions = new ArrayList<>();
+                def.rootGroup().collectScrollRegions(0, 0, def.name(), scrollRegions);
+                if (!scrollRegions.isEmpty()) {
+                    sortScrollRegionsSmallestFirst(scrollRegions);
+                    scrollRegionsByPanel.put(def.name(), scrollRegions);
+
+                    // Render scrollbar indicators for each scroll region
+                    for (MKGroupDef.ScrollRegion sr : scrollRegions) {
+                        if (!sr.scrollDef().showScrollbar()) continue;
+
+                        // Absolute screen-space position of the viewport
+                        int vpX = panelX + ep + sr.viewportX();
+                        int vpY = panelY + ep + sr.viewportY();
+
+                        // Get current scroll offset
+                        MKPanelState state = MKPanelStateRegistry.get(def.name());
+                        float[] offset = state != null
+                                ? state.getScrollOffset(sr.id())
+                                : new float[]{0f, 0f};
+
+                        renderScrollbar(graphics, sr, vpX, vpY, offset);
+                    }
+                }
+
+                // Collect tab regions
+                List<MKGroupDef.TabsRegion> tabsRegions = new ArrayList<>();
+                def.rootGroup().collectTabsRegions(0, 0, def.name(), tabsRegions);
+                if (!tabsRegions.isEmpty()) {
+                    tabsRegionsByPanel.put(def.name(), tabsRegions);
+
+                    // Render tab bars
+                    for (MKGroupDef.TabsRegion tr : tabsRegions) {
+                        int tabsX = panelX + ep + tr.x();
+                        int tabsY = panelY + ep + tr.y();
+
+                        MKPanelState state = MKPanelStateRegistry.get(def.name());
+                        int activeTab = state != null
+                                ? state.getActiveTab(tr.id())
+                                : tr.tabsDef().defaultTab();
+                        activeTab = Math.max(0, Math.min(activeTab,
+                                tr.tabsDef().tabs().size() - 1));
+
+                        renderTabBar(graphics, tr, tabsX, tabsY, activeTab, mouseX, mouseY);
                     }
                 }
             }
@@ -1569,6 +2435,304 @@ public class MenuKit implements ModInitializer {
                 hoveredPanelName = def.name();
             }
         }
+    }
+
+    // ── Scrollbar Rendering ──────────────────────────────────────────────────
+    //
+    // Renders a subtle scrollbar indicator inside the scroll viewport.
+    // The scrollbar is 3px wide, positioned at the right edge (vertical)
+    // or bottom edge (horizontal) of the viewport. Uses vanilla-style
+    // colors: dark track, lighter handle.
+
+    /** Scrollbar track color — dark gray, semi-transparent. */
+    private static final int SCROLLBAR_TRACK  = 0x40000000;
+    /** Scrollbar handle color — medium gray, opaque. */
+    private static final int SCROLLBAR_HANDLE = 0xC0808080;
+    /** Scrollbar handle hover color — lighter gray. */
+    private static final int SCROLLBAR_HANDLE_HOVER = 0xC0A0A0A0;
+    /** Scrollbar width in pixels. */
+    private static final int SCROLLBAR_WIDTH = 3;
+
+    /**
+     * Renders a scrollbar indicator for a scroll region.
+     *
+     * @param graphics the graphics context
+     * @param sr       the scroll region metadata
+     * @param vpX      viewport left edge in screen space
+     * @param vpY      viewport top edge in screen space
+     * @param offset   current scroll offset [scrollX, scrollY]
+     */
+    private static void renderScrollbar(GuiGraphics graphics,
+                                         MKGroupDef.ScrollRegion sr,
+                                         int vpX, int vpY,
+                                         float[] offset) {
+        // ── Vertical scrollbar (right edge) ──────────────────────────────
+        if (sr.scrollDef().verticalScroll() && sr.contentHeight() > sr.viewportHeight()) {
+            int trackX = vpX + sr.viewportWidth() - SCROLLBAR_WIDTH;
+            int trackY = vpY;
+            int trackH = sr.viewportHeight();
+
+            // Draw track background
+            graphics.fill(trackX, trackY, trackX + SCROLLBAR_WIDTH,
+                    trackY + trackH, SCROLLBAR_TRACK);
+
+            // Compute handle position and size
+            // Handle size is proportional to viewport/content ratio
+            float ratio = (float) sr.viewportHeight() / sr.contentHeight();
+            int handleH = Math.max(8, (int) (trackH * ratio));
+
+            // Handle position is proportional to scroll offset
+            float maxScroll = sr.contentHeight() - sr.viewportHeight();
+            float scrollFraction = maxScroll > 0 ? Math.abs(offset[1]) / maxScroll : 0;
+            int handleY = trackY + (int) ((trackH - handleH) * scrollFraction);
+
+            // Draw handle
+            graphics.fill(trackX, handleY, trackX + SCROLLBAR_WIDTH,
+                    handleY + handleH, SCROLLBAR_HANDLE);
+        }
+
+        // ── Horizontal scrollbar (bottom edge) ──────────────────────────
+        if (sr.scrollDef().horizontalScroll() && sr.contentWidth() > sr.viewportWidth()) {
+            int trackX = vpX;
+            int trackY = vpY + sr.viewportHeight() - SCROLLBAR_WIDTH;
+            int trackW = sr.viewportWidth();
+
+            // Draw track background
+            graphics.fill(trackX, trackY, trackX + trackW,
+                    trackY + SCROLLBAR_WIDTH, SCROLLBAR_TRACK);
+
+            // Compute handle position and size
+            float ratio = (float) sr.viewportWidth() / sr.contentWidth();
+            int handleW = Math.max(8, (int) (trackW * ratio));
+
+            float maxScroll = sr.contentWidth() - sr.viewportWidth();
+            float scrollFraction = maxScroll > 0 ? Math.abs(offset[0]) / maxScroll : 0;
+            int handleX = trackX + (int) ((trackW - handleW) * scrollFraction);
+
+            // Draw handle
+            graphics.fill(handleX, trackY, handleX + handleW,
+                    trackY + SCROLLBAR_WIDTH, SCROLLBAR_HANDLE);
+        }
+    }
+
+    // ── Tab Bar Rendering ────────────────────────────────────────────────────
+    //
+    // Renders tab buttons in a horizontal or vertical bar. Active tab is
+    // visually raised and connected to the content area. Inactive tabs
+    // are flat/inset.
+    //
+    // Tab bar layout:
+    //   TOP:    tab buttons above content, horizontal row
+    //   BOTTOM: tab buttons below content, horizontal row
+    //   LEFT:   tab buttons left of content, vertical column
+    //   RIGHT:  tab buttons right of content, vertical column
+
+    /** Tab button active background — lighter, matches panel raised style. */
+    private static final int TAB_ACTIVE_BG   = 0xFFC6C6C6;
+    /** Tab button inactive background — darker, inset look. */
+    private static final int TAB_INACTIVE_BG = 0xFF8B8B8B;
+    /** Tab button text color — dark for readability. */
+    private static final int TAB_TEXT_COLOR   = 0xFF404040;
+    /** Tab button active text color — slightly darker for emphasis. */
+    private static final int TAB_ACTIVE_TEXT  = 0xFF303030;
+    /** Tab border color — matches vanilla dark border. */
+    private static final int TAB_BORDER      = 0xFF000000;
+
+    /**
+     * Renders the tab bar for a tabs container.
+     *
+     * @param graphics  the graphics context
+     * @param tr        the tabs region metadata
+     * @param tabsX     tabs container left edge in screen space
+     * @param tabsY     tabs container top edge in screen space
+     * @param activeTab the currently active tab index
+     * @param mouseX    screen-space mouse X (for hover highlighting)
+     * @param mouseY    screen-space mouse Y (for hover highlighting)
+     */
+    private static void renderTabBar(GuiGraphics graphics,
+                                      MKGroupDef.TabsRegion tr,
+                                      int tabsX, int tabsY,
+                                      int activeTab,
+                                      int mouseX, int mouseY) {
+        MKTabsDef tabsDef = tr.tabsDef();
+        List<MKTabDef> tabs = tabsDef.tabs();
+        if (tabs.isEmpty()) return;
+
+        // Skip rendering the bar when there's only one tab -- no switching needed,
+        // and it avoids visual clutter for single-content containers.
+        if (tabs.size() == 1) return;
+
+        // Compute tab button bounds via the shared method (single source of truth
+        // shared with handleTabClick so render and click positions never drift).
+        List<TabButtonBounds> allBounds = computeTabButtonBounds(tr, tabsX, tabsY);
+
+        for (TabButtonBounds tbb : allBounds) {
+            int i = tbb.index();
+            MKTabDef tab = tabs.get(i);
+            boolean isActive = (i == activeTab);
+
+            int tabBtnX = tbb.x();
+            int tabBtnY = tbb.y();
+            int tabBtnW = tbb.w();
+            int tabBtnH = tbb.h();
+
+            // Check hover
+            boolean hovered = mouseX >= tabBtnX && mouseX < tabBtnX + tabBtnW
+                    && mouseY >= tabBtnY && mouseY < tabBtnY + tabBtnH;
+
+            // ── Draw tab button background ──────────────────────────────
+            if (isActive) {
+                // Active tab — raised look, visually connected to content
+                int bg = TAB_ACTIVE_BG;
+                graphics.fill(tabBtnX, tabBtnY, tabBtnX + tabBtnW, tabBtnY + tabBtnH, bg);
+
+                // Draw border on 3 sides (the side touching content is open)
+                // to create the visual connection effect
+                switch (tabsDef.barPosition()) {
+                    case TOP -> {
+                        graphics.fill(tabBtnX, tabBtnY, tabBtnX + tabBtnW, tabBtnY + 1, TAB_BORDER);         // top
+                        graphics.fill(tabBtnX, tabBtnY, tabBtnX + 1, tabBtnY + tabBtnH, TAB_BORDER);         // left
+                        graphics.fill(tabBtnX + tabBtnW - 1, tabBtnY, tabBtnX + tabBtnW, tabBtnY + tabBtnH, TAB_BORDER); // right
+                        // bottom is open (connects to content)
+                    }
+                    case BOTTOM -> {
+                        graphics.fill(tabBtnX, tabBtnY + tabBtnH - 1, tabBtnX + tabBtnW, tabBtnY + tabBtnH, TAB_BORDER); // bottom
+                        graphics.fill(tabBtnX, tabBtnY, tabBtnX + 1, tabBtnY + tabBtnH, TAB_BORDER);         // left
+                        graphics.fill(tabBtnX + tabBtnW - 1, tabBtnY, tabBtnX + tabBtnW, tabBtnY + tabBtnH, TAB_BORDER); // right
+                        // top is open
+                    }
+                    case LEFT -> {
+                        graphics.fill(tabBtnX, tabBtnY, tabBtnX + tabBtnW, tabBtnY + 1, TAB_BORDER);         // top
+                        graphics.fill(tabBtnX, tabBtnY + tabBtnH - 1, tabBtnX + tabBtnW, tabBtnY + tabBtnH, TAB_BORDER); // bottom
+                        graphics.fill(tabBtnX, tabBtnY, tabBtnX + 1, tabBtnY + tabBtnH, TAB_BORDER);         // left
+                        // right is open
+                    }
+                    case RIGHT -> {
+                        graphics.fill(tabBtnX, tabBtnY, tabBtnX + tabBtnW, tabBtnY + 1, TAB_BORDER);         // top
+                        graphics.fill(tabBtnX, tabBtnY + tabBtnH - 1, tabBtnX + tabBtnW, tabBtnY + tabBtnH, TAB_BORDER); // bottom
+                        graphics.fill(tabBtnX + tabBtnW - 1, tabBtnY, tabBtnX + tabBtnW, tabBtnY + tabBtnH, TAB_BORDER); // right
+                        // left is open
+                    }
+                }
+            } else {
+                // Inactive tab — flat/inset look
+                int bg = hovered ? 0xFFA0A0A0 : TAB_INACTIVE_BG;
+                graphics.fill(tabBtnX, tabBtnY, tabBtnX + tabBtnW, tabBtnY + tabBtnH, bg);
+
+                // Full border on all 4 sides
+                graphics.fill(tabBtnX, tabBtnY, tabBtnX + tabBtnW, tabBtnY + 1, TAB_BORDER);                 // top
+                graphics.fill(tabBtnX, tabBtnY + tabBtnH - 1, tabBtnX + tabBtnW, tabBtnY + tabBtnH, TAB_BORDER); // bottom
+                graphics.fill(tabBtnX, tabBtnY, tabBtnX + 1, tabBtnY + tabBtnH, TAB_BORDER);                 // left
+                graphics.fill(tabBtnX + tabBtnW - 1, tabBtnY, tabBtnX + tabBtnW, tabBtnY + tabBtnH, TAB_BORDER); // right
+            }
+
+            // ── Draw tab label text ─────────────────────────────────────
+            if (tab.label() != null) {
+                int textColor = isActive ? TAB_ACTIVE_TEXT : TAB_TEXT_COLOR;
+                int textX = tabBtnX + 4;
+                int textY = tabBtnY + (tabBtnH - 8) / 2; // vertically centered (font height ~8)
+                graphics.drawString(net.minecraft.client.Minecraft.getInstance().font, tab.label(), textX, textY, textColor, false);
+            }
+
+            // ── Draw tab icon (if present, before label) ────────────────
+            if (tab.icon() != null) {
+                int iconSz = tab.iconSize() > 0 ? tab.iconSize() : 12;
+                int iconX = tabBtnX + 2;
+                int iconY = tabBtnY + (tabBtnH - iconSz) / 2;
+                graphics.blitSprite(
+                        net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED,
+                        tab.icon(), iconX, iconY, iconSz, iconSz);
+            }
+        }
+    }
+
+    /**
+     * Estimates the pixel width of a tab label for layout purposes.
+     * Uses the font's string width when available, falls back to char count.
+     */
+    private static int estimateTabLabelWidth(MKTabDef tab,
+                                              net.minecraft.client.Minecraft mc) {
+        int width = 0;
+        if (tab.icon() != null) {
+            width += (tab.iconSize() > 0 ? tab.iconSize() : 12) + 2;
+        }
+        if (tab.label() != null) {
+            width += mc.font.width(tab.label());
+        }
+        return Math.max(width, 12); // minimum tab width
+    }
+
+    /**
+     * Bounds of a single tab button within a tab bar, used by both rendering
+     * and click handling to ensure positions stay in sync.
+     */
+    record TabButtonBounds(int index, int x, int y, int w, int h) {}
+
+    /**
+     * Computes the screen-space bounds for every tab button in a tabs region.
+     * Both {@link #renderTabBar} and {@link #handleTabClick} use this single
+     * source of truth so tab positions never drift between render and input.
+     *
+     * @param tr    the tabs region metadata
+     * @param tabsX tabs container left edge in screen space
+     * @param tabsY tabs container top edge in screen space
+     * @return list of tab button bounds, one per tab
+     */
+    private static List<TabButtonBounds> computeTabButtonBounds(
+            MKGroupDef.TabsRegion tr, int tabsX, int tabsY) {
+        MKTabsDef tabsDef = tr.tabsDef();
+        List<MKTabDef> tabs = tabsDef.tabs();
+        var mc = net.minecraft.client.Minecraft.getInstance();
+
+        boolean isHorizontal = tabsDef.barPosition() == MKTabsDef.TabBarPosition.TOP
+                || tabsDef.barPosition() == MKTabsDef.TabBarPosition.BOTTOM;
+        int barThickness = tabsDef.barThickness();
+        int tabGap = tabsDef.tabGap();
+
+        List<TabButtonBounds> bounds = new ArrayList<>(tabs.size());
+        int cursor = 0;
+
+        for (int i = 0; i < tabs.size(); i++) {
+            MKTabDef tab = tabs.get(i);
+
+            int tabBtnX, tabBtnY, tabBtnW, tabBtnH;
+            if (isHorizontal) {
+                // Horizontal tab bar -- buttons laid out left-to-right
+                int labelWidth = estimateTabLabelWidth(tab, mc);
+                tabBtnW = labelWidth + 8; // 4px padding each side
+                tabBtnH = barThickness;
+
+                if (tabsDef.barPosition() == MKTabsDef.TabBarPosition.TOP) {
+                    tabBtnX = tabsX + cursor;
+                    tabBtnY = tabsY;
+                } else {
+                    // BOTTOM -- bar is below the content
+                    tabBtnX = tabsX + cursor;
+                    tabBtnY = tabsY + tr.totalHeight() - barThickness;
+                }
+
+                cursor += tabBtnW + tabGap;
+            } else {
+                // Vertical tab bar -- buttons laid out top-to-bottom
+                tabBtnW = barThickness;
+                tabBtnH = 16; // Fixed height for vertical tab buttons
+
+                if (tabsDef.barPosition() == MKTabsDef.TabBarPosition.LEFT) {
+                    tabBtnX = tabsX;
+                    tabBtnY = tabsY + cursor;
+                } else {
+                    // RIGHT -- bar is right of the content
+                    tabBtnX = tabsX + tr.totalWidth() - barThickness;
+                    tabBtnY = tabsY + cursor;
+                }
+
+                cursor += tabBtnH + tabGap;
+            }
+
+            bounds.add(new TabButtonBounds(i, tabBtnX, tabBtnY, tabBtnW, tabBtnH));
+        }
+
+        return bounds;
     }
 
     /**
@@ -1613,30 +2777,106 @@ public class MenuKit implements ModInitializer {
             int[] pos = getResolvedPosition(def, context);
             int panelX = offsetX + pos[0];
             int panelY = offsetY + pos[1];
+            int ep = def.effectivePadding();
 
-            // Render slot backgrounds (18×18 inset squares) using flow positions
-            int[][] flowPos = def.computeFlowPositions();
+            // ── Scroll region scissor clipping ──────────────────────────────
+            // If this panel has scroll regions, we need to apply scissor clipping
+            // around viewport bounds so slot backgrounds at the viewport edges
+            // are cleanly clipped. We enable scissor for each scroll region's
+            // viewport, render the slots inside that region, then disable scissor.
+            //
+            // Slots OUTSIDE scroll regions render normally (no scissor).
+            // Slots INSIDE scroll regions use the scrolled position (already
+            // applied by getSlotPositionMap -> repositionSlots).
+            List<MKGroupDef.ScrollRegion> scrollRegions = scrollRegionsByPanel.get(def.name());
+
+            // Render slot backgrounds (18x18 inset squares) using flow positions.
+            // For scroll containers, the live slot positions already include scroll
+            // offset (set by getSlotPositionMap). We use the live slot position for
+            // rendering to stay consistent with vanilla's item rendering.
+            MKLayoutResult slotLayout = def.computeFlowPositions();
             for (int slotIdx = 0; slotIdx < def.slotDefs().size(); slotIdx++) {
                 MKSlotDef slotDef = def.slotDefs().get(slotIdx);
-                // Skip disabled slots (flow positions will be -9999 for these)
-                if (flowPos[slotIdx][0] == -9999) continue;
+                // Skip inactive slots
+                if (!slotLayout.isActive(slotIdx)) continue;
 
-                // Slot.x/y is where the 16×16 item renders.
-                // The 18×18 inset background goes 1px outside that.
-                // Slot content offset (+1) is already baked into flowPos by the layout engine
-                int slotX = panelX + def.effectivePadding() + flowPos[slotIdx][0];
-                int slotY = panelY + def.effectivePadding() + flowPos[slotIdx][1];
+                // Find the live MKSlot from the menu by matching the scroll-adjusted
+                // position. getSlotPositionMap already applied scroll offsets, so
+                // the live slot's x/y reflects the scrolled position.
+                int origSlotX = panelX + ep + slotLayout.x(slotIdx);
+                int origSlotY = panelY + ep + slotLayout.y(slotIdx);
+
+                // Determine if this slot is in a scroll region and compute its
+                // actual render position (which may differ from the flow position
+                // due to scroll offset).
+                int slotX = origSlotX;
+                int slotY = origSlotY;
+                MKGroupDef.ScrollRegion containingScroll = null;
+
+                if (scrollRegions != null) {
+                    for (MKGroupDef.ScrollRegion sr : scrollRegions) {
+                        int contentRelX = slotLayout.x(slotIdx) - sr.viewportX();
+                        int contentRelY = slotLayout.y(slotIdx) - sr.viewportY();
+                        if (contentRelX >= 0 && contentRelX < sr.contentWidth()
+                                && contentRelY >= 0 && contentRelY < sr.contentHeight()) {
+                            containingScroll = sr;
+
+                            // Apply scroll offset to get the rendered position
+                            MKPanelState state = MKPanelStateRegistry.get(def.name());
+                            float[] scrollOffset = state != null
+                                    ? state.getScrollOffset(sr.id())
+                                    : new float[]{0f, 0f};
+                            slotX = origSlotX - (int) scrollOffset[0];
+                            slotY = origSlotY - (int) scrollOffset[1];
+                            break;
+                        }
+                    }
+                }
+
+                // If slot is inside a scroll region but moved offscreen, skip it
+                if (containingScroll != null) {
+                    int vpLeft = panelX + ep + containingScroll.viewportX();
+                    int vpTop = panelY + ep + containingScroll.viewportY();
+                    int vpRight = vpLeft + containingScroll.viewportWidth();
+                    int vpBottom = vpTop + containingScroll.viewportHeight();
+
+                    // Entirely outside viewport -- skip rendering
+                    if (slotX + 17 < vpLeft || slotX > vpRight
+                            || slotY + 17 < vpTop || slotY > vpBottom) {
+                        continue;
+                    }
+
+                    // Enable scissor clipping for partially visible slots.
+                    // GuiGraphics.enableScissor takes screen-space coordinates,
+                    // but we're in container-translated space. Convert by adding
+                    // the leftPos/topPos offset that the caller subtracted.
+                    // Note: renderSlotBackgrounds is called with offsetX=0, offsetY=0
+                    // in container-translated space. The scissor coords need to be
+                    // in the same translated coordinate system.
+                    graphics.enableScissor(vpLeft, vpTop, vpRight, vpBottom);
+                }
+
+                // Render the slot background at the (possibly scrolled) position
                 MKPanel.renderSlotBackground(graphics, slotX - 1, slotY - 1);
 
-                // Find the live MKSlot from the menu by matching position.
-                // Unwrap SlotWrapper (used in creative mode) to reach the real MKSlot.
+                // Find the live MKSlot by its scrolled position (set by repositionSlots)
                 net.minecraft.world.inventory.Slot liveMKSlot = findLiveMKSlot(menu, slotX, slotY);
 
                 // Render hover highlight (bright white overlay) when mouse is over this slot.
                 // Vanilla's highlight sprites don't render well on MKSlots outside the
                 // container, so we draw our own to match vanilla's visual brightness.
+                // For scroll containers, also check that the mouse is within the viewport.
                 boolean isHovered = relMouseX >= slotX - 1 && relMouseX < slotX + 17
                         && relMouseY >= slotY - 1 && relMouseY < slotY + 17;
+                if (isHovered && containingScroll != null) {
+                    // Verify mouse is within viewport bounds (interaction clipping)
+                    int vpLeft = panelX + ep + containingScroll.viewportX();
+                    int vpTop = panelY + ep + containingScroll.viewportY();
+                    int vpRight = vpLeft + containingScroll.viewportWidth();
+                    int vpBottom = vpTop + containingScroll.viewportHeight();
+                    isHovered = relMouseX >= vpLeft && relMouseX < vpRight
+                            && relMouseY >= vpTop && relMouseY < vpBottom;
+                }
                 if (isHovered) {
                     graphics.fill(slotX, slotY, slotX + 16, slotY + 16, 0x66FFFFFF);
                     // Track the hovered slot for tooltips and empty-click callbacks
@@ -1662,21 +2902,20 @@ public class MenuKit implements ModInitializer {
                 if (liveMKSlot != null) {
                     MKSlotState dState = MKSlotStateRegistry.get(liveMKSlot);
                     if (dState != null && dState.getBackgroundTint() != 0) {
-                        // Fill the 16×16 item area with the tint color.
+                        // Fill the 16x16 item area with the tint color.
                         // Alpha channel controls transparency — 0x40 = 25%.
                         graphics.fill(slotX, slotY, slotX + 16, slotY + 16,
                                 dState.getBackgroundTint());
                     }
 
-                    // ── Lock Tint (dark overlay on locked slots) ─────────────
-                    // When a slot is locked (Ctrl+click), draw a semi-transparent
-                    // dark overlay so the player can visually identify which slots
-                    // are pinned. 0x40000000 = ~25% opacity black — visible but
-                    // doesn't obscure the item icon underneath.
-                    if (dState != null && dState.isLocked()) {
-                        graphics.fill(slotX, slotY, slotX + 16, slotY + 16,
-                                0x40000000);
-                    }
+                    // Lock and sort-lock overlays are rendered by the universal
+                    // renderLockOverlays() pass (called after renderSlotOverlays),
+                    // which covers ALL menu slots — both panel and vanilla.
+                }
+
+                // Disable scissor if we enabled it for this slot
+                if (containingScroll != null) {
+                    graphics.disableScissor();
                 }
             }
         }
@@ -1710,16 +2949,53 @@ public class MenuKit implements ModInitializer {
             int[] pos = getResolvedPosition(def, context);
             int panelX = offsetX + pos[0];
             int panelY = offsetY + pos[1];
+            int ep = def.effectivePadding();
 
-            int[][] flowPos = def.computeFlowPositions();
+            // Get scroll regions for scroll-offset-aware position lookup
+            List<MKGroupDef.ScrollRegion> scrollRegions = scrollRegionsByPanel.get(def.name());
+
+            MKLayoutResult tipLayout = def.computeFlowPositions();
             for (int slotIdx = 0; slotIdx < def.slotDefs().size(); slotIdx++) {
-                // Skip disabled slots (flow positions will be -9999 for these)
-                if (flowPos[slotIdx][0] == -9999) continue;
+                // Skip inactive slots
+                if (!tipLayout.isActive(slotIdx)) continue;
 
-                int slotX = panelX + def.effectivePadding() + flowPos[slotIdx][0];
-                int slotY = panelY + def.effectivePadding() + flowPos[slotIdx][1];
+                int slotX = panelX + ep + tipLayout.x(slotIdx);
+                int slotY = panelY + ep + tipLayout.y(slotIdx);
 
-                // Find the live slot and its state
+                // Apply scroll offset for slots inside scroll containers
+                // (matches the adjustment in renderSlotBackgrounds and getSlotPositionMap)
+                MKGroupDef.ScrollRegion containingScroll = null;
+                if (scrollRegions != null) {
+                    for (MKGroupDef.ScrollRegion sr : scrollRegions) {
+                        int contentRelX = tipLayout.x(slotIdx) - sr.viewportX();
+                        int contentRelY = tipLayout.y(slotIdx) - sr.viewportY();
+                        if (contentRelX >= 0 && contentRelX < sr.contentWidth()
+                                && contentRelY >= 0 && contentRelY < sr.contentHeight()) {
+                            containingScroll = sr;
+                            MKPanelState state = MKPanelStateRegistry.get(def.name());
+                            float[] scrollOffset = state != null
+                                    ? state.getScrollOffset(sr.id())
+                                    : new float[]{0f, 0f};
+                            slotX -= (int) scrollOffset[0];
+                            slotY -= (int) scrollOffset[1];
+                            break;
+                        }
+                    }
+                }
+
+                // Skip slots scrolled outside the viewport
+                if (containingScroll != null) {
+                    int vpLeft = panelX + ep + containingScroll.viewportX();
+                    int vpTop = panelY + ep + containingScroll.viewportY();
+                    int vpRight = vpLeft + containingScroll.viewportWidth();
+                    int vpBottom = vpTop + containingScroll.viewportHeight();
+                    if (slotX + 17 < vpLeft || slotX > vpRight
+                            || slotY + 17 < vpTop || slotY > vpBottom) {
+                        continue;
+                    }
+                }
+
+                // Find the live slot and its state (using scrolled position)
                 net.minecraft.world.inventory.Slot liveMKSlot = findLiveMKSlot(menu, slotX, slotY);
                 if (liveMKSlot == null) continue;
 
@@ -1727,8 +3003,17 @@ public class MenuKit implements ModInitializer {
                 // Fast gate: skip slots with no decorations (most slots)
                 if (dState == null || !dState.hasDecoration()) continue;
 
+                // Enable scissor if inside a scroll container
+                if (containingScroll != null) {
+                    int vpLeft = panelX + ep + containingScroll.viewportX();
+                    int vpTop = panelY + ep + containingScroll.viewportY();
+                    graphics.enableScissor(vpLeft, vpTop,
+                            vpLeft + containingScroll.viewportWidth(),
+                            vpTop + containingScroll.viewportHeight());
+                }
+
                 // ── Overlay Icon (renders ON TOP of the item) ──────────────
-                // Draws a 16×16 sprite at the slot position, above the item.
+                // Draws a 16x16 sprite at the slot position, above the item.
                 // Common use: lock icon, warning indicator, status badge.
                 Identifier overlay = dState.getOverlayIcon();
                 if (overlay != null) {
@@ -1738,8 +3023,8 @@ public class MenuKit implements ModInitializer {
                 }
 
                 // ── Border (renders ON TOP of the item) ────────────────────
-                // Four 1px fills forming a rectangle around the 16×16 slot area.
-                // The border sits at the slot boundary, inside the 18×18 background.
+                // Four 1px fills forming a rectangle around the 16x16 slot area.
+                // The border sits at the slot boundary, inside the 18x18 background.
                 int bc = dState.getBorderColor();
                 if (bc != 0) {
                     // Top edge
@@ -1751,6 +3036,55 @@ public class MenuKit implements ModInitializer {
                     // Right edge
                     graphics.fill(slotX + 15, slotY + 1, slotX + 16, slotY + 15, bc);
                 }
+
+                if (containingScroll != null) {
+                    graphics.disableScissor();
+                }
+            }
+        }
+    }
+
+    /**
+     * Renders lock and sort-lock overlays for ALL slots in the menu.
+     *
+     * <p>This is a universal rendering pass that covers both MK-panel slots
+     * AND vanilla container slots (chests, furnaces, etc.). It iterates every
+     * slot in the menu and draws:
+     * <ul>
+     *   <li>Dark grey tint for fully locked slots ({@code isLocked()})</li>
+     *   <li>Amber tint for sort-locked slots ({@code isSortLocked()})</li>
+     * </ul>
+     *
+     * <p>Called at RETURN of {@code renderSlots} — after vanilla has drawn
+     * all slot backgrounds and items — so the overlays appear on top.
+     *
+     * @param graphics the current GuiGraphics context
+     * @param menu     the container menu with all slots
+     */
+    public static void renderLockOverlays(GuiGraphics graphics,
+                                            AbstractContainerMenu menu) {
+        for (var slot : menu.slots) {
+            // Only check slots that have state registered
+            MKSlotState state = MKSlotStateRegistry.get(slot);
+            if (state == null) continue;
+
+            // Skip inactive slots (disabled or hidden panel)
+            if (!state.isSlotActive()) continue;
+
+            int slotX = slot.x;
+            int slotY = slot.y;
+
+            // Full lock: dark semi-transparent overlay (same as panel rendering)
+            if (state.isLocked()) {
+                graphics.fill(slotX, slotY, slotX + 16, slotY + 16,
+                        0x40000000);
+            }
+
+            // Sort lock: amber semi-transparent overlay to distinguish from
+            // full lock. 0x30FFAA00 = ~19% opacity amber — visible but subtle.
+            if (state.isSortLocked()) {
+                graphics.fill(slotX, slotY, slotX + 16, slotY + 16,
+                        0x30FFAA00);
             }
         }
     }
@@ -2114,6 +3448,7 @@ public class MenuKit implements ModInitializer {
         // Always recompute — disabledWhen predicates can change panel sizes
         // and visibility frame-to-frame, so cached positions may be stale
         resolvedPositions.clear();
+        suppressedPanels.clear();
         lastResolvedWidth = containerWidth;
         lastResolvedHeight = containerHeight;
         lastResolvedContext = context;
@@ -2151,6 +3486,12 @@ public class MenuKit implements ModInitializer {
         int belowLeftCursorX = 0;
         int belowRightCursorX = 0;
 
+        // ── Per-placement stacking cursors for region-relative panels ────
+        // Key: "regionOrGroupName:PLACEMENT" — tracks cumulative offset
+        // along the edge so multiple panels at the same placement stack
+        // rather than overlap.
+        Map<String, Integer> placementCursors = new HashMap<>();
+
         for (MKPanelDef def : panels.values()) {
             if (!def.needsMenuClass(context.menuClass())) continue;
             if (def.isStandaloneScreen()) continue;
@@ -2169,8 +3510,9 @@ public class MenuKit implements ModInitializer {
                     default -> false;
                 };
                 if (suppressed) {
-                    // Position off-screen so it doesn't render or accept interactions
-                    resolvedPositions.put(def.name(), new int[]{ -9999, -9999 });
+                    // Mark as suppressed — no position needed, rendering/interaction
+                    // checks use isPanelSuppressed() to skip this panel
+                    suppressedPanels.add(def.name());
                     continue;
                 }
             }
@@ -2220,28 +3562,62 @@ public class MenuKit implements ModInitializer {
                 }
             } else if (def.isRegionFollowing()) {
                 // ── Region-following positioning ────────────────────────────
-                // Compute the panel's position from the target region's bounding box.
-                // If the region doesn't exist in the current menu, hide the panel.
+                // Compute the panel's position from the target region's or group's
+                // bounding box. If the target doesn't exist, hide the panel.
                 net.minecraft.world.inventory.AbstractContainerMenu activeMenu = null;
                 var mcRF = net.minecraft.client.Minecraft.getInstance();
                 if (mcRF != null && mcRF.player != null) {
                     activeMenu = mcRF.player.containerMenu;
                 }
                 if (activeMenu == null) {
-                    resolvedPositions.put(def.name(), new int[]{ -9999, -9999 });
+                    suppressedPanels.add(def.name());
                     continue;
                 }
                 MKRegionFollowDef rfd = def.followsRegion();
-                MKRegion followedRegion = MKRegionRegistry.getRegion(activeMenu, rfd.regionName());
-                if (followedRegion == null || followedRegion.getMenuSlotStart() < 0) {
-                    // Region not in this menu — hide panel
-                    resolvedPositions.put(def.name(), new int[]{ -9999, -9999 });
-                    continue;
+
+                // Resolve the bounding box — either from a single region or a group
+                int[] bbox;
+                if (rfd.isGroup()) {
+                    MKRegionGroup group = MKRegionRegistry.getGroup(activeMenu, rfd.regionName());
+                    if (group == null || group.regions().isEmpty()) {
+                        // Group not in this menu — suppress panel
+                        suppressedPanels.add(def.name());
+                        continue;
+                    }
+                    bbox = computeGroupBBox(activeMenu, group);
+                } else {
+                    MKRegion followedRegion = MKRegionRegistry.getRegion(activeMenu, rfd.regionName());
+                    if (followedRegion == null || followedRegion.getMenuSlotStart() < 0) {
+                        // Region not in this menu — suppress panel
+                        suppressedPanels.add(def.name());
+                        continue;
+                    }
+                    bbox = computeRegionBBox(activeMenu, followedRegion);
                 }
-                int[] bbox = computeRegionBBox(activeMenu, followedRegion);
+
                 size = def.computeSize(); // reassign outer `size` — no redeclaration needed
-                px = computeRegionFollowX(bbox, rfd.direction(), rfd.gap(), size[0]);
-                py = computeRegionFollowY(bbox, rfd.direction(), rfd.gap(), size[1]);
+
+                if (rfd.placement() != null) {
+                    // ── New 8-placement positioning ──────────────────────────
+                    int[] pos = computePlacementPosition(bbox, rfd.placement(), rfd.gap(), size[0], size[1]);
+                    px = pos[0] + rfd.offsetX();
+                    py = pos[1] + rfd.offsetY();
+
+                    // Apply per-placement stacking: panels sharing the same
+                    // target + placement stack along the edge, away from anchor
+                    String cursorKey = rfd.regionName() + ":" + rfd.placement().name();
+                    int cursor = placementCursors.getOrDefault(cursorKey, 0);
+                    switch (rfd.placement()) {
+                        case TOP_LEFT, BOTTOM_LEFT   -> { px += cursor; placementCursors.put(cursorKey, cursor + size[0] + m); }
+                        case TOP_RIGHT, BOTTOM_RIGHT -> { px -= cursor; placementCursors.put(cursorKey, cursor + size[0] + m); }
+                        case LEFT_TOP, RIGHT_TOP     -> { py += cursor; placementCursors.put(cursorKey, cursor + size[1] + m); }
+                        case LEFT_BOTTOM, RIGHT_BOTTOM -> { py -= cursor; placementCursors.put(cursorKey, cursor + size[1] + m); }
+                    }
+                } else {
+                    // ── Legacy center-on-side positioning ────────────────────
+                    px = computeRegionFollowX(bbox, rfd.direction(), rfd.gap(), size[0]);
+                    py = computeRegionFollowY(bbox, rfd.direction(), rfd.gap(), size[1]);
+                }
             } else {
                 // ── Manual positioning ──────────────────────────────────────
                 int[] pos = def.resolvePosition(context);
@@ -2318,6 +3694,7 @@ public class MenuKit implements ModInitializer {
     /** Invalidates the resolved positions cache (call when screen changes). */
     public static void invalidateResolvedPositions() {
         resolvedPositions.clear();
+        suppressedPanels.clear();
         livePanelSizes.clear();
         lastResolvedWidth = -1;
     }
@@ -2337,6 +3714,10 @@ public class MenuKit implements ModInitializer {
         int end   = region.getMenuSlotEnd();
         for (int i = start; i <= end && i < menu.slots.size(); i++) {
             net.minecraft.world.inventory.Slot slot = menu.slots.get(i);
+            // Skip inactive slots — check MKSlotState if available, otherwise
+            // include the slot (vanilla slots always have valid positions)
+            MKSlotState bboxState = MKSlotStateRegistry.get(slot);
+            if (bboxState != null && !bboxState.isSlotActive()) continue;
             minX = Math.min(minX, slot.x);
             minY = Math.min(minY, slot.y);
             maxX = Math.max(maxX, slot.x + 16);
@@ -2371,6 +3752,64 @@ public class MenuKit implements ModInitializer {
             case ABOVE        -> bbox[1] - gap - panelHeight;
             case BELOW        -> bbox[3] + gap;
             case LEFT, RIGHT  -> (bbox[1] + bbox[3]) / 2 - panelHeight / 2;
+        };
+    }
+
+    /**
+     * Computes the union bounding box of all regions in a group.
+     * Returns {minX, minY, maxX, maxY} in container-relative coordinates,
+     * same format as {@link #computeRegionBBox}.
+     */
+    private static int[] computeGroupBBox(net.minecraft.world.inventory.AbstractContainerMenu menu,
+                                            MKRegionGroup group) {
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE;
+        for (MKRegion region : group.regions()) {
+            int[] regionBBox = computeRegionBBox(menu, region);
+            // Skip degenerate regions (no slots resolved)
+            if (regionBBox[0] == 0 && regionBBox[1] == 0 && regionBBox[2] == 0 && regionBBox[3] == 0) continue;
+            minX = Math.min(minX, regionBBox[0]);
+            minY = Math.min(minY, regionBBox[1]);
+            maxX = Math.max(maxX, regionBBox[2]);
+            maxY = Math.max(maxY, regionBBox[3]);
+        }
+        if (minX == Integer.MAX_VALUE) return new int[]{ 0, 0, 0, 0 };
+        return new int[]{ minX, minY, maxX, maxY };
+    }
+
+    /**
+     * Computes the base {x, y} position for a panel using the 8-placement system.
+     * The panel sits on the specified side of the bbox, aligned to the specified
+     * corner of that edge.
+     *
+     * <p>This returns the anchor position BEFORE stacking. The caller applies
+     * per-placement cursor offsets for stacking.
+     *
+     * @param bbox        {minX, minY, maxX, maxY} of the target region/group
+     * @param placement   which edge + alignment
+     * @param gap         pixel gap from the bbox edge to the panel edge
+     * @param panelWidth  panel width in pixels
+     * @param panelHeight panel height in pixels
+     * @return {x, y} container-relative position for the panel's top-left corner
+     */
+    private static int[] computePlacementPosition(int[] bbox, MKRegionPlacement placement,
+                                                    int gap, int panelWidth, int panelHeight) {
+        return switch (placement) {
+            // TOP edge: panel bottom touches bbox top - gap
+            case TOP_LEFT     -> new int[]{ bbox[0],                           bbox[1] - gap - panelHeight };
+            case TOP_RIGHT    -> new int[]{ bbox[2] - panelWidth,              bbox[1] - gap - panelHeight };
+
+            // BOTTOM edge: panel top touches bbox bottom + gap
+            case BOTTOM_LEFT  -> new int[]{ bbox[0],                           bbox[3] + gap };
+            case BOTTOM_RIGHT -> new int[]{ bbox[2] - panelWidth,              bbox[3] + gap };
+
+            // RIGHT edge: panel left touches bbox right + gap
+            case RIGHT_TOP    -> new int[]{ bbox[2] + gap,                     bbox[1] };
+            case RIGHT_BOTTOM -> new int[]{ bbox[2] + gap,                     bbox[3] - panelHeight };
+
+            // LEFT edge: panel right touches bbox left - gap
+            case LEFT_TOP     -> new int[]{ bbox[0] - gap - panelWidth,        bbox[1] };
+            case LEFT_BOTTOM  -> new int[]{ bbox[0] - gap - panelWidth,        bbox[3] - panelHeight };
         };
     }
 
@@ -2414,11 +3853,8 @@ public class MenuKit implements ModInitializer {
                 continue;
             }
 
-            int[] pos = getResolvedPosition(def, context);
-
-            // Region-following panels that have no matching region get -9999.
-            // Hide all buttons when this sentinel is set.
-            if (pos[0] == -9999) {
+            // Suppressed panels (exclusive-panel or missing region) — hide buttons
+            if (isPanelSuppressed(def.name())) {
                 for (var child : screen.children()) {
                     if (child instanceof MKButton mkBtn && mkBtn.panelName != null
                             && mkBtn.panelName.equals(def.name())) {
@@ -2428,28 +3864,34 @@ public class MenuKit implements ModInitializer {
                 continue;
             }
 
-            int[][] flowPos = def.computeFlowPositions();
-            for (int i = 0; i < def.buttonDefs().size(); i++) {
-                MKButtonDef btnDef = def.buttonDefs().get(i);
-                int fi = def.slotDefs().size() + i; // flow position index (buttons after slots)
+            int[] pos = getResolvedPosition(def, context);
 
-                // Check button-level disabledWhen predicate (also captured by flow sentinel)
-                boolean btnDisabled = flowPos[fi][0] == -9999;
+            // Use tree-derived button defs and slot count for correct indexing
+            // when conditionally-injected buttons are present in the tree
+            List<MKButtonDef> treeButtonDefs = def.getTreeButtonDefs();
+            int treeSlotCount = def.getTreeSlotCount();
+
+            MKLayoutResult updateLayout = def.computeFlowPositions();
+            for (int i = 0; i < treeButtonDefs.size(); i++) {
+                MKButtonDef btnDef = treeButtonDefs.get(i);
+                int fi = treeSlotCount + i; // flow position index (buttons after slots)
+
+                // Check button-level disabledWhen predicate
+                boolean btnDisabled = !updateLayout.isActive(fi);
 
                 // No +1 for buttons (unlike slots — buttons don't have bg overhang)
-                int newX = leftPos + pos[0] + def.effectivePadding() + flowPos[fi][0];
-                int newY = topPos + pos[1] + def.effectivePadding() + flowPos[fi][1];
+                int newX = leftPos + pos[0] + def.effectivePadding() + updateLayout.x(fi);
+                int newY = topPos + pos[1] + def.effectivePadding() + updateLayout.y(fi);
 
-                // Find the matching button among screen's renderables
+                // Find the matching button among screen's renderables by index
                 for (var child : screen.children()) {
                     if (child instanceof MKButton mkBtn && mkBtn.panelName != null
-                            && mkBtn.panelName.equals(def.name())) {
-                        if (mkBtn.getMessage().getString().equals(
-                                btnDef.label() != null ? btnDef.label().getString() : "")) {
-                            mkBtn.visible = !btnDisabled;
-                            mkBtn.setX(newX);
-                            mkBtn.setY(newY);
-                        }
+                            && mkBtn.panelName.equals(def.name())
+                            && mkBtn.buttonIndex == i) {
+                        mkBtn.visible = !btnDisabled;
+                        mkBtn.setX(newX);
+                        mkBtn.setY(newY);
+                        break; // exact match — no need to keep searching
                     }
                 }
             }
@@ -2458,24 +3900,23 @@ public class MenuKit implements ModInitializer {
             // This runs every frame, keeping livePanelSizes accurate when disabledWhen changes
             if (def.autoSize()) {
                 int maxRight = 0, maxBottom = 0;
-                int[][] sizeFlowPos = def.computeFlowPositions();
 
-                // Slot content offset (+1) is already baked into flowPos
-                for (int si = 0; si < def.slotDefs().size(); si++) {
-                    if (sizeFlowPos[si][0] == -9999) continue;
-                    maxRight = Math.max(maxRight, sizeFlowPos[si][0] + 18);
-                    maxBottom = Math.max(maxBottom, sizeFlowPos[si][1] + 18);
+                // Slot content offset (+1) is already baked into layout positions
+                for (int si = 0; si < treeSlotCount; si++) {
+                    if (!updateLayout.isActive(si)) continue;
+                    maxRight = Math.max(maxRight, updateLayout.x(si) + 18);
+                    maxBottom = Math.max(maxBottom, updateLayout.y(si) + 18);
                 }
                 // Use actual button widget dimensions
                 int btnIdx = 0;
                 for (var child : screen.children()) {
                     if (child instanceof MKButton mkBtn && mkBtn.panelName != null
                             && mkBtn.panelName.equals(def.name()) && mkBtn.visible) {
-                        if (btnIdx < def.buttonDefs().size()) {
-                            int fi = def.slotDefs().size() + btnIdx;
-                            if (sizeFlowPos[fi][0] != -9999) {
-                                maxRight = Math.max(maxRight, sizeFlowPos[fi][0] + mkBtn.getWidth());
-                                maxBottom = Math.max(maxBottom, sizeFlowPos[fi][1] + mkBtn.getHeight());
+                        if (btnIdx < treeButtonDefs.size()) {
+                            int fi = treeSlotCount + btnIdx;
+                            if (updateLayout.isActive(fi)) {
+                                maxRight = Math.max(maxRight, updateLayout.x(fi) + mkBtn.getWidth());
+                                maxBottom = Math.max(maxBottom, updateLayout.y(fi) + mkBtn.getHeight());
                             }
                         }
                         btnIdx++;
@@ -2483,12 +3924,13 @@ public class MenuKit implements ModInitializer {
                 }
 
                 // Include text elements in size computation
+                int treeButtonCount = treeButtonDefs.size();
                 for (int ti = 0; ti < def.textDefs().size(); ti++) {
-                    int fi = def.slotDefs().size() + def.buttonDefs().size() + ti;
-                    if (fi >= sizeFlowPos.length || sizeFlowPos[fi][0] == -9999) continue;
+                    int fi = treeSlotCount + treeButtonCount + ti;
+                    if (!updateLayout.isActive(fi)) continue;
                     MKTextDef textDef = def.textDefs().get(ti);
-                    maxRight = Math.max(maxRight, sizeFlowPos[fi][0] + textDef.estimateWidth());
-                    maxBottom = Math.max(maxBottom, sizeFlowPos[fi][1] + MKTextDef.TEXT_HEIGHT);
+                    maxRight = Math.max(maxRight, updateLayout.x(fi) + textDef.estimateWidth());
+                    maxBottom = Math.max(maxBottom, updateLayout.y(fi) + MKTextDef.TEXT_HEIGHT);
                 }
 
                 livePanelSizes.put(def.name(), new int[]{
@@ -2603,6 +4045,166 @@ public class MenuKit implements ModInitializer {
      */
     public static MKEventBuilder on(MKEvent.Type... types) {
         return new MKEventBuilder(types);
+    }
+
+    // ── Scroll Container Input Handling ──────────────────────────────────────
+    //
+    // Handles mouse wheel events for scroll containers. When the cursor is
+    // over a scroll viewport, the scroll offset is updated by the scroll speed.
+    // Called from MKScreenMixin before the slot-level SCROLL event fires.
+
+    /**
+     * Attempts to handle a mouse scroll event for scroll container viewports.
+     * If the mouse is over a scroll viewport, updates the scroll offset and
+     * returns true (consumed). Otherwise returns false (let other handlers run).
+     *
+     * @param mouseX   screen-space mouse X
+     * @param mouseY   screen-space mouse Y
+     * @param scrollY  vertical scroll amount (positive = up, negative = down)
+     * @param leftPos  screen's leftPos offset
+     * @param topPos   screen's topPos offset
+     * @param context  the active MKContext
+     * @return true if scroll was consumed by a scroll container
+     */
+    public static boolean handleScrollContainerInput(double mouseX, double mouseY,
+                                                      double scrollY,
+                                                      int leftPos, int topPos,
+                                                      MKContext context) {
+        if (scrollRegionsByPanel.isEmpty()) return false;
+
+        for (MKPanelDef def : panels.values()) {
+            if (!def.needsMenuClass(context.menuClass())) continue;
+            if (def.isStandaloneScreen()) continue;
+            if (!def.appliesTo(context)) continue;
+            if (isPanelInactive(def.name())) continue;
+
+            List<MKGroupDef.ScrollRegion> regions = scrollRegionsByPanel.get(def.name());
+            if (regions == null || regions.isEmpty()) continue;
+
+            int[] pos = getResolvedPosition(def, context);
+            int ep = def.effectivePadding();
+
+            for (MKGroupDef.ScrollRegion sr : regions) {
+                // Viewport bounds in screen space
+                int vpLeft = leftPos + pos[0] + ep + sr.viewportX();
+                int vpTop = topPos + pos[1] + ep + sr.viewportY();
+                int vpRight = vpLeft + sr.viewportWidth();
+                int vpBottom = vpTop + sr.viewportHeight();
+
+                // Check if mouse is within this viewport
+                if (mouseX >= vpLeft && mouseX < vpRight
+                        && mouseY >= vpTop && mouseY < vpBottom) {
+
+                    // Get or create panel state for scroll offset
+                    MKPanelState state = MKPanelStateRegistry.getOrCreate(def.name());
+                    float[] offset = state.getScrollOffset(sr.id());
+                    int speed = sr.scrollDef().scrollSpeed();
+
+                    // Apply scroll: scrollY positive = scroll up = content moves down = offset decreases
+                    // scrollY negative = scroll down = content moves up = offset increases
+                    float newScrollY = offset[1] - (float)(scrollY * speed);
+                    float newScrollX = offset[0]; // horizontal scroll not driven by wheel
+
+                    // Clamp to valid range: offset is 0..maxScroll
+                    float maxScrollY = Math.max(0, sr.contentHeight() - sr.viewportHeight());
+                    float maxScrollX = Math.max(0, sr.contentWidth() - sr.viewportWidth());
+                    newScrollY = Math.max(0, Math.min(newScrollY, maxScrollY));
+                    newScrollX = Math.max(0, Math.min(newScrollX, maxScrollX));
+
+                    state.setScrollOffset(sr.id(), newScrollX, newScrollY);
+                    return true; // Consumed
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // ── Tab Click Handling ────────────────────────────────────────────────────
+    //
+    // Handles mouse clicks on tab bar buttons. When a click lands on a tab
+    // button, switches the active tab and fires TAB_CHANGED through the bus.
+
+    /**
+     * Attempts to handle a mouse click on a tab bar button.
+     * If the click is on a tab button, switches the active tab, fires
+     * TAB_CHANGED event, and returns true. Otherwise returns false.
+     *
+     * @param mouseX   screen-space mouse X
+     * @param mouseY   screen-space mouse Y
+     * @param button   mouse button (0 = left, 1 = right, 2 = middle)
+     * @param leftPos  screen's leftPos offset
+     * @param topPos   screen's topPos offset
+     * @param context  the active MKContext
+     * @return true if the click was consumed by a tab button
+     */
+    public static boolean handleTabClick(double mouseX, double mouseY,
+                                          int button, int leftPos, int topPos,
+                                          MKContext context) {
+        // Only respond to left clicks
+        if (button != 0) return false;
+        if (tabsRegionsByPanel.isEmpty()) return false;
+
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.player == null) return false;
+
+        for (MKPanelDef def : panels.values()) {
+            if (!def.needsMenuClass(context.menuClass())) continue;
+            if (def.isStandaloneScreen()) continue;
+            if (!def.appliesTo(context)) continue;
+            if (isPanelInactive(def.name())) continue;
+
+            List<MKGroupDef.TabsRegion> regions = tabsRegionsByPanel.get(def.name());
+            if (regions == null || regions.isEmpty()) continue;
+
+            int[] pos = getResolvedPosition(def, context);
+            int ep = def.effectivePadding();
+
+            for (MKGroupDef.TabsRegion tr : regions) {
+                MKTabsDef tabsDef = tr.tabsDef();
+                List<MKTabDef> tabs = tabsDef.tabs();
+                if (tabs.size() <= 1) continue; // No tab bar for single-tab containers
+
+                int tabsX = leftPos + pos[0] + ep + tr.x();
+                int tabsY = topPos + pos[1] + ep + tr.y();
+
+                // Use shared tab button bounds computation (single source of truth
+                // shared with renderTabBar so click positions match rendered positions).
+                List<TabButtonBounds> allBounds = computeTabButtonBounds(tr, tabsX, tabsY);
+
+                for (TabButtonBounds tbb : allBounds) {
+                    int i = tbb.index();
+
+                    // Check if the click is within this tab button
+                    if (mouseX >= tbb.x() && mouseX < tbb.x() + tbb.w()
+                            && mouseY >= tbb.y() && mouseY < tbb.y() + tbb.h()) {
+
+                        // Get current active tab
+                        MKPanelState state = MKPanelStateRegistry.getOrCreate(def.name());
+                        int previousTab = state.getActiveTab(tr.id());
+
+                        // Only switch if clicking a different tab
+                        if (i != previousTab) {
+                            state.setActiveTab(tr.id(), i);
+
+                            // Fire TAB_CHANGED event through the bus
+                            MKUIEvent event = MKUIEvent.tabChanged(
+                                    def.name(), tr.id(),
+                                    previousTab, i,
+                                    context, mc.player);
+                            MKEventBus.fire(event);
+
+                            LOGGER.debug("[MenuKit] Tab switched: {} tab '{}' {} -> {}",
+                                    def.name(), tr.id(), previousTab, i);
+                        }
+
+                        return true; // Click consumed by tab button
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     // ══════════════════════════════════════════════════════════════════════
