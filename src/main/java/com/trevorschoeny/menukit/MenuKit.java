@@ -593,6 +593,14 @@ public class MenuKit implements ModInitializer {
         buttonAttachments.add(attachment);
         LOGGER.info("[MenuKit] Registered button attachment '{}' for type {}",
                 attachment.id(), attachment.containerType());
+
+        // Hot-patch: apply this attachment to any panels that were already built.
+        // This handles the case where a mod registers an attachment after another
+        // mod's panel has already been built (common with cross-mod dependencies).
+        for (MKPanelDef def : panels.values()) {
+            if (def.rootGroup() == null) continue;
+            applyAttachmentsToGroup(def.rootGroup(), def.name(), java.util.List.of(attachment));
+        }
     }
 
     /**
@@ -616,52 +624,75 @@ public class MenuKit implements ModInitializer {
      * Recursively walks a group looking for SlotGroups that match
      * button attachments. When found, creates the button row and
      * inserts it into the parent group.
+     *
+     * <p>Merging: if multiple attachments target the same SlotGroup at the
+     * same position (above/below), their buttons are merged into a single
+     * row so they stack horizontally, not vertically.
      */
     private static void applyAttachmentsToGroup(MKGroupDef group, String panelName) {
+        applyAttachmentsToGroup(group, panelName, buttonAttachments);
+    }
+
+    /**
+     * Applies a specific list of attachments to the group tree.
+     * Used both for initial build (all attachments) and hot-patching (single new attachment).
+     */
+    private static void applyAttachmentsToGroup(MKGroupDef group, String panelName,
+                                                 java.util.List<MKButtonAttachment> attachments) {
         // Snapshot children to avoid ConcurrentModificationException
         List<MKGroupChild> snapshot = new ArrayList<>(group.children());
 
         for (MKGroupChild child : snapshot) {
             if (child instanceof MKGroupChild.SlotGroup sg) {
-                // Check each attachment against this SlotGroup
-                for (MKButtonAttachment att : buttonAttachments) {
-                    if (sg.containerType() != att.containerType()) continue;
-                    if (att.isExcluded(sg.id())) continue;
+                String regionName = sg.id();
 
-                    String regionName = sg.id();
+                for (MKButtonAttachment att : attachments) {
+                    if (sg.containerType() != att.containerType()) continue;
+                    if (att.isExcluded(regionName)) continue;
+
                     MKGroupDef buttonRow = att.createButtonRow(regionName);
                     if (buttonRow == null) continue;
 
-                    String groupId = "att:" + att.id() + ":" + regionName;
-                    MKGroupChild rowChild = new MKGroupChild.Group(buttonRow, groupId);
+                    // Merge: check if there's already an attachment row at this position.
+                    // If so, append our buttons to it instead of creating a new row.
+                    String mergedId = "att:merged:" + regionName + ":" + (att.above() ? "above" : "below");
+                    MKGroupChild existing = group.findById(mergedId);
 
-                    if (att.above()) {
-                        group.insertBefore(regionName, rowChild);
+                    if (existing instanceof MKGroupChild.Group g) {
+                        // Append buttons to the existing merged row
+                        g.def().children().addAll(buttonRow.children());
+                        LOGGER.debug("[MenuKit] Merged '{}' buttons into existing row for '{}' in '{}'",
+                                att.id(), regionName, panelName);
                     } else {
-                        group.insertAfter(regionName, rowChild);
+                        // Create new merged row
+                        MKGroupChild rowChild = new MKGroupChild.Group(buttonRow, mergedId);
+                        if (att.above()) {
+                            group.insertBefore(regionName, rowChild);
+                        } else {
+                            group.insertAfter(regionName, rowChild);
+                        }
+                        LOGGER.debug("[MenuKit] Attached '{}' buttons to SlotGroup '{}' in panel '{}'",
+                                att.id(), regionName, panelName);
                     }
-
-                    LOGGER.debug("[MenuKit] Attached '{}' buttons to SlotGroup '{}' in panel '{}'",
-                            att.id(), regionName, panelName);
                 }
             }
 
             // Recurse into nested groups
             switch (child) {
-                case MKGroupChild.Group g -> applyAttachmentsToGroup(g.def(), panelName);
-                case MKGroupChild.SlotGroup sg -> applyAttachmentsToGroup(sg.group(), panelName);
-                case MKGroupChild.Dynamic d -> applyAttachmentsToGroup(d.def().expandedGroup(), panelName);
-                case MKGroupChild.Scroll sc -> applyAttachmentsToGroup(sc.def().contentGroup(), panelName);
+                case MKGroupChild.Group g -> applyAttachmentsToGroup(g.def(), panelName, attachments);
+                case MKGroupChild.SlotGroup sg -> applyAttachmentsToGroup(sg.group(), panelName, attachments);
+                case MKGroupChild.Dynamic d -> applyAttachmentsToGroup(d.def().expandedGroup(), panelName, attachments);
+                case MKGroupChild.Scroll sc -> applyAttachmentsToGroup(sc.def().contentGroup(), panelName, attachments);
                 case MKGroupChild.Tabs tb -> {
                     for (MKTabDef tab : tb.def().tabs()) {
-                        applyAttachmentsToGroup(tab.contentGroup(), panelName);
+                        applyAttachmentsToGroup(tab.contentGroup(), panelName, attachments);
                     }
                 }
                 case MKGroupChild.Spanning s -> {
                     if (s.inner() instanceof MKGroupChild.Group g)
-                        applyAttachmentsToGroup(g.def(), panelName);
+                        applyAttachmentsToGroup(g.def(), panelName, attachments);
                     else if (s.inner() instanceof MKGroupChild.SlotGroup sg)
-                        applyAttachmentsToGroup(sg.group(), panelName);
+                        applyAttachmentsToGroup(sg.group(), panelName, attachments);
                 }
                 default -> {} // Slot, Button, Text — no children
             }
