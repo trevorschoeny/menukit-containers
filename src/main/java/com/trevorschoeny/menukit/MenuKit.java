@@ -1029,6 +1029,10 @@ public class MenuKit implements ModInitializer {
             // regions from MKContextLayout (vanilla containers). This ensures
             // dynamically-shown panels get proper regions for item tips, etc.
             registerDynamicRegionsForPanel(name, mc.player);
+
+            // Invalidate position caches so overlay panels recompute positions
+            // using the newly-visible panel's region.
+            invalidateResolvedPositions();
         }
     }
 
@@ -2022,8 +2026,14 @@ public class MenuKit implements ModInitializer {
     }
 
     /**
-     * Called when a creative tab changes. Repositions slots and invalidates
-     * caches so collision avoidance recomputes.
+     * Called when a creative tab changes. Repositions slots, resolves regions
+     * on the ItemPickerMenu, and invalidates caches.
+     *
+     * <p>Regions must be resolved on the screen's menu (ItemPickerMenu) so that
+     * overlay panels (sort/move buttons) can compute correct bounding boxes
+     * from the creative-positioned SlotWrapper slots. The inventoryMenu's
+     * vanilla slots can't be repositioned (repositionSlots only moves MKSlots),
+     * so we resolve regions on the menu that HAS correct positions.
      */
     public static void onCreativeTabChanged(
             net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen screen,
@@ -2033,11 +2043,109 @@ public class MenuKit implements ModInitializer {
 
         repositionSlots(screen.getMenu(), context);
 
+        // Resolve regions on the ItemPickerMenu so overlay panels can find
+        // regions with correct creative-layout slot positions. The vanilla
+        // SlotWrapper slots in ItemPickerMenu have creative positions set by
+        // selectTab, so computeRegionBBox reads the right coordinates.
+        resolveCreativeMenuRegions(screen.getMenu(), context, player);
+
         // Invalidate position caches so collision avoidance recomputes
         invalidateResolvedPositions();
 
         // Force sync
         player.inventoryMenu.broadcastChanges();
+    }
+
+    /**
+     * Resolves regions on the creative screen's ItemPickerMenu by scanning
+     * for SlotWrapper objects that wrap inventoryMenu slots, grouping them
+     * by panel name, and creating MKRegion objects with the correct
+     * ItemPickerMenu slot indices.
+     *
+     * <p>Cannot use {@link MKRegionRegistry#resolveForMenu} because that reads
+     * hardcoded slot indices from {@link MKContextLayout} (inventoryMenu indices).
+     * Cannot use {@link MKRegionRegistry#registerDynamicRegion} because vanilla
+     * inventory slots share the same Container (Inventory), so container-matching
+     * can't distinguish main inventory from hotbar. We must scan and create
+     * regions manually.
+     */
+    private static void resolveCreativeMenuRegions(
+            net.minecraft.world.inventory.AbstractContainerMenu creativeMenu,
+            MKContext context,
+            net.minecraft.world.entity.player.Player player) {
+
+        // Track the first and last ItemPickerMenu index for each panel name,
+        // plus the container and container-start-index.
+        java.util.Map<String, int[]> panelRanges = new java.util.LinkedHashMap<>();
+
+        for (int i = 0; i < creativeMenu.slots.size(); i++) {
+            var slot = creativeMenu.slots.get(i);
+
+            // Unwrap SlotWrapper to find the original inventoryMenu slot
+            net.minecraft.world.inventory.Slot targetSlot = slot;
+            if (slot instanceof com.trevorschoeny.menukit.mixin.SlotWrapperAccessor wrapper) {
+                targetSlot = wrapper.menuKit$getTarget();
+            }
+
+            // Look up panel name from the inventoryMenu slot mapping
+            String panelName = getSlotPanelName(player.inventoryMenu, targetSlot.index);
+            if (panelName == null) continue;
+
+            // Track range: [firstMenuSlot, lastMenuSlot, containerStartIndex]
+            int[] range = panelRanges.get(panelName);
+            if (range == null) {
+                panelRanges.put(panelName, new int[]{ i, i, slot.getContainerSlot() });
+            } else {
+                range[1] = i; // extend end
+            }
+
+            // Map panel name on the creative menu too
+            registerSlotPanelMapping(creativeMenu, i, i + 1, panelName);
+
+            // Set up state for the creative menu slot
+            MKSlotState state = MKSlotStateRegistry.getOrCreate(slot);
+            if (state.getPanelName() == null) {
+                state.setPanelName(panelName);
+            }
+        }
+
+        // Clear any previous regions on this menu (from a prior tab switch)
+        MKRegionRegistry.clearRegions(creativeMenu);
+
+        // Create MKRegion objects directly with the correct ItemPickerMenu indices.
+        for (var entry : panelRanges.entrySet()) {
+            String panelName = entry.getKey();
+            int[] range = entry.getValue();
+            int slotCount = range[1] - range[0] + 1;
+            int containerStart = range[2];
+
+            // Get container type from the inventoryMenu's existing region
+            MKRegion existingRegion = MKRegionRegistry.getRegion(player.inventoryMenu, panelName);
+            MKContainerType containerType = existingRegion != null
+                    ? existingRegion.containerType() : MKContainerType.SIMPLE;
+
+            // Get the backing container from the first slot in the range
+            net.minecraft.world.Container container = creativeMenu.slots.get(range[0]).container;
+
+            // Create the region with correct ItemPickerMenu slot indices
+            MKRegion region = new MKRegion(panelName, container, containerStart, slotCount,
+                    MKContainerDef.Persistence.PERSISTENT, true, true, containerType);
+            region.setMenuSlotRange(range[0], range[1]);
+
+            MKRegionRegistry.addRegion(creativeMenu, region);
+        }
+
+        // Create overlay panels for any new regions (sort/move buttons)
+        onMenuResolved(creativeMenu);
+    }
+
+    /**
+     * Called when the creative screen closes. Cleans up regions resolved on
+     * the ItemPickerMenu so they don't persist into future menu cycles.
+     */
+    public static void onCreativeScreenClosed() {
+        // Position cache invalidation — survival inventory will recompute
+        invalidateResolvedPositions();
     }
 
     /**
@@ -3598,7 +3706,21 @@ public class MenuKit implements ModInitializer {
                 net.minecraft.world.inventory.AbstractContainerMenu activeMenu = null;
                 var mcRF = net.minecraft.client.Minecraft.getInstance();
                 if (mcRF != null && mcRF.player != null) {
-                    activeMenu = mcRF.player.containerMenu;
+                    // Prefer the screen's menu when a container screen is open.
+                    // In creative mode, the screen's ItemPickerMenu has regions
+                    // resolved with correct creative-layout slot positions (set
+                    // by onCreativeTabChanged). The player's containerMenu
+                    // (inventoryMenu) has stale survival positions for vanilla slots.
+                    if (mcRF.screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> acs) {
+                        var screenMenu = acs.getMenu();
+                        // Use screen menu if it has regions, otherwise fall back
+                        if (!MKRegionRegistry.getRegions(screenMenu).isEmpty()) {
+                            activeMenu = screenMenu;
+                        }
+                    }
+                    if (activeMenu == null) {
+                        activeMenu = mcRF.player.containerMenu;
+                    }
                 }
                 if (activeMenu == null) {
                     suppressedPanels.add(def.name());
