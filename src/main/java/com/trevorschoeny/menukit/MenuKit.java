@@ -2109,8 +2109,13 @@ public class MenuKit implements ModInitializer {
             }
         }
 
-        // Clear any previous regions on this menu (from a prior tab switch)
-        MKRegionRegistry.clearRegions(creativeMenu);
+        // Remove only the regions we're about to re-create (player inv regions
+        // like mk:main_inventory, mk:hotbar, etc.). Do NOT use clearRegions()
+        // here — that would also destroy dynamic regions (e.g., peek containers)
+        // that were registered on this menu by showPanel/registerDynamicRegion.
+        for (String regionName : panelRanges.keySet()) {
+            MKRegionRegistry.removeDynamicRegion(creativeMenu, regionName);
+        }
 
         // Create MKRegion objects directly with the correct ItemPickerMenu indices.
         for (var entry : panelRanges.entrySet()) {
