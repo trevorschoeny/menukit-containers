@@ -2344,9 +2344,15 @@ public class MenuKit implements ModInitializer {
                     int fi = treeSlotCount + treeButtonCount + ti;
                     if (!btnLayout.isActive(fi)) continue;
                     MKTextDef textDef = def.textDefs().get(ti);
-                    maxRight = Math.max(maxRight, btnLayout.x(fi) + textDef.estimateWidth());
-                    maxBottom = Math.max(maxBottom, btnLayout.y(fi) + MKTextDef.TEXT_HEIGHT);
+                    maxRight = Math.max(maxRight, btnLayout.x(fi) + textDef.layoutWidth());
+                    maxBottom = Math.max(maxBottom, btnLayout.y(fi) + textDef.layoutHeight());
                 }
+
+                // Use tree-computed content dimensions as a floor — the layout
+                // already accounts for group children (e.g. vertical text) that
+                // aren't in the flat slot/button/text lists.
+                maxRight = Math.max(maxRight, btnLayout.contentWidth());
+                maxBottom = Math.max(maxBottom, btnLayout.contentHeight());
 
                 livePanelSizes.put(def.name(), new int[]{
                         maxRight + def.effectivePadding() * 2,
@@ -2507,8 +2513,23 @@ public class MenuKit implements ModInitializer {
                     if (text != null) {
                         int textX = panelX + ep + textLayout.x(fi);
                         int textY = panelY + ep + textLayout.y(fi);
-                        graphics.drawString(mc.font, text, textX, textY,
-                                textDef.color(), textDef.shadow());
+                        if (textDef.vertical()) {
+                            // Rotate -90° for bottom-to-top reading.
+                            // Translate so the text origin lands at (textX, textY + textWidth),
+                            // then rotate -90° so the string reads upward from that point.
+                            int textWidth = mc.font.width(text);
+                            var pose = graphics.pose();
+                            pose.pushMatrix();
+                            pose.translate(textX, textY + textWidth);
+                            pose.rotate((float) Math.toRadians(-90));
+                            // After rotation, draw at (0,0) in rotated space
+                            graphics.drawString(mc.font, text, 0, 0,
+                                    textDef.color(), textDef.shadow());
+                            pose.popMatrix();
+                        } else {
+                            graphics.drawString(mc.font, text, textX, textY,
+                                    textDef.color(), textDef.shadow());
+                        }
                     }
                 }
             }
@@ -4082,9 +4103,15 @@ public class MenuKit implements ModInitializer {
                     int fi = treeSlotCount + treeButtonCount + ti;
                     if (!updateLayout.isActive(fi)) continue;
                     MKTextDef textDef = def.textDefs().get(ti);
-                    maxRight = Math.max(maxRight, updateLayout.x(fi) + textDef.estimateWidth());
-                    maxBottom = Math.max(maxBottom, updateLayout.y(fi) + MKTextDef.TEXT_HEIGHT);
+                    maxRight = Math.max(maxRight, updateLayout.x(fi) + textDef.layoutWidth());
+                    maxBottom = Math.max(maxBottom, updateLayout.y(fi) + textDef.layoutHeight());
                 }
+
+                // Use tree-computed content dimensions as a floor — the layout
+                // already accounts for group children (e.g. vertical text) that
+                // aren't in the flat slot/button/text lists.
+                maxRight = Math.max(maxRight, updateLayout.contentWidth());
+                maxBottom = Math.max(maxBottom, updateLayout.contentHeight());
 
                 livePanelSizes.put(def.name(), new int[]{
                         maxRight + def.effectivePadding() * 2,
