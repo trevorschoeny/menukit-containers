@@ -586,6 +586,24 @@ public class MenuKit implements ModInitializer {
     }
 
     /**
+     * Creates a builder for registering a custom drag mode.
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * MenuKit.dragMode("shift_click_drag")
+     *     .when(ctx -> ctx.isShiftHeld() && ctx.cursorStack().isEmpty())
+     *     .onSlotEntered(event -> quickMoveSlot(event.slot(), event.context()))
+     *     .register();
+     * }</pre>
+     *
+     * @param id unique identifier for this drag mode
+     * @return a builder to configure and register the mode
+     */
+    public static MKDragMode.Builder dragMode(String id) {
+        return new MKDragMode.Builder(id);
+    }
+
+    /**
      * Registers a button attachment. Called by the builder's register().
      * Package-private.
      */
@@ -2313,9 +2331,16 @@ public class MenuKit implements ModInitializer {
                 panelButtons.add(btn);
                 buttons.add(btn);
 
-                // Hide buttons belonging to hidden/disabled panels or disabled by flow
+                // Hide buttons belonging to hidden/disabled panels, disabled by flow,
+                // or hidden by element-level visibility override
                 if (isPanelInactive(def.name()) || !btnLayout.isActive(fi)) {
                     btn.visible = false;
+                } else if (btn.elementId != null) {
+                    MKPanelState pState = MKPanelStateRegistry.get(def.name());
+                    if (pState != null) {
+                        Boolean override = pState.getVisible(btn.elementId);
+                        if (override != null && !override) btn.visible = false;
+                    }
                 }
             }
 
@@ -2436,9 +2461,16 @@ public class MenuKit implements ModInitializer {
                 btn.eventPlayer = net.minecraft.client.Minecraft.getInstance().player;
                 newButtons.add(btn);
 
-                // Start hidden if panel is inactive or button is disabled by flow
+                // Start hidden if panel is inactive, disabled by flow,
+                // or hidden by element-level visibility override
                 if (isPanelInactive(def.name()) || !newBtnLayout.isActive(fi)) {
                     btn.visible = false;
+                } else if (btn.elementId != null) {
+                    MKPanelState pState = MKPanelStateRegistry.get(def.name());
+                    if (pState != null) {
+                        Boolean override = pState.getVisible(btn.elementId);
+                        if (override != null && !override) btn.visible = false;
+                    }
                 }
             }
 
@@ -4067,7 +4099,16 @@ public class MenuKit implements ModInitializer {
                     if (child instanceof MKButton mkBtn && mkBtn.panelName != null
                             && mkBtn.panelName.equals(def.name())
                             && mkBtn.buttonIndex == i) {
-                        mkBtn.visible = !btnDisabled;
+                        // Check element-level visibility override
+                        boolean elementHidden = false;
+                        if (mkBtn.elementId != null) {
+                            MKPanelState pState = MKPanelStateRegistry.get(def.name());
+                            if (pState != null) {
+                                Boolean override = pState.getVisible(mkBtn.elementId);
+                                if (override != null && !override) elementHidden = true;
+                            }
+                        }
+                        mkBtn.visible = !btnDisabled && !elementHidden;
                         mkBtn.setX(newX);
                         mkBtn.setY(newY);
                         break; // exact match — no need to keep searching
