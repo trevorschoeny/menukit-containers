@@ -505,24 +505,6 @@ public class MenuKit implements ModInitializer {
         return Collections.unmodifiableCollection(slotGroupDefs.values());
     }
 
-    // ── Container Registration (legacy API — still functional) ────────────
-
-    /**
-     * Creates a container builder. Containers must be registered BEFORE panels
-     * that reference them.
-     *
-     * <p><b>Note:</b> Prefer {@link #slotGroup(String)} for new code. This
-     * legacy API is still supported for backward compatibility.
-     *
-     * <p>Usage:
-     * <pre>{@code
-     * MenuKit.container("equipment").playerBound().size(2).register();
-     * }</pre>
-     */
-    public static MKContainerDef.Builder container(String name) {
-        return new MKContainerDef.Builder(name);
-    }
-
     // ── Region Group Registration ───────────────────────────────────────────
 
     /**
