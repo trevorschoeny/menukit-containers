@@ -429,11 +429,79 @@ public class MenuKit implements ModInitializer {
                 .register();
     }
 
-    // ── Container Registration ─────────────────────────────────────────────
+    // ── Slot Group Registration (v2 API) ────────────────────────────────────
+
+    // Slot group definitions (registered at mod init, immutable after startup)
+    private static final Map<String, MKSlotGroupDef> slotGroupDefs = new LinkedHashMap<>();
+
+    /**
+     * Creates a slot group builder — the primary declaration unit in MenuKit v2.
+     * A slot group defines slots, rules, persistence, and transfer policy in
+     * a single declaration.
+     *
+     * <p>Usage:
+     * <pre>{@code
+     * MenuKit.slotGroup("equipment")
+     *     .slots(2)
+     *     .playerBound()
+     *     .register();
+     *
+     * MenuKit.slotGroup("fuel")
+     *     .slots(1)
+     *     .filter(stack -> stack.getBurnTime() > 0)
+     *     .shiftIn()
+     *     .instanceBound()
+     *     .register();
+     * }</pre>
+     *
+     * @param name the unique group name
+     * @return a fluent builder
+     */
+    public static MKSlotGroupBuilder slotGroup(String name) {
+        return new MKSlotGroupBuilder(name);
+    }
+
+    /**
+     * Registers a slot group definition. Called by {@link MKSlotGroupBuilder#register()}.
+     * Internally creates an {@link MKContainerDef} for backward compatibility
+     * with the existing region/container infrastructure.
+     */
+    static void registerSlotGroup(MKSlotGroupDef def) {
+        if (slotGroupDefs.containsKey(def.name())) {
+            LOGGER.warn("[MenuKit] Slot group '{}' registered twice — overwriting", def.name());
+        }
+        slotGroupDefs.put(def.name(), def);
+
+        // Create the internal MKContainerDef for backward compatibility.
+        // The existing region resolution machinery uses MKContainerDef,
+        // so we bridge from the new API to the old infrastructure.
+        MKContainerDef containerDef = new MKContainerDef(
+                def.name(), def.binding(), def.persistence(), def.size(), def.containerType()
+        );
+        registerContainer(containerDef);
+
+        LOGGER.info("[MenuKit] Registered slot group '{}' → {} slots, {}, shiftIn={}, shiftOut={}",
+                def.name(), def.size(), def.binding(), def.shiftClickIn(), def.shiftClickOut());
+    }
+
+    /** Returns a slot group definition by name, or null. */
+    public static @Nullable MKSlotGroupDef getSlotGroupDef(String name) {
+        return slotGroupDefs.get(name);
+    }
+
+    /** Returns all registered slot group definitions. */
+    public static Collection<MKSlotGroupDef> getSlotGroupDefs() {
+        return Collections.unmodifiableCollection(slotGroupDefs.values());
+    }
+
+    // ── Container Registration (legacy API — still functional) ────────────
 
     /**
      * Creates a container builder. Containers must be registered BEFORE panels
      * that reference them.
+     *
+     * <p><b>Note:</b> Prefer {@link #slotGroup(String)} for new code. This
+     * legacy API is still supported for backward compatibility.
      *
      * <p>Usage:
      * <pre>{@code
