@@ -1,5 +1,16 @@
 package com.trevorschoeny.menukit;
 
+import com.trevorschoeny.menukit.config.*;
+import com.trevorschoeny.menukit.container.*;
+import com.trevorschoeny.menukit.data.*;
+import com.trevorschoeny.menukit.event.*;
+import com.trevorschoeny.menukit.hud.*;
+import com.trevorschoeny.menukit.input.*;
+import com.trevorschoeny.menukit.panel.*;
+import com.trevorschoeny.menukit.region.*;
+import com.trevorschoeny.menukit.screen.*;
+import com.trevorschoeny.menukit.widget.*;
+
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerType;
@@ -312,7 +323,7 @@ public class MenuKit implements ModInitializer {
      * Registers a panel definition. Called by {@link MKPanel.Builder#build()}.
      * Must be called during mod initialization (before any menus are created).
      */
-    static void register(MKPanelDef def) {
+    public static void register(MKPanelDef def) {
         if (panels.containsKey(def.name())) {
             LOGGER.warn("[MenuKit] Panel '{}' registered twice — overwriting", def.name());
         }
@@ -466,7 +477,7 @@ public class MenuKit implements ModInitializer {
      * Internally creates an {@link MKContainerDef} for backward compatibility
      * with the existing region/container infrastructure.
      */
-    static void registerSlotGroup(MKSlotGroupDef def) {
+    public static void registerSlotGroup(MKSlotGroupDef def) {
         if (slotGroupDefs.containsKey(def.name())) {
             LOGGER.warn("[MenuKit] Slot group '{}' registered twice — overwriting", def.name());
         }
@@ -538,14 +549,14 @@ public class MenuKit implements ModInitializer {
      * Registers a region group definition. Called by {@link RegionGroupBuilder#register()}.
      * Package-private — external code uses the builder API.
      */
-    static void registerRegionGroup(MKRegionGroupDef def) {
+    public static void registerRegionGroup(MKRegionGroupDef def) {
         MKRegionRegistry.registerGroupDef(def);
     }
 
     /**
      * Registers a container definition. Called by {@link MKContainerDef.Builder#register()}.
      */
-    static void registerContainer(MKContainerDef def) {
+    public static void registerContainer(MKContainerDef def) {
         if (containerDefs.containsKey(def.name())) {
             LOGGER.warn("[MenuKit] Container '{}' registered twice — overwriting", def.name());
         }
@@ -622,7 +633,7 @@ public class MenuKit implements ModInitializer {
      * Registers a conditional rule. Called by {@link MKConditionalRule.Builder#register()}.
      * Package-private -- external code uses the builder API.
      */
-    static void registerConditionalRule(MKConditionalRule rule) {
+    public static void registerConditionalRule(MKConditionalRule rule) {
         conditionalRules.add(rule);
         LOGGER.info("[MenuKit] Registered conditional rule '{}'", rule.id());
     }
@@ -675,7 +686,7 @@ public class MenuKit implements ModInitializer {
      * Registers a button attachment. Called by the builder's register().
      * Package-private.
      */
-    static void registerButtonAttachment(MKButtonAttachment attachment) {
+    public static void registerButtonAttachment(MKButtonAttachment attachment) {
         buttonAttachments.add(attachment);
         LOGGER.info("[MenuKit] Registered button attachment '{}' for type {}",
                 attachment.id(), attachment.containerType());
@@ -701,7 +712,7 @@ public class MenuKit implements ModInitializer {
      * @param root the panel's root group
      * @param panelName the panel name (for logging)
      */
-    static void applyButtonAttachments(MKGroupDef root, String panelName) {
+    public static void applyButtonAttachments(MKGroupDef root, String panelName) {
         if (buttonAttachments.isEmpty()) return;
         applyAttachmentsToGroup(root, panelName);
     }
@@ -4508,7 +4519,7 @@ public class MenuKit implements ModInitializer {
     /**
      * Registers a HUD panel definition. Called by {@link MKHudPanel.Builder#build()}.
      */
-    static void registerHud(MKHudPanelDef def) {
+    public static void registerHud(MKHudPanelDef def) {
         hudPanels.put(def.name(), def);
         LOGGER.info("[MenuKit] Registered HUD panel '{}'", def.name());
     }
@@ -4516,7 +4527,7 @@ public class MenuKit implements ModInitializer {
     /**
      * Registers a notification definition. Called by {@link MKHudNotification.Builder#build()}.
      */
-    static void registerNotification(MKHudNotification def) {
+    public static void registerNotification(MKHudNotification def) {
         notificationDefs.put(def.getKey(), def);
         LOGGER.info("[MenuKit] Registered notification '{}'", def.getKey());
     }
