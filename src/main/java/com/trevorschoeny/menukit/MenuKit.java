@@ -491,8 +491,8 @@ public class MenuKit implements ModInitializer {
         );
         registerContainer(containerDef);
 
-        LOGGER.info("[MenuKit] Registered slot group '{}' → {} slots, {}, shiftIn={}, shiftOut={}",
-                def.name(), def.size(), def.binding(), def.shiftClickIn(), def.shiftClickOut());
+        LOGGER.info("[MenuKit] Registered slot group '{}' → {} slots, {}, shiftIn={}, shiftOut={}, autoPickup={}",
+                def.name(), def.size(), def.binding(), def.shiftClickIn(), def.shiftClickOut(), def.autoPickup());
     }
 
     /** Returns a slot group definition by name, or null. */
