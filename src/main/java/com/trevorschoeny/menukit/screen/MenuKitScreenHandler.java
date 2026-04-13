@@ -116,6 +116,37 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
     }
 
     /**
+     * Toggles a panel's visibility by index. Used with vanilla's
+     * {@code clickMenuButton} C2S packet so visibility changes sync
+     * between client and server.
+     *
+     * <p>Button ID maps to the panel index in the declaration order.
+     * Returns true if the button was handled.
+     */
+    @Override
+    public boolean clickMenuButton(Player player, int buttonId) {
+        if (buttonId >= 0 && buttonId < panels.size()) {
+            Panel panel = panels.get(buttonId);
+            panel.setVisible(!panel.isVisible());
+            return true;
+        }
+        return super.clickMenuButton(player, buttonId);
+    }
+
+    /**
+     * Returns the button ID for toggling a panel by name. Returns -1 if
+     * the panel isn't found. Use with
+     * {@code gameMode.handleInventoryButtonClick(containerId, buttonId)}
+     * on the client to send a C2S toggle.
+     */
+    public int getPanelButtonId(String panelId) {
+        for (int i = 0; i < panels.size(); i++) {
+            if (panels.get(i).getId().equals(panelId)) return i;
+        }
+        return -1;
+    }
+
+    /**
      * Called by Panel when its visibility changes. Triggers a sync pass
      * over the affected slots so the client sees EMPTY (hiding) or real
      * stacks (showing).
@@ -247,6 +278,13 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
         @Override
         public int getContainerSize() {
             return storage.size();
+        }
+
+        @Override
+        public int getMaxStackSize() {
+            // Match vanilla SimpleContainer default (99).
+            // Individual items cap themselves via ItemStack.getMaxStackSize().
+            return 99;
         }
 
         @Override

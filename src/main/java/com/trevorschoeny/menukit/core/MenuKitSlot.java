@@ -133,17 +133,11 @@ public class MenuKitSlot extends Slot {
         return Math.min(group.maxStackSize(stack), super.getMaxStackSize(stack));
     }
 
-    /**
-     * Max stack size for this slot (no item context).
-     *
-     * <p>Delegates to the item-specific version with an empty stack for
-     * the vanilla default, then takes the minimum with super.
-     */
-    @Override
-    public int getMaxStackSize() {
-        int groupMax = group.maxStackSize(ItemStack.EMPTY);
-        return Math.min(groupMax, super.getMaxStackSize());
-    }
+    // No override for getMaxStackSize() (no-arg). The policy's maxStackSize
+    // function is item-specific — calling it with ItemStack.EMPTY returns 1,
+    // which would break everything. Vanilla's Slot.getMaxStackSize() returns
+    // container.getMaxStackSize() (99), which is correct as the slot-level
+    // capacity limit. Item-specific limits are handled by the ItemStack overload above.
 
     /**
      * Returns the item in this slot — or EMPTY if the slot is inert.

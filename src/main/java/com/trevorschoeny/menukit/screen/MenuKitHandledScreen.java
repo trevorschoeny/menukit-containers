@@ -31,9 +31,12 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
                                 Component title) {
         super(handler, inventory, title);
         // Size the screen to fit all slots in the temporary grid layout.
-        // Phase 4a will compute this from the panel tree properly.
+        // Phase 4a proper rendering will compute this from the panel tree.
         this.imageWidth = 176;
-        this.imageHeight = 200;
+        // Height based on total slots: 18px per row of 9, plus header/footer
+        int totalSlots = handler.slots.size();
+        int rows = (totalSlots + 8) / 9; // ceiling division
+        this.imageHeight = Math.max(200, 24 + rows * 18 + 12);
     }
 
     @Override
@@ -71,11 +74,15 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
     @Override
     public boolean keyPressed(KeyEvent event) {
         if (event.key() == GLFW.GLFW_KEY_T) {
-            // Toggle "extras" panel visibility
-            Panel extras = this.menu.getPanel("extras");
-            if (extras != null) {
-                this.menu.setPanelVisible("extras", !extras.isVisible());
-                LOGGER.info("[Test] Toggled extras → {}", extras.isVisible());
+            // Toggle "extras" panel — call locally AND send C2S packet.
+            // handleInventoryButtonClick only sends the packet (doesn't call
+            // local clickMenuButton), so we call both to keep client and server in sync.
+            int buttonId = this.menu.getPanelButtonId("extras");
+            if (buttonId >= 0 && this.minecraft != null && this.minecraft.gameMode != null
+                    && this.minecraft.player != null) {
+                this.menu.clickMenuButton(this.minecraft.player, buttonId); // local toggle
+                this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, buttonId); // server toggle
+                LOGGER.info("[Test] Toggled extras (buttonId={})", buttonId);
             }
             return true;
         }
