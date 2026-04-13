@@ -28,6 +28,11 @@ public class SlotGroup {
     private final QuickMoveParticipation qmp;
     private final int shiftClickPriority;
 
+    // ── Layout metadata (declarative, read by the screen) ──────────────
+    private final int columns;      // grid columns for slot layout
+    private final int rowGapAfter;  // 0-indexed row after which to insert a gap (-1 = none)
+    private final int rowGapSize;   // gap size in pixels
+
     // Set during Panel construction — the group knows its parent
     private @Nullable Panel panel;
 
@@ -40,6 +45,32 @@ public class SlotGroup {
     private final List<SlotGroup> pairedWith = new ArrayList<>();
 
     /**
+     * Full constructor with all axes including layout metadata.
+     *
+     * @param id                  unique identifier within the panel
+     * @param storage             where items live
+     * @param policy              what operations are allowed
+     * @param qmp                 how this group participates in shift-click
+     * @param shiftClickPriority  numeric priority (higher = tried first)
+     * @param columns             grid columns for slot layout (-1 = auto)
+     * @param rowGapAfter         0-indexed row after which to insert a gap (-1 = none)
+     * @param rowGapSize          gap size in pixels (only used if rowGapAfter >= 0)
+     */
+    public SlotGroup(String id, Storage storage, InteractionPolicy policy,
+                     QuickMoveParticipation qmp, int shiftClickPriority,
+                     int columns, int rowGapAfter, int rowGapSize) {
+        this.id = id;
+        this.storage = storage;
+        this.policy = policy;
+        this.qmp = qmp;
+        this.shiftClickPriority = shiftClickPriority;
+        // Auto-compute columns: min(9, storage size) if not specified
+        this.columns = columns > 0 ? columns : Math.min(9, storage.size());
+        this.rowGapAfter = rowGapAfter;
+        this.rowGapSize = rowGapSize;
+    }
+
+    /**
      * @param id                  unique identifier within the panel
      * @param storage             where items live
      * @param policy              what operations are allowed
@@ -48,11 +79,7 @@ public class SlotGroup {
      */
     public SlotGroup(String id, Storage storage, InteractionPolicy policy,
                      QuickMoveParticipation qmp, int shiftClickPriority) {
-        this.id = id;
-        this.storage = storage;
-        this.policy = policy;
-        this.qmp = qmp;
-        this.shiftClickPriority = shiftClickPriority;
+        this(id, storage, policy, qmp, shiftClickPriority, -1, -1, 0);
     }
 
     /** Convenience: BOTH participation, default priority (100). */
@@ -78,6 +105,17 @@ public class SlotGroup {
 
     /** Returns the numeric shift-click priority (higher = tried first). */
     public int getShiftClickPriority() { return shiftClickPriority; }
+
+    // ── Layout Metadata ────────────────────────────────────────────────
+
+    /** Grid columns for slot layout. Always > 0 (auto-computed if not specified). */
+    public int getColumns() { return columns; }
+
+    /** 0-indexed row after which to insert a visual gap, or -1 for none. */
+    public int getRowGapAfter() { return rowGapAfter; }
+
+    /** Gap size in pixels (only meaningful if rowGapAfter >= 0). */
+    public int getRowGapSize() { return rowGapSize; }
 
     // ── Panel Reference ─────────────────────────────────────────────────
 

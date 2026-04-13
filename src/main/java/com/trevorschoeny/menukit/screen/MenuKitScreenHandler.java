@@ -388,11 +388,13 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
                 List<SlotGroup> groups = new ArrayList<>();
                 for (GroupConfig gc : pc.groups) {
                     SlotGroup group = new SlotGroup(
-                            gc.id, gc.storage, gc.policy, gc.qmp, gc.priority
+                            gc.id, gc.storage, gc.policy, gc.qmp, gc.priority,
+                            gc.columns, gc.rowGapAfter, gc.rowGapSize
                     );
                     groups.add(group);
                 }
-                panels.add(new Panel(pc.id, groups, pc.visible));
+                panels.add(new Panel(pc.id, groups, pc.visible,
+                        pc.style, pc.position));
             }
 
             // Apply directional pairings (by ID reference)
@@ -424,22 +426,72 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
         private final String id;
         private final List<GroupConfig> groups = new ArrayList<>();
         private boolean visible = true;
+        private PanelStyle style = PanelStyle.RAISED;
+        private PanelPosition position = PanelPosition.BODY;
 
         PanelBuilder(String id) {
             this.id = id;
         }
 
-        /** Adds a slot group with default QMP (BOTH) and priority (100). */
-        public PanelBuilder group(String id, Storage storage, InteractionPolicy policy) {
-            groups.add(new GroupConfig(id, storage, policy,
-                    QuickMoveParticipation.BOTH, 100));
+        /** Sets the visual style for this panel's background. Default: RAISED. */
+        public PanelBuilder style(PanelStyle style) {
+            this.style = style;
             return this;
         }
 
-        /** Adds a slot group with explicit QMP and priority. */
+        /** Positions this panel to the right of the named anchor panel. */
+        public PanelBuilder rightOf(String anchorPanelId) {
+            this.position = PanelPosition.rightOf(anchorPanelId);
+            return this;
+        }
+
+        /** Positions this panel to the left of the named anchor panel. */
+        public PanelBuilder leftOf(String anchorPanelId) {
+            this.position = PanelPosition.leftOf(anchorPanelId);
+            return this;
+        }
+
+        /** Positions this panel above the named anchor panel. */
+        public PanelBuilder above(String anchorPanelId) {
+            this.position = PanelPosition.above(anchorPanelId);
+            return this;
+        }
+
+        /** Positions this panel below the named anchor panel. */
+        public PanelBuilder below(String anchorPanelId) {
+            this.position = PanelPosition.below(anchorPanelId);
+            return this;
+        }
+
+        /** Adds a slot group with default QMP (BOTH), priority (100), auto columns. */
+        public PanelBuilder group(String id, Storage storage, InteractionPolicy policy) {
+            groups.add(new GroupConfig(id, storage, policy,
+                    QuickMoveParticipation.BOTH, 100, -1, -1, 0));
+            return this;
+        }
+
+        /** Adds a slot group with explicit QMP, priority, and auto columns. */
         public PanelBuilder group(String id, Storage storage, InteractionPolicy policy,
                                   QuickMoveParticipation qmp, int priority) {
-            groups.add(new GroupConfig(id, storage, policy, qmp, priority));
+            groups.add(new GroupConfig(id, storage, policy, qmp, priority,
+                    -1, -1, 0));
+            return this;
+        }
+
+        /** Adds a slot group with explicit QMP, priority, and column count. */
+        public PanelBuilder group(String id, Storage storage, InteractionPolicy policy,
+                                  QuickMoveParticipation qmp, int priority, int columns) {
+            groups.add(new GroupConfig(id, storage, policy, qmp, priority,
+                    columns, -1, 0));
+            return this;
+        }
+
+        /** Adds a slot group with full layout control including row gap. */
+        public PanelBuilder group(String id, Storage storage, InteractionPolicy policy,
+                                  QuickMoveParticipation qmp, int priority, int columns,
+                                  int rowGapAfter, int rowGapSize) {
+            groups.add(new GroupConfig(id, storage, policy, qmp, priority,
+                    columns, rowGapAfter, rowGapSize));
             return this;
         }
 
@@ -450,22 +502,25 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
         }
 
         PanelConfig build() {
-            return new PanelConfig(id, groups, visible);
+            return new PanelConfig(id, groups, visible, style, position);
         }
     }
 
     // ── Builder Config Records ──────────────────────────────────────────
 
-    private record PanelConfig(String id, List<GroupConfig> groups, boolean visible) {}
+    private record PanelConfig(String id, List<GroupConfig> groups, boolean visible,
+                               PanelStyle style, PanelPosition position) {}
 
     private record GroupConfig(
             String id, Storage storage, InteractionPolicy policy,
             QuickMoveParticipation qmp, int priority,
+            int columns, int rowGapAfter, int rowGapSize,
             List<String> pairingTargets
     ) {
         GroupConfig(String id, Storage storage, InteractionPolicy policy,
-                    QuickMoveParticipation qmp, int priority) {
-            this(id, storage, policy, qmp, priority, List.of());
+                    QuickMoveParticipation qmp, int priority,
+                    int columns, int rowGapAfter, int rowGapSize) {
+            this(id, storage, policy, qmp, priority, columns, rowGapAfter, rowGapSize, List.of());
         }
     }
 }
