@@ -1,11 +1,13 @@
 package com.trevorschoeny.menukit.core;
 
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.BiConsumer;
 
 /**
  * Where behavior lives. A SlotGroup is the composition of five orthogonal
@@ -32,6 +34,12 @@ public class SlotGroup {
     private final int columns;      // grid columns for slot layout
     private final int rowGapAfter;  // 0-indexed row after which to insert a gap (-1 = none)
     private final int rowGapSize;   // gap size in pixels
+
+    // ── Right-click handler (group-level capability) ───────────────────
+    // Optional handler invoked when a slot in this group is right-clicked.
+    // Lives on the group per the canonical story — right-click is a
+    // group-level capability, not a slot-level one.
+    private @Nullable BiConsumer<Player, MenuKitSlot> rightClickHandler;
 
     // Set during Panel construction — the group knows its parent
     private @Nullable Panel panel;
@@ -116,6 +124,18 @@ public class SlotGroup {
 
     /** Gap size in pixels (only meaningful if rowGapAfter >= 0). */
     public int getRowGapSize() { return rowGapSize; }
+
+    // ── Right-Click Handler ────────────────────────────────────────────
+
+    /** Returns the right-click handler for this group, or null. */
+    public @Nullable BiConsumer<Player, MenuKitSlot> getRightClickHandler() {
+        return rightClickHandler;
+    }
+
+    /** Sets the right-click handler. Called during builder construction. */
+    public void setRightClickHandler(@Nullable BiConsumer<Player, MenuKitSlot> handler) {
+        this.rightClickHandler = handler;
+    }
 
     // ── Panel Reference ─────────────────────────────────────────────────
 

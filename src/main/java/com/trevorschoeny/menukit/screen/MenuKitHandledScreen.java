@@ -7,6 +7,7 @@ import com.trevorschoeny.menukit.panel.MKPanel;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.Slot;
@@ -14,8 +15,13 @@ import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.jspecify.annotations.Nullable;
+
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.function.BiConsumer;
 
 /**
  * Client-side partner to {@link MenuKitScreenHandler}. Owns layout computation,
@@ -58,6 +64,10 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
     /** Panel ID → computed screen-relative bounds. Rebuilt each frame. */
     private final Map<String, PanelBounds> panelBounds = new LinkedHashMap<>();
 
+    // ── Hover Tracking ─────────────────────────────────────────────────
+    // Tracks the previously hovered MenuKitSlot to fire enter/exit events.
+    private @Nullable MenuKitSlot previouslyHoveredMkSlot = null;
+
     // ── Construction ───────────────────────────────────────────────────
 
     public MenuKitHandledScreen(MenuKitScreenHandler handler, Inventory inventory,
@@ -75,6 +85,11 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         computeLayout();
         positionSlots();
         super.init(); // sets leftPos = (width - imageWidth) / 2, etc.
+
+        // Build the key dispatch table from the panel tree.
+        // Cleared and rebuilt on each init (handles screen resize re-init).
+        keyRegistry.clear();
+        registerPanelToggleKeys();
     }
 
     // ── Layout Computation ─────────────────────────────────────────────
@@ -284,6 +299,21 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
         super.render(graphics, mouseX, mouseY, delta);
+
+        // ── Hover tracking (fire enter/exit events) ────────────────────
+        // After super.render(), hoveredSlot is set by vanilla's pipeline.
+        // Compare with previous frame to detect enter/exit transitions.
+        MenuKitSlot currentHovered = (this.hoveredSlot instanceof MenuKitSlot mk) ? mk : null;
+        if (currentHovered != previouslyHoveredMkSlot) {
+            if (previouslyHoveredMkSlot != null) {
+                fireSlotHoverExit(previouslyHoveredMkSlot);
+            }
+            if (currentHovered != null) {
+                fireSlotHoverEnter(currentHovered);
+            }
+            previouslyHoveredMkSlot = currentHovered;
+        }
+
         this.renderTooltip(graphics, mouseX, mouseY);
     }
 
@@ -293,6 +323,127 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         // Text rendering in 1.21.11's batched pipeline needs a different
         // integration point than geometry fills — the panel element system
         // will handle this when text becomes a declared panel element.
+    }
+
+    // ── Key Registry ──────────────────────────────────────────────────
+    // Lookup-based dispatch — not a hardcoded switch. Panel toggle keys
+    // are auto-registered from the panel tree. Custom actions can be
+    // added via registerKey(). Task 4's event bus can hook into this.
+
+    /** Action triggered by a key press while this screen is open. */
+    @FunctionalInterface
+    public interface KeyAction {
+        boolean onKey(KeyEvent event, MenuKitHandledScreen screen);
+    }
+
+    private final Map<Integer, KeyAction> keyRegistry = new LinkedHashMap<>();
+
+    /** Registers a key action. GLFW key code → action. */
+    public void registerKey(int glfwKey, KeyAction action) {
+        keyRegistry.put(glfwKey, action);
+    }
+
+    /**
+     * Auto-registers panel toggle keys from the panel tree.
+     * Called during init(). Each panel with a toggleKey gets a
+     * registry entry that syncs visibility via the C2S mechanism.
+     */
+    private void registerPanelToggleKeys() {
+        for (Panel panel : menu.getPanels()) {
+            if (panel.getToggleKey() < 0) continue;
+            String panelId = panel.getId();
+            registerKey(panel.getToggleKey(), (event, screen) -> {
+                int buttonId = screen.menu.getPanelButtonId(panelId);
+                if (buttonId >= 0 && screen.minecraft != null
+                        && screen.minecraft.gameMode != null
+                        && screen.minecraft.player != null) {
+                    screen.menu.clickMenuButton(screen.minecraft.player, buttonId);
+                    screen.minecraft.gameMode.handleInventoryButtonClick(
+                            screen.menu.containerId, buttonId);
+                    // Fire panel toggle event
+                    Panel toggled = screen.menu.getPanel(panelId);
+                    if (toggled != null) {
+                        screen.firePanelToggle(toggled, toggled.isVisible());
+                    }
+                }
+                return true;
+            });
+        }
+    }
+
+    // ── Screen Event Bus ─────────────────────────────────────────────
+    // Per-screen-instance event system. MenuKit-scoped — fires events
+    // about things happening inside this MenuKit screen. Consumers
+    // wanting ecosystem-wide slot events use Fabric's event API.
+    //
+    // Typed callbacks, not generic Object... varargs. Each method has
+    // a default no-op so listeners only override what they care about.
+
+    /**
+     * Listener for events happening within a MenuKit screen.
+     * All methods have default no-ops — override only what you need.
+     */
+    public interface ScreenEventListener {
+        /** A MenuKitSlot was clicked. Button: 0=left, 1=right, 2=middle. */
+        default void onSlotClick(MenuKitSlot slot, int button) {}
+        /** Mouse entered a MenuKitSlot's hover area. */
+        default void onSlotHoverEnter(MenuKitSlot slot) {}
+        /** Mouse left a MenuKitSlot's hover area. */
+        default void onSlotHoverExit(MenuKitSlot slot) {}
+        /** A panel's visibility changed. */
+        default void onPanelToggle(Panel panel, boolean nowVisible) {}
+    }
+
+    private final List<ScreenEventListener> eventListeners = new ArrayList<>();
+
+    /** Registers a screen event listener. Cleared on screen close. */
+    public void addEventListener(ScreenEventListener listener) {
+        eventListeners.add(listener);
+    }
+
+    private void fireSlotClick(MenuKitSlot slot, int button) {
+        for (var listener : eventListeners) listener.onSlotClick(slot, button);
+    }
+
+    private void fireSlotHoverEnter(MenuKitSlot slot) {
+        for (var listener : eventListeners) listener.onSlotHoverEnter(slot);
+    }
+
+    private void fireSlotHoverExit(MenuKitSlot slot) {
+        for (var listener : eventListeners) listener.onSlotHoverExit(slot);
+    }
+
+    private void firePanelToggle(Panel panel, boolean nowVisible) {
+        for (var listener : eventListeners) listener.onPanelToggle(panel, nowVisible);
+    }
+
+    // ── Drag Modes ────────────────────────────────────────────────────
+    // Per-screen drag mode registry. When a mouse drag starts on a
+    // MenuKitSlot, the registry is checked for a mode that accepts
+    // the drag. The active mode receives drag/end callbacks.
+
+    /**
+     * A custom drag behavior for MenuKit slots. The screen dispatches
+     * drag events to the active mode. Only one mode is active at a time.
+     */
+    public interface DragMode {
+        /**
+         * Called when a drag starts on a MenuKitSlot.
+         * Return true to claim the drag (subsequent drag/end go to this mode).
+         */
+        boolean onDragStart(MenuKitSlot slot, int button);
+        /** Called when the mouse moves over a new slot during a drag. */
+        void onDrag(MenuKitSlot slot);
+        /** Called when the mouse button is released, ending the drag. */
+        void onDragEnd();
+    }
+
+    private final List<DragMode> dragModes = new ArrayList<>();
+    private @Nullable DragMode activeDrag = null;
+
+    /** Registers a drag mode. Checked in order when a drag starts. */
+    public void registerDragMode(DragMode mode) {
+        dragModes.add(mode);
     }
 
     // ── Input ──────────────────────────────────────────────────────────
@@ -316,56 +467,82 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
                 return false; // inside a panel — not outside
             }
         }
-        // Fall through to vanilla's imageWidth×imageHeight check
         return super.hasClickedOutside(mouseX, mouseY, leftPos, topPos);
     }
 
     /**
-     * Phase 3 test keybinds: T = toggle extras panel, S = stress test.
-     * These are temporary — Task 3 replaces them with proper keybind dispatch.
+     * Key dispatch — checks the registry first, then falls through
+     * to vanilla's keybind handling.
      */
     @Override
     public boolean keyPressed(KeyEvent event) {
-        if (event.key() == GLFW.GLFW_KEY_T) {
-            // Toggle "extras" panel via C2S packet + local toggle
-            int buttonId = this.menu.getPanelButtonId("extras");
-            if (buttonId >= 0 && this.minecraft != null && this.minecraft.gameMode != null
-                    && this.minecraft.player != null) {
-                this.menu.clickMenuButton(this.minecraft.player, buttonId);
-                this.minecraft.gameMode.handleInventoryButtonClick(
-                        this.menu.containerId, buttonId);
-                LOGGER.info("[Test] Toggled extras (buttonId={})", buttonId);
-            }
+        KeyAction action = keyRegistry.get(event.key());
+        if (action != null && action.onKey(event, this)) {
             return true;
         }
+        return super.keyPressed(event);
+    }
 
-        if (event.key() == GLFW.GLFW_KEY_S) {
-            // Stress test: 100 rapid toggles
-            LOGGER.info("[Test] Starting 100-toggle stress test...");
-            for (int i = 0; i < 100; i++) {
-                this.menu.setPanelVisible("extras", i % 2 == 0);
-            }
-            Panel extras = this.menu.getPanel("extras");
-            boolean finalVisible = extras != null && extras.isVisible();
-            boolean consistent = true;
-            if (extras != null) {
-                for (SlotGroup group : extras.getGroups()) {
-                    for (int s = group.getFlatIndexStart(); s < group.getFlatIndexEnd(); s++) {
-                        MenuKitSlot slot = (MenuKitSlot) this.menu.slots.get(s);
-                        if (slot.isInert() != !finalVisible) {
-                            consistent = false;
-                            LOGGER.warn("[Test] INCONSISTENT: slot[{}] inert={} but panel visible={}",
-                                    s, slot.isInert(), finalVisible);
-                        }
-                    }
+    /**
+     * Click dispatch — fires events, checks group handlers, then
+     * falls through to vanilla.
+     *
+     * <p>Order: drag mode check → right-click handler → event fire → vanilla.
+     */
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean flag) {
+        // Drag mode start — check if a registered mode claims this drag
+        if (this.hoveredSlot instanceof MenuKitSlot mkSlot && activeDrag == null) {
+            for (DragMode mode : dragModes) {
+                if (mode.onDragStart(mkSlot, event.button())) {
+                    activeDrag = mode;
+                    return true; // drag claimed — skip vanilla
                 }
             }
-            LOGGER.info("[Test] Stress test complete: final={} consistent={}",
-                    finalVisible ? "VISIBLE" : "HIDDEN", consistent);
-            return true;
         }
 
-        return super.keyPressed(event);
+        // Right-click handler dispatch (group-level capability)
+        if (event.button() == 1 && this.hoveredSlot instanceof MenuKitSlot mkSlot) {
+            BiConsumer<net.minecraft.world.entity.player.Player, MenuKitSlot> handler =
+                    mkSlot.getGroup().getRightClickHandler();
+            if (handler != null && this.minecraft != null && this.minecraft.player != null) {
+                handler.accept(this.minecraft.player, mkSlot);
+                fireSlotClick(mkSlot, event.button());
+                return true; // consumed — don't let vanilla place an item
+            }
+        }
+
+        // Fire slot click event (doesn't consume — vanilla still processes)
+        if (this.hoveredSlot instanceof MenuKitSlot mkSlot) {
+            fireSlotClick(mkSlot, event.button());
+        }
+
+        return super.mouseClicked(event, flag);
+    }
+
+    /**
+     * Drag dispatch — if a drag mode is active, route to it.
+     */
+    @Override
+    public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+        if (activeDrag != null && this.hoveredSlot instanceof MenuKitSlot mkSlot) {
+            activeDrag.onDrag(mkSlot);
+            return true;
+        }
+        return super.mouseDragged(event, dragX, dragY);
+    }
+
+    /**
+     * Drag end — if a drag mode is active, notify and clear it.
+     */
+    @Override
+    public boolean mouseReleased(MouseButtonEvent event) {
+        if (activeDrag != null) {
+            activeDrag.onDragEnd();
+            activeDrag = null;
+            return true;
+        }
+        return super.mouseReleased(event);
     }
 
     // ── Style Mapping ──────────────────────────────────────────────────

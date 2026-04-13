@@ -8,6 +8,7 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -391,10 +392,13 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
                             gc.id, gc.storage, gc.policy, gc.qmp, gc.priority,
                             gc.columns, gc.rowGapAfter, gc.rowGapSize
                     );
+                    if (gc.rightClickHandler != null) {
+                        group.setRightClickHandler(gc.rightClickHandler);
+                    }
                     groups.add(group);
                 }
                 panels.add(new Panel(pc.id, groups, pc.visible,
-                        pc.style, pc.position));
+                        pc.style, pc.position, pc.toggleKey));
             }
 
             // Apply directional pairings (by ID reference)
@@ -428,9 +432,16 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
         private boolean visible = true;
         private PanelStyle style = PanelStyle.RAISED;
         private PanelPosition position = PanelPosition.BODY;
+        private int toggleKey = -1;
 
         PanelBuilder(String id) {
             this.id = id;
+        }
+
+        /** Sets a GLFW key code that toggles this panel's visibility. */
+        public PanelBuilder toggleKey(int glfwKey) {
+            this.toggleKey = glfwKey;
+            return this;
         }
 
         /** Sets the visual style for this panel's background. Default: RAISED. */
@@ -495,6 +506,22 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
             return this;
         }
 
+        /**
+         * Sets a right-click handler on the last-added group.
+         * Invoked when a slot in that group is right-clicked.
+         */
+        public PanelBuilder rightClick(
+                java.util.function.BiConsumer<net.minecraft.world.entity.player.Player, MenuKitSlot> handler) {
+            if (!groups.isEmpty()) {
+                // Replace last group config with one that includes the handler
+                GroupConfig last = groups.remove(groups.size() - 1);
+                groups.add(new GroupConfig(last.id, last.storage, last.policy,
+                        last.qmp, last.priority, last.columns, last.rowGapAfter,
+                        last.rowGapSize, last.pairingTargets, handler));
+            }
+            return this;
+        }
+
         /** Marks this panel as hidden initially. */
         public PanelBuilder hidden() {
             this.visible = false;
@@ -502,25 +529,26 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
         }
 
         PanelConfig build() {
-            return new PanelConfig(id, groups, visible, style, position);
+            return new PanelConfig(id, groups, visible, style, position, toggleKey);
         }
     }
 
     // ── Builder Config Records ──────────────────────────────────────────
 
     private record PanelConfig(String id, List<GroupConfig> groups, boolean visible,
-                               PanelStyle style, PanelPosition position) {}
+                               PanelStyle style, PanelPosition position, int toggleKey) {}
 
     private record GroupConfig(
             String id, Storage storage, InteractionPolicy policy,
             QuickMoveParticipation qmp, int priority,
             int columns, int rowGapAfter, int rowGapSize,
-            List<String> pairingTargets
+            List<String> pairingTargets,
+            java.util.function.BiConsumer<net.minecraft.world.entity.player.Player, MenuKitSlot> rightClickHandler
     ) {
         GroupConfig(String id, Storage storage, InteractionPolicy policy,
                     QuickMoveParticipation qmp, int priority,
                     int columns, int rowGapAfter, int rowGapSize) {
-            this(id, storage, policy, qmp, priority, columns, rowGapAfter, rowGapSize, List.of());
+            this(id, storage, policy, qmp, priority, columns, rowGapAfter, rowGapSize, List.of(), null);
         }
     }
 }
