@@ -190,6 +190,26 @@ public class SlotGroup {
         this.flatIndexEnd = end;
     }
 
+    /**
+     * Returns this group's slots as a list, extracted from the handler's
+     * flat slot list. Convenience for consumers that need to iterate
+     * a group's slots without walking the flat index range manually.
+     *
+     * @param handler the handler whose slot list contains this group's slots
+     * @return unmodifiable list of MenuKitSlots in this group
+     */
+    public List<MenuKitSlot> getSlots(net.minecraft.world.inventory.AbstractContainerMenu handler) {
+        if (flatIndexStart < 0 || flatIndexEnd < 0) return List.of();
+        List<MenuKitSlot> result = new ArrayList<>();
+        for (int i = flatIndexStart; i < flatIndexEnd; i++) {
+            net.minecraft.world.inventory.Slot slot = handler.slots.get(i);
+            if (slot instanceof MenuKitSlot mk) {
+                result.add(mk);
+            }
+        }
+        return Collections.unmodifiableList(result);
+    }
+
     // ── Directional Pairing ─────────────────────────────────────────────
 
     /**

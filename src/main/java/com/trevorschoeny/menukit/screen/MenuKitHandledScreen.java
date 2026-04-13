@@ -66,7 +66,26 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
 
     // ── Hover Tracking ─────────────────────────────────────────────────
     // Tracks the previously hovered MenuKitSlot to fire enter/exit events.
+    // Also exposes current hover state as a queryable property for consumers.
     private @Nullable MenuKitSlot previouslyHoveredMkSlot = null;
+
+    /**
+     * Returns the currently hovered MenuKitSlot, or null if the mouse
+     * isn't over a MenuKit slot. Synchronous query — consumers like HUD
+     * overlays can read this each frame without subscribing to events.
+     */
+    public @Nullable MenuKitSlot getHoveredMenuKitSlot() {
+        return previouslyHoveredMkSlot;
+    }
+
+    /**
+     * Returns the SlotGroup of the currently hovered MenuKitSlot, or
+     * null. Convenience for consumers that care about group identity.
+     */
+    public @Nullable SlotGroup getHoveredGroup() {
+        return previouslyHoveredMkSlot != null
+                ? previouslyHoveredMkSlot.getGroup() : null;
+    }
 
     // ── Construction ───────────────────────────────────────────────────
 
@@ -319,10 +338,43 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
 
     @Override
     protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY) {
-        // No-op: labels are a panel element concern (Phase 4b).
-        // Text rendering in 1.21.11's batched pipeline needs a different
-        // integration point than geometry fills — the panel element system
-        // will handle this when text becomes a declared panel element.
+        // 1.21.11 requires explicit ARGB colors — drawString silently
+        // discards text when alpha is 0 (ARGB.alpha(color) != 0 guard).
+        // White text with shadow for readability on the dark overlay.
+        // When labels move into panel backgrounds (panel elements), switch
+        // to 0xFF404040 (vanilla's dark gray on light backgrounds).
+        graphics.drawString(this.font, this.title,
+                this.titleLabelX, this.titleLabelY, 0xFFFFFFFF, true);
+        graphics.drawString(this.font, this.playerInventoryTitle,
+                this.inventoryLabelX, this.inventoryLabelY, 0xFFFFFFFF, true);
+    }
+
+    // ── Panel Visibility (public API) ──────────────────────────────────
+    // Entry point for consumers to toggle panel visibility from anywhere
+    // (HUD buttons, chat commands, game events). Routes through the
+    // same C2S sync mechanism as the keybind path.
+
+    /**
+     * Toggles a panel's visibility with full client+server sync.
+     *
+     * <p>Consumers can call this from any context (HUD button click,
+     * chat command, game event) — not just from keybinds. Routes through
+     * the same {@code clickMenuButton} C2S mechanism.
+     */
+    public void togglePanel(String panelId) {
+        int buttonId = this.menu.getPanelButtonId(panelId);
+        if (buttonId >= 0 && this.minecraft != null
+                && this.minecraft.gameMode != null
+                && this.minecraft.player != null) {
+            this.menu.clickMenuButton(this.minecraft.player, buttonId);
+            this.minecraft.gameMode.handleInventoryButtonClick(
+                    this.menu.containerId, buttonId);
+            // Fire event
+            Panel panel = this.menu.getPanel(panelId);
+            if (panel != null) {
+                firePanelToggle(panel, panel.isVisible());
+            }
+        }
     }
 
     // ── Key Registry ──────────────────────────────────────────────────
@@ -353,19 +405,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
             if (panel.getToggleKey() < 0) continue;
             String panelId = panel.getId();
             registerKey(panel.getToggleKey(), (event, screen) -> {
-                int buttonId = screen.menu.getPanelButtonId(panelId);
-                if (buttonId >= 0 && screen.minecraft != null
-                        && screen.minecraft.gameMode != null
-                        && screen.minecraft.player != null) {
-                    screen.menu.clickMenuButton(screen.minecraft.player, buttonId);
-                    screen.minecraft.gameMode.handleInventoryButtonClick(
-                            screen.menu.containerId, buttonId);
-                    // Fire panel toggle event
-                    Panel toggled = screen.menu.getPanel(panelId);
-                    if (toggled != null) {
-                        screen.firePanelToggle(toggled, toggled.isVisible());
-                    }
-                }
+                screen.togglePanel(panelId);
                 return true;
             });
         }
@@ -386,12 +426,25 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
     public interface ScreenEventListener {
         /** A MenuKitSlot was clicked. Button: 0=left, 1=right, 2=middle. */
         default void onSlotClick(MenuKitSlot slot, int button) {}
+        /** An empty MenuKitSlot was clicked with an empty cursor. */
+        default void onEmptySlotClick(MenuKitSlot slot, int button) {}
         /** Mouse entered a MenuKitSlot's hover area. */
         default void onSlotHoverEnter(MenuKitSlot slot) {}
         /** Mouse left a MenuKitSlot's hover area. */
         default void onSlotHoverExit(MenuKitSlot slot) {}
         /** A panel's visibility changed. */
         default void onPanelToggle(Panel panel, boolean nowVisible) {}
+        /**
+         * A shift-click (quick move) is about to happen on a MenuKitSlot.
+         * Fires BEFORE vanilla routes the items — destination is unknown
+         * at this point. The movedStack is a copy of what's in the source.
+         *
+         * <p>Use for logging, analytics, or pre-transfer checks. For
+         * post-routing observation (where items ended up), a future
+         * onAfterQuickMove event would fire from quickMoveStack.
+         */
+        default void onQuickMove(MenuKitSlot sourceSlot,
+                                 net.minecraft.world.item.ItemStack movedStack) {}
     }
 
     private final List<ScreenEventListener> eventListeners = new ArrayList<>();
@@ -405,6 +458,10 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         for (var listener : eventListeners) listener.onSlotClick(slot, button);
     }
 
+    private void fireEmptySlotClick(MenuKitSlot slot, int button) {
+        for (var listener : eventListeners) listener.onEmptySlotClick(slot, button);
+    }
+
     private void fireSlotHoverEnter(MenuKitSlot slot) {
         for (var listener : eventListeners) listener.onSlotHoverEnter(slot);
     }
@@ -415,6 +472,10 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
 
     private void firePanelToggle(Panel panel, boolean nowVisible) {
         for (var listener : eventListeners) listener.onPanelToggle(panel, nowVisible);
+    }
+
+    private void fireQuickMove(MenuKitSlot sourceSlot, net.minecraft.world.item.ItemStack movedStack) {
+        for (var listener : eventListeners) listener.onQuickMove(sourceSlot, movedStack);
     }
 
     // ── Drag Modes ────────────────────────────────────────────────────
@@ -515,6 +576,17 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         // Fire slot click event (doesn't consume — vanilla still processes)
         if (this.hoveredSlot instanceof MenuKitSlot mkSlot) {
             fireSlotClick(mkSlot, event.button());
+
+            // Empty slot click: slot has no item AND cursor is empty
+            if (!mkSlot.hasItem() && this.menu.getCarried().isEmpty()) {
+                fireEmptySlotClick(mkSlot, event.button());
+            }
+
+            // Quick move event: shift-click captures the stack before vanilla
+            // routes it, so consumers can observe what's about to move.
+            if (event.hasShiftDown() && mkSlot.hasItem()) {
+                fireQuickMove(mkSlot, mkSlot.getItem().copy());
+            }
         }
 
         return super.mouseClicked(event, flag);

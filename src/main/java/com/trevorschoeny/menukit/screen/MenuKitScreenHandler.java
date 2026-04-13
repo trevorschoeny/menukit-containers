@@ -103,6 +103,23 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
     /** Returns the panel with the given ID, or null. */
     public Panel getPanel(String panelId) { return panelById.get(panelId); }
 
+    /**
+     * Returns the SlotGroup that owns the given flat slot index, or null
+     * if the index is out of range or not a MenuKit slot.
+     *
+     * <p>Reverse lookup: flat index → group. Useful for consumers that
+     * need to identify group membership from a slot index (e.g., shift-click
+     * preview, analytics).
+     */
+    public SlotGroup getGroupContaining(int flatIndex) {
+        if (flatIndex < 0 || flatIndex >= this.slots.size()) return null;
+        net.minecraft.world.inventory.Slot slot = this.slots.get(flatIndex);
+        if (slot instanceof MenuKitSlot mkSlot) {
+            return mkSlot.getGroup();
+        }
+        return null;
+    }
+
     // ── Visibility ──────────────────────────────────────────────────────
 
     /**
