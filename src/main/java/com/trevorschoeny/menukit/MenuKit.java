@@ -146,6 +146,17 @@ public class MenuKit implements ModInitializer {
     private static net.minecraft.world.inventory.Slot hoveredMKSlot = null; // nullable
     private static @Nullable String hoveredPanelName = null;
 
+    // ── DEBUG: Peek state flag for targeted logging ──
+    private static boolean debugPeekOpen = false;
+    private static int debugFrameCounter = 0;
+    public static boolean getLastDebugPeekOpen() { return debugPeekOpen; }
+    public static void setDebugPeekOpen(boolean open) { debugPeekOpen = open; debugFrameCounter = 0; }
+    public static boolean shouldDebugLog() {
+        if (!debugPeekOpen) return false;
+        debugFrameCounter++;
+        return debugFrameCounter <= 3 || debugFrameCounter % 60 == 0; // first 3 frames, then every 60
+    }
+
 
     // ── Scroll / Tab region tracking (client-only, updated each frame) ─────
     // Collected by walking panel layout trees during renderPanelBackgrounds.
@@ -277,6 +288,9 @@ public class MenuKit implements ModInitializer {
         registerBuiltInRegionGroups();
 
         LOGGER.info("[MenuKit] Registered MK_MENU_TYPE + vanilla inventory panels + region groups");
+
+        // Phase 3 test setup — register test MenuType and /mktest command
+        com.trevorschoeny.menukit.screen.MenuKitTestSetup.registerServer();
     }
 
     /**
@@ -286,6 +300,9 @@ public class MenuKit implements ModInitializer {
     public static void initClient() {
         MenuScreens.register(mkMenuType, MKScreen::new);
         LOGGER.info("[MenuKit] Registered MKScreen factory");
+
+        // Phase 3 test setup — register test screen factory
+        com.trevorschoeny.menukit.screen.MenuKitTestSetup.registerClient();
     }
 
     /** Returns the shared MKMenu type. Used by MKMenu's constructor. */
@@ -1112,6 +1129,14 @@ public class MenuKit implements ModInitializer {
             // Invalidate position caches so overlay panels recompute positions
             // using the newly-visible panel's region.
             invalidateResolvedPositions();
+
+            // Reposition all slots for the current context. getSlotPositionMap()
+            // skips hidden panels, so slots for panels that started hidden() were
+            // never positioned. Now that this panel is visible, reposition so its
+            // slots have correct coordinates for hover detection and interaction.
+            // Universal — safe for all contexts (survival repositioning is a fast
+            // no-op since positions don't change based on visibility).
+            repositionSlotsForCurrentScreen(ctx);
         }
     }
 
@@ -1154,14 +1179,16 @@ public class MenuKit implements ModInitializer {
                     containerName, player.getUUID(), isServer);
             if (mkContainer == null) continue;
 
-            // Use the delegate Container (what the actual MKSlots reference)
-            net.minecraft.world.Container delegate = mkContainer.getDelegate();
+            // Use the MKContainer directly (not the delegate) so that sort
+            // and other operations go through MKContainer.setChanged() → sync().
+            // Using the delegate bypasses sync and causes issues like ender
+            // chest sort reverting.
 
             // Use the overload that fires REGION_POPULATED so listeners
             // (e.g., dynamic sort button creation) can react to new regions.
             MKContext ctx = resolveCurrentContext();
             MKRegionRegistry.registerDynamicRegion(
-                    menu, containerName, delegate,
+                    menu, containerName, mkContainer,
                     containerDef.size(), containerDef.persistence(),
                     def.shiftClickIn(), def.shiftClickOut(),
                     player, ctx
@@ -1178,6 +1205,12 @@ public class MenuKit implements ModInitializer {
         if (mc.player != null) {
             MKContext ctx = resolveCurrentContext();
             MKEventBus.fire(MKUIEvent.panelHide(name, ctx, mc.player));
+
+            // Reposition so the now-hidden panel's slots are excluded from
+            // the position map. isActive() already prevents interaction, but
+            // repositioning keeps the position state consistent and ensures
+            // overlay panels recompute without the hidden panel.
+            repositionSlotsForCurrentScreen(ctx);
         }
     }
 
@@ -2077,6 +2110,22 @@ public class MenuKit implements ModInitializer {
      * @param menu    the active container menu
      * @param context the active MKContext
      */
+    /**
+     * Repositions slots on the current screen's menu for the given context.
+     * Called automatically by {@link #showPanel} and {@link #hidePanel} so
+     * that slot visibility changes are always reflected in hover detection.
+     *
+     * <p>Resolves the screen's menu (which may differ from containerMenu in
+     * creative mode) and delegates to {@link #repositionSlots}.
+     */
+    private static void repositionSlotsForCurrentScreen(@org.jspecify.annotations.Nullable MKContext ctx) {
+        if (ctx == null) return;
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> screen) {
+            repositionSlots(screen.getMenu(), ctx);
+        }
+    }
+
     public static void repositionSlots(AbstractContainerMenu menu, MKContext context) {
         Map<String, int[]> positionMap = getSlotPositionMap(context);
 
@@ -2120,7 +2169,17 @@ public class MenuKit implements ModInitializer {
         var player = net.minecraft.client.Minecraft.getInstance().player;
         if (player == null) return;
 
-        repositionSlots(screen.getMenu(), context);
+        // Fix slot indices. Vanilla's selectTab adds SlotWrappers via
+        // slots.add() (not addSlot()), so their index field is never set —
+        // it stays at 0 for every wrapper. This breaks region resolution,
+        // event building, and hover detection, all of which assume
+        // slot.index == the slot's position in the menu's slot list.
+        var creativeMenu = screen.getMenu();
+        for (int i = 0; i < creativeMenu.slots.size(); i++) {
+            creativeMenu.slots.get(i).index = i;
+        }
+
+        repositionSlots(creativeMenu, context);
 
         // Resolve regions on the ItemPickerMenu so overlay panels can find
         // regions with correct creative-layout slot positions. The vanilla
@@ -3021,6 +3080,23 @@ public class MenuKit implements ModInitializer {
         // Reset hover tracking — will be set if mouse is over an MKSlot
         hoveredMKSlot = null;
 
+        // Build an identity-based slot index for O(1) lookups. Keyed by
+        // "panelName:slotIndexInPanel" → the menu's Slot object (which may
+        // be a SlotWrapper in creative mode). This replaces position-based
+        // findLiveMKSlot for panel-owned slots — identity matching can't
+        // drift out of sync with rendered positions.
+        Map<String, net.minecraft.world.inventory.Slot> mkSlotIndex = new HashMap<>();
+        for (var menuSlot : menu.slots) {
+            var target = menuSlot;
+            if (menuSlot instanceof com.trevorschoeny.menukit.mixin.SlotWrapperAccessor wrapper) {
+                target = wrapper.menuKit$getTarget();
+            }
+            MKSlotState indexState = MKSlotStateRegistry.get(target);
+            if (indexState != null && indexState.isMenuKitSlot() && indexState.getPanelName() != null) {
+                mkSlotIndex.put(indexState.getPanelName() + ":" + indexState.getSlotIndexInPanel(), menuSlot);
+            }
+        }
+
         for (MKPanelDef def : panels.values()) {
             if (!def.needsMenuClass(context.menuClass())) continue;
             if (def.isStandaloneScreen()) continue;
@@ -3117,8 +3193,35 @@ public class MenuKit implements ModInitializer {
                 // Render the slot background at the (possibly scrolled) position
                 MKPanel.renderSlotBackground(graphics, slotX - 1, slotY - 1);
 
-                // Find the live MKSlot by its scrolled position (set by repositionSlots)
-                net.minecraft.world.inventory.Slot liveMKSlot = findLiveMKSlot(menu, slotX, slotY);
+                // Find the live MKSlot by identity (panel name + slot index).
+                // Then sync the computed position to the Slot object so vanilla's
+                // hover detection (which reads Slot.x/y) always matches where
+                // we rendered. This makes the renderer the single source of truth
+                // for slot positions — no separate repositionSlots call needed.
+                net.minecraft.world.inventory.Slot menuSlot = mkSlotIndex.get(
+                        def.name() + ":" + slotIdx);
+                if (menuSlot != null) {
+                    ((com.trevorschoeny.menukit.mixin.SlotPositionAccessor) menuSlot)
+                            .menuKit$setX(slotX);
+                    ((com.trevorschoeny.menukit.mixin.SlotPositionAccessor) menuSlot)
+                            .menuKit$setY(slotY);
+                }
+
+                // ── DEBUG: Log position sync for peek slots (first 3 only) ──
+                if (def.name().startsWith("peek_") && slotIdx < 3 && shouldDebugLog()) {
+                    String found = menuSlot != null ? "FOUND" : "NOT_FOUND";
+                    String slotType = menuSlot != null ? menuSlot.getClass().getSimpleName() : "null";
+                    int actualX = menuSlot != null ? menuSlot.x : -999;
+                    int actualY = menuSlot != null ? menuSlot.y : -999;
+                    LOGGER.info("[PosSync] panel={} slot={} computed=({},{}) actual=({},{}) {} type={} mouse=({},{})",
+                            def.name(), slotIdx, slotX, slotY, actualX, actualY,
+                            found, slotType, relMouseX, relMouseY);
+                }
+                // Unwrap for MKSlot-specific operations (state, hover tracking)
+                net.minecraft.world.inventory.Slot liveMKSlot = menuSlot;
+                if (menuSlot instanceof com.trevorschoeny.menukit.mixin.SlotWrapperAccessor wrapper) {
+                    liveMKSlot = wrapper.menuKit$getTarget();
+                }
 
                 // Render hover highlight (bright white overlay) when mouse is over this slot.
                 // Vanilla's highlight sprites don't render well on MKSlots outside the

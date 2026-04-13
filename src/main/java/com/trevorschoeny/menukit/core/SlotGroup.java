@@ -31,6 +31,11 @@ public class SlotGroup {
     // Set during Panel construction — the group knows its parent
     private @Nullable Panel panel;
 
+    // Flat index range in the handler's slot list — set once during
+    // handler construction, then frozen. Used by shift-click routing.
+    private int flatIndexStart = -1;
+    private int flatIndexEnd = -1;
+
     // Directional pairing for shift-click routing
     private final List<SlotGroup> pairedWith = new ArrayList<>();
 
@@ -80,7 +85,7 @@ public class SlotGroup {
     public @Nullable Panel getPanel() { return panel; }
 
     /** Sets the owning Panel. Called during Panel construction. */
-    void setPanel(Panel panel) { this.panel = panel; }
+    public void setPanel(Panel panel) { this.panel = panel; }
 
     // ── Behavioral Delegation ───────────────────────────────────────────
     // Slots delegate to these methods. The policy is the source of truth.
@@ -111,6 +116,20 @@ public class SlotGroup {
      */
     public int maxStackSize(ItemStack stack) {
         return policy.maxStackSize().applyAsInt(stack);
+    }
+
+    // ── Flat Index Range ───────────────────────────────────────────────
+
+    /** Returns the start of this group's flat index range (inclusive). */
+    public int getFlatIndexStart() { return flatIndexStart; }
+
+    /** Returns the end of this group's flat index range (exclusive). */
+    public int getFlatIndexEnd() { return flatIndexEnd; }
+
+    /** Sets the flat index range. Called once during handler construction. */
+    public void setFlatIndexRange(int start, int end) {
+        this.flatIndexStart = start;
+        this.flatIndexEnd = end;
     }
 
     // ── Directional Pairing ─────────────────────────────────────────────
