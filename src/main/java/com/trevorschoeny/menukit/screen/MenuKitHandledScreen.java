@@ -124,7 +124,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         int maxCols = 0;
         int totalSlotHeight = 0;
 
-        for (SlotGroup group : panel.getGroups()) {
+        for (SlotGroup group : menu.getGroupsFor(panel.getId())) {
             int cols = group.getColumns();
             maxCols = Math.max(maxCols, cols);
 
@@ -237,7 +237,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
             // Track running Y offset for multiple groups within a panel
             int groupOffsetY = 0;
 
-            for (SlotGroup group : panel.getGroups()) {
+            for (SlotGroup group : menu.getGroupsFor(panel.getId())) {
                 int cols = group.getColumns();
                 int rows = (group.getStorage().size() + cols - 1) / cols;
 

@@ -39,22 +39,26 @@ public class MenuKitSlot extends Slot {
     // ── Owning group (final — behavior delegation target) ───────────────
     private final SlotGroup group;
 
+    // ── Owning panel (final — visibility query target for inertness) ────
+    private final Panel panel;
+
     /**
      * @param container      vanilla Container adapter (from handler construction)
      * @param containerIndex index within the container
      * @param x              screen x position
      * @param y              screen y position
      * @param group          owning SlotGroup (behavior delegation target)
-     * @param panelId        panel identifier in the hierarchy
+     * @param panel          owning Panel (visibility query target for inertness)
      * @param groupId        group identifier within the panel
      * @param localIndex     slot index within the group (0-based)
      */
     public MenuKitSlot(Container container, int containerIndex, int x, int y,
-                       SlotGroup group, String panelId, String groupId,
+                       SlotGroup group, Panel panel, String groupId,
                        int localIndex) {
         super(container, containerIndex, x, y);
         this.group = group;
-        this.panelId = panelId;
+        this.panel = panel;
+        this.panelId = panel.getId();
         this.groupId = groupId;
         this.localIndex = localIndex;
     }
@@ -84,8 +88,7 @@ public class MenuKitSlot extends Slot {
      * explicitly rather than relying on the behavioral methods.
      */
     public boolean isInert() {
-        Panel panel = group.getPanel();
-        return panel != null && !panel.isVisible();
+        return !panel.isVisible();
     }
 
     // ── Behavioral Overrides (the substitutability contract) ────────────

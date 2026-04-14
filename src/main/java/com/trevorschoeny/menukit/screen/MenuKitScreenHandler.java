@@ -35,9 +35,17 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
     private final List<Panel> panels;
 
     // ── Coordinate Map ──────────────────────────────────────────────────
-    // Each group knows its flat index range. The handler also keeps a
-    // lookup map for panel-level queries.
+    // Panel-id → Panel lookup for panel-level queries. Slot groups live
+    // in a separate map below (context-specific machinery; Panel itself
+    // is context-neutral and does not hold slot groups).
     private final Map<String, Panel> panelById = new LinkedHashMap<>();
+
+    // ── Slot Groups (inventory-menu machinery) ──────────────────────────
+    // Map from panel id to the list of slot groups attached to that panel.
+    // Populated during handler construction, frozen thereafter. Slot groups
+    // are inventory-menu-specific; they live on the handler rather than on
+    // Panel so Panel stays context-neutral across all three rendering contexts.
+    private final Map<String, List<SlotGroup>> groupsByPanel = new LinkedHashMap<>();
 
     // ── Container Adapters ──────────────────────────────────────────────
     // One per SlotGroup, wrapping Storage → vanilla Container.
@@ -47,25 +55,44 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
     // ── Construction ────────────────────────────────────────────────────
 
     /**
-     * Constructs a handler from a pre-built panel tree.
+     * Constructs a handler from a pre-built panel list and a map of slot
+     * groups keyed by panel id.
      *
      * <p>Allocates MenuKitSlots in declaration order: for each panel,
-     * for each group, for each slot index. Flat indices are sequential.
+     * for each of its slot groups (as supplied in {@code groupsByPanel}),
+     * for each slot index. Flat indices are sequential.
+     *
+     * @param type          the menu type
+     * @param syncId        the sync id
+     * @param panels        the ordered panel list (each Panel holds only elements)
+     * @param groupsByPanel map from panel id to the list of slot groups
+     *                      attached to that panel, in declaration order
      */
-    protected MenuKitScreenHandler(MenuType<?> type, int syncId, List<Panel> panels) {
+    protected MenuKitScreenHandler(MenuType<?> type, int syncId,
+                                   List<Panel> panels,
+                                   Map<String, List<SlotGroup>> groupsByPanel) {
         super(type, syncId);
         this.panels = List.copyOf(panels);
 
-        // Wire owner references and build lookup maps
+        // Wire owner references and build panel lookup map
         for (Panel panel : this.panels) {
             panel.setOwner(this);
             panelById.put(panel.getId(), panel);
         }
 
+        // Freeze the group map (copy the lists so external mutation can't
+        // leak into the handler's state)
+        for (Map.Entry<String, List<SlotGroup>> entry : groupsByPanel.entrySet()) {
+            this.groupsByPanel.put(entry.getKey(), List.copyOf(entry.getValue()));
+        }
+
         // Allocate slots in declaration order
         int flatIndex = 0;
         for (Panel panel : this.panels) {
-            for (SlotGroup group : panel.getGroups()) {
+            List<SlotGroup> groups = this.groupsByPanel.get(panel.getId());
+            if (groups == null) continue; // panel has no slot groups (element-only panel)
+
+            for (SlotGroup group : groups) {
                 // Create the Container adapter for this group's Storage
                 StorageContainerAdapter adapter = new StorageContainerAdapter(group.getStorage());
                 adapters.add(adapter);
@@ -74,14 +101,14 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
                 int groupStart = flatIndex;
 
                 for (int local = 0; local < group.getStorage().size(); local++) {
-                    // Temporary grid layout for testing — Phase 4a owns
-                    // positioning properly via MenuKitHandledScreen.
+                    // Temporary grid layout for testing — MenuKitHandledScreen
+                    // positions slots properly during its layout pass.
                     int x = 8 + (flatIndex % 9) * 18;
                     int y = 18 + (flatIndex / 9) * 18;
 
                     MenuKitSlot slot = new MenuKitSlot(
                             adapter, local, x, y,
-                            group, panel.getId(), group.getId(), local
+                            group, panel, group.getId(), local
                     );
                     this.addSlot(slot);
                     flatIndex++;
@@ -102,6 +129,21 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
 
     /** Returns the panel with the given ID, or null. */
     public Panel getPanel(String panelId) { return panelById.get(panelId); }
+
+    /**
+     * Returns the slot groups attached to the panel with the given id, in
+     * declaration order. Returns an empty list if the panel has no slot groups
+     * (element-only panel) or the id is unknown.
+     *
+     * <p>Slot groups are inventory-menu machinery and live on the handler
+     * rather than on Panel — Panel is context-neutral across all three
+     * rendering contexts. Callers that need "which slot groups belong to
+     * this panel" go through this accessor.
+     */
+    public List<SlotGroup> getGroupsFor(String panelId) {
+        List<SlotGroup> groups = groupsByPanel.get(panelId);
+        return groups != null ? groups : List.of();
+    }
 
     /**
      * Returns the SlotGroup that owns the given flat slot index, or null
@@ -209,7 +251,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
         List<SlotGroup> candidates = new ArrayList<>();
         for (Panel panel : panels) {
             if (!panel.isVisible()) continue; // skip inert panels
-            for (SlotGroup group : panel.getGroups()) {
+            for (SlotGroup group : getGroupsFor(panel.getId())) {
                 if (group == sourceGroup) continue; // don't route to self
                 if (!group.getQmp().imports()) continue; // must import
                 if (!group.canAccept(workingStack)) continue; // policy filter
@@ -402,7 +444,11 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
         /** Produces the configured handler. */
         public MenuKitScreenHandler build(int syncId) {
             List<Panel> panels = new ArrayList<>();
+            Map<String, List<SlotGroup>> groupsByPanel = new LinkedHashMap<>();
+
             for (PanelConfig pc : panelConfigs) {
+                // Build the slot groups for this panel and register them in
+                // the groupsByPanel map. Panel itself holds only elements.
                 List<SlotGroup> groups = new ArrayList<>();
                 for (GroupConfig gc : pc.groups) {
                     SlotGroup group = new SlotGroup(
@@ -414,15 +460,16 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
                     }
                     groups.add(group);
                 }
-                panels.add(new Panel(pc.id, groups, pc.elements,
+                groupsByPanel.put(pc.id, groups);
+                panels.add(new Panel(pc.id, pc.elements,
                         pc.visible, pc.style, pc.position, pc.toggleKey));
             }
 
             // Apply directional pairings (by ID reference)
             Map<String, SlotGroup> groupById = new HashMap<>();
-            for (Panel panel : panels) {
-                for (SlotGroup group : panel.getGroups()) {
-                    groupById.put(panel.getId() + "." + group.getId(), group);
+            for (Map.Entry<String, List<SlotGroup>> entry : groupsByPanel.entrySet()) {
+                for (SlotGroup group : entry.getValue()) {
+                    groupById.put(entry.getKey() + "." + group.getId(), group);
                 }
             }
             for (PanelConfig pc : panelConfigs) {
@@ -439,7 +486,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
                 }
             }
 
-            return new MenuKitScreenHandler(menuType, syncId, panels);
+            return new MenuKitScreenHandler(menuType, syncId, panels, groupsByPanel);
         }
     }
 

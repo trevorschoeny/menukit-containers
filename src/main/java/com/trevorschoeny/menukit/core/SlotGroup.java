@@ -46,9 +46,6 @@ public class SlotGroup implements SlotGroupLike {
     // group-level capability, not a slot-level one.
     private @Nullable BiConsumer<Player, MenuKitSlot> rightClickHandler;
 
-    // Set during Panel construction — the group knows its parent
-    private @Nullable Panel panel;
-
     // Flat index range in the handler's slot list — set once during
     // handler construction, then frozen. Used by shift-click routing.
     private int flatIndexStart = -1;
@@ -141,14 +138,6 @@ public class SlotGroup implements SlotGroupLike {
     public void setRightClickHandler(@Nullable BiConsumer<Player, MenuKitSlot> handler) {
         this.rightClickHandler = handler;
     }
-
-    // ── Panel Reference ─────────────────────────────────────────────────
-
-    /** Returns the owning Panel, or null if not yet attached. */
-    public @Nullable Panel getPanel() { return panel; }
-
-    /** Sets the owning Panel. Called during Panel construction. */
-    public void setPanel(Panel panel) { this.panel = panel; }
 
     // ── Behavioral Delegation ───────────────────────────────────────────
     // Slots delegate to these methods. The policy is the source of truth.
