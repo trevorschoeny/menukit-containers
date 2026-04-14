@@ -1,6 +1,8 @@
 package com.trevorschoeny.menukit.core;
 
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import org.jspecify.annotations.Nullable;
 
@@ -19,10 +21,13 @@ import java.util.function.BiConsumer;
  * This keeps slots thin (identity only) and makes group-level changes
  * (swap policy, flip inertness) take effect across all slots immediately.
  *
+ * <p>Implements {@link SlotGroupLike} so consumer code can program against
+ * a uniform interface shared with {@link VirtualSlotGroup} (observed screens).
+ *
  * <p>Part of the canonical MenuKit hierarchy:
  * Screen → Panel → SlotGroup → MenuKitSlot
  */
-public class SlotGroup {
+public class SlotGroup implements SlotGroupLike {
 
     private final String id;
     private final Storage storage;
@@ -98,21 +103,21 @@ public class SlotGroup {
     // ── Identity ────────────────────────────────────────────────────────
 
     /** Returns this group's unique identifier within its panel. */
-    public String getId() { return id; }
+    @Override public String getId() { return id; }
 
     // ── Axes ────────────────────────────────────────────────────────────
 
     /** Returns where items live. */
-    public Storage getStorage() { return storage; }
+    @Override public Storage getStorage() { return storage; }
 
     /** Returns what operations are allowed. */
-    public InteractionPolicy getPolicy() { return policy; }
+    @Override public InteractionPolicy getPolicy() { return policy; }
 
     /** Returns how this group participates in shift-click routing. */
-    public QuickMoveParticipation getQmp() { return qmp; }
+    @Override public QuickMoveParticipation getQmp() { return qmp; }
 
     /** Returns the numeric shift-click priority (higher = tried first). */
-    public int getShiftClickPriority() { return shiftClickPriority; }
+    @Override public int getShiftClickPriority() { return shiftClickPriority; }
 
     // ── Layout Metadata ────────────────────────────────────────────────
 
@@ -156,6 +161,7 @@ public class SlotGroup {
      * {@code super.mayPlace} — the mixin chain composes, and the most
      * restrictive answer wins.
      */
+    @Override
     public boolean canAccept(ItemStack stack) {
         return policy.canAccept().test(stack);
     }
@@ -164,6 +170,7 @@ public class SlotGroup {
      * Can items be removed from this group? Delegates to the policy's
      * {@code canRemove} predicate.
      */
+    @Override
     public boolean canRemove(ItemStack stack) {
         return policy.canRemove().test(stack);
     }
@@ -172,6 +179,7 @@ public class SlotGroup {
      * Maximum stack size for the given item in this group.
      * Delegates to the policy's {@code maxStackSize} function.
      */
+    @Override
     public int maxStackSize(ItemStack stack) {
         return policy.maxStackSize().applyAsInt(stack);
     }
@@ -195,14 +203,18 @@ public class SlotGroup {
      * flat slot list. Convenience for consumers that need to iterate
      * a group's slots without walking the flat index range manually.
      *
+     * <p>Returns {@code List<MenuKitSlot>} — a valid covariant override of
+     * {@link SlotGroupLike#getSlots}'s {@code List<? extends Slot>}.
+     *
      * @param handler the handler whose slot list contains this group's slots
      * @return unmodifiable list of MenuKitSlots in this group
      */
-    public List<MenuKitSlot> getSlots(net.minecraft.world.inventory.AbstractContainerMenu handler) {
+    @Override
+    public List<MenuKitSlot> getSlots(AbstractContainerMenu handler) {
         if (flatIndexStart < 0 || flatIndexEnd < 0) return List.of();
         List<MenuKitSlot> result = new ArrayList<>();
         for (int i = flatIndexStart; i < flatIndexEnd; i++) {
-            net.minecraft.world.inventory.Slot slot = handler.slots.get(i);
+            Slot slot = handler.slots.get(i);
             if (slot instanceof MenuKitSlot mk) {
                 result.add(mk);
             }

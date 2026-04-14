@@ -414,8 +414,8 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
                     }
                     groups.add(group);
                 }
-                panels.add(new Panel(pc.id, groups, pc.visible,
-                        pc.style, pc.position, pc.toggleKey));
+                panels.add(new Panel(pc.id, groups, pc.elements,
+                        pc.visible, pc.style, pc.position, pc.toggleKey));
             }
 
             // Apply directional pairings (by ID reference)
@@ -446,6 +446,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
     public static class PanelBuilder {
         private final String id;
         private final List<GroupConfig> groups = new ArrayList<>();
+        private final List<PanelElement> elements = new ArrayList<>();
         private boolean visible = true;
         private PanelStyle style = PanelStyle.RAISED;
         private PanelPosition position = PanelPosition.BODY;
@@ -539,6 +540,37 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
             return this;
         }
 
+        // ── Panel Elements ──────────────────────────────────────────
+
+        /** Adds a button element at the given position within the panel content area. */
+        public PanelBuilder button(int childX, int childY, int width, int height,
+                                   net.minecraft.network.chat.Component text,
+                                   java.util.function.Consumer<Button> onClick) {
+            elements.add(new Button(childX, childY, width, height, text, onClick));
+            return this;
+        }
+
+        /** Adds a text label at the given position (dark gray, no shadow — vanilla style). */
+        public PanelBuilder text(int childX, int childY,
+                                 net.minecraft.network.chat.Component text) {
+            elements.add(new TextLabel(childX, childY, text));
+            return this;
+        }
+
+        /** Adds a text label with explicit color and shadow. */
+        public PanelBuilder text(int childX, int childY,
+                                 net.minecraft.network.chat.Component text,
+                                 int color, boolean shadow) {
+            elements.add(new TextLabel(childX, childY, text, color, shadow));
+            return this;
+        }
+
+        /** Adds an arbitrary panel element (for custom element types). */
+        public PanelBuilder element(PanelElement element) {
+            elements.add(element);
+            return this;
+        }
+
         /** Marks this panel as hidden initially. */
         public PanelBuilder hidden() {
             this.visible = false;
@@ -546,13 +578,15 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
         }
 
         PanelConfig build() {
-            return new PanelConfig(id, groups, visible, style, position, toggleKey);
+            return new PanelConfig(id, groups, List.copyOf(elements),
+                    visible, style, position, toggleKey);
         }
     }
 
     // ── Builder Config Records ──────────────────────────────────────────
 
-    private record PanelConfig(String id, List<GroupConfig> groups, boolean visible,
+    private record PanelConfig(String id, List<GroupConfig> groups,
+                               List<PanelElement> elements, boolean visible,
                                PanelStyle style, PanelPosition position, int toggleKey) {}
 
     private record GroupConfig(

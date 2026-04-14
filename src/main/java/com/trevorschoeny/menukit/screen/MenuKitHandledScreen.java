@@ -313,6 +313,23 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
                     leftPos + slot.x - 1, topPos + slot.y - 1);
         }
 
+        // ── Panel elements (screen space) ─────────────────────────────
+        // Buttons, text labels, and custom elements positioned within
+        // each panel's content area (after PANEL_PADDING).
+        for (Panel panel : menu.getPanels()) {
+            if (!panel.isVisible()) continue;
+            PanelBounds bounds = panelBounds.get(panel.getId());
+            if (bounds == null) continue;
+
+            int contentX = leftPos + bounds.x() + PANEL_PADDING;
+            int contentY = topPos + bounds.y() + PANEL_PADDING;
+
+            for (PanelElement element : panel.getElements()) {
+                if (!element.isVisible()) continue;
+                element.render(graphics, contentX, contentY, mouseX, mouseY);
+            }
+        }
+
     }
 
     @Override
@@ -548,10 +565,19 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
      * Click dispatch — fires events, checks group handlers, then
      * falls through to vanilla.
      *
-     * <p>Order: drag mode check → right-click handler → event fire → vanilla.
+     * <p>Order: element click → drag mode → right-click handler → event fire → vanilla.
+     * Elements consume clicks first so buttons don't accidentally trigger
+     * slot interactions or drag modes underneath them.
      */
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean flag) {
+        // Element click — buttons and custom elements get first crack.
+        // A button returning false from mouseClicked lets the click fall
+        // through to drag modes and vanilla handling.
+        if (dispatchElementClick(event.x(), event.y(), event.button())) {
+            return true;
+        }
+
         // Drag mode start — check if a registered mode claims this drag
         if (this.hoveredSlot instanceof MenuKitSlot mkSlot && activeDrag == null) {
             for (DragMode mode : dragModes) {
@@ -615,6 +641,41 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
             return true;
         }
         return super.mouseReleased(event);
+    }
+
+    // ── Element Click Dispatch ─────────────────────────────────────────
+    // Checks all visible panels' visible elements for a click hit.
+    // Hidden panels' elements are fully inert (like their slots).
+
+    /**
+     * Dispatches a click to panel elements. Returns true if any element
+     * consumed the click. Checks panel visibility and element visibility
+     * before routing — hidden panels' elements never receive clicks.
+     */
+    private boolean dispatchElementClick(double mouseX, double mouseY, int button) {
+        for (Panel panel : menu.getPanels()) {
+            if (!panel.isVisible()) continue;
+            PanelBounds bounds = panelBounds.get(panel.getId());
+            if (bounds == null) continue;
+
+            int contentX = leftPos + bounds.x() + PANEL_PADDING;
+            int contentY = topPos + bounds.y() + PANEL_PADDING;
+
+            for (PanelElement element : panel.getElements()) {
+                if (!element.isVisible()) continue;
+
+                // Hit test: is the mouse within this element's bounds?
+                double relX = mouseX - contentX - element.getChildX();
+                double relY = mouseY - contentY - element.getChildY();
+                if (relX >= 0 && relX < element.getWidth()
+                        && relY >= 0 && relY < element.getHeight()) {
+                    if (element.mouseClicked(mouseX, mouseY, button)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     // ── Style Mapping ──────────────────────────────────────────────────
