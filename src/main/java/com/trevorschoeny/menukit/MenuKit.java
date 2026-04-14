@@ -1,9 +1,10 @@
 package com.trevorschoeny.menukit;
 
 import com.trevorschoeny.menukit.config.MKFamily;
+import com.trevorschoeny.menukit.core.PanelElement;
 import com.trevorschoeny.menukit.core.PanelRendering;
 import com.trevorschoeny.menukit.core.PanelStyle;
-import com.trevorschoeny.menukit.hud.MKHudElement;
+import com.trevorschoeny.menukit.core.RenderContext;
 import com.trevorschoeny.menukit.hud.MKHudNotification;
 import com.trevorschoeny.menukit.hud.MKHudPanelDef;
 
@@ -178,11 +179,14 @@ public class MenuKit implements ModInitializer {
                         size[0], size[1], deltaTracker);
             }
 
-            // Child elements, offset by padding
+            // Child elements, offset by padding. RenderContext uses -1 for
+            // mouse coordinates because HUDs don't dispatch input.
             int contentX = pos[0] + def.padding();
             int contentY = pos[1] + def.padding();
-            for (MKHudElement element : def.elements()) {
-                element.render(graphics, contentX, contentY, deltaTracker);
+            RenderContext ctx = new RenderContext(graphics, contentX, contentY, -1, -1);
+            for (PanelElement element : def.elements()) {
+                if (!element.isVisible()) continue;
+                element.render(ctx);
             }
         }
 
