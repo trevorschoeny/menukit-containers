@@ -79,17 +79,24 @@ public class MenuKit implements ModInitializer {
         init();
     }
 
-    /** Server-safe initialization. No-op today; retained for symmetry and
+    /** Server-safe initialization. Retained for symmetry and
      *  consumer-ordering (mods can call {@code MenuKit.init()} explicitly
-     *  before their own registration if needed). */
+     *  before their own registration if needed). Currently registers the
+     *  Phase 5 contract-verification scaffolding ({@code /mkverify}
+     *  command + test MenuType). */
     public static void init() {
         LOGGER.info("[MenuKit] Initialized");
+        // Phase 5 verification scaffolding — temporary; removed in a
+        // follow-up commit after the phase report lands.
+        com.trevorschoeny.menukit.verification.ContractVerification.initServer();
     }
 
     /** Client-safe initialization. Invoked from
-     *  {@link MenuKitClient#onInitializeClient()}. */
+     *  {@link MenuKitClient#onInitializeClient()}. Registers the
+     *  verification test-screen factory. */
     public static void initClient() {
         LOGGER.info("[MenuKit] Client initialized");
+        com.trevorschoeny.menukit.verification.ContractVerification.initClient();
     }
 
     // ══════════════════════════════════════════════════════════════════════
