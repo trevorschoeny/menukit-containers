@@ -185,8 +185,9 @@ public class HandlerRecognizerRegistry {
         for (int i = fromIndex; i < toIndex; i++) {
             Slot slot = handler.slots.get(i);
 
-            // Skip MenuKit-managed slots (both old and new architecture)
-            if (isMenuKitManagedSlot(slot)) continue;
+            // Skip MenuKit-managed slots — they belong to a MenuKitScreenHandler,
+            // not to an observed vanilla screen, and shouldn't be grouped here.
+            if (slot instanceof MenuKitSlot) continue;
             if (slot.container != currentContainer) {
                 if (!currentSlots.isEmpty()) {
                     groups.add(buildIdentityGroup(
@@ -307,20 +308,4 @@ public class HandlerRecognizerRegistry {
         return groups;
     }
 
-    // ── Internal Helpers ───────────────────────────────────────────────
-
-    /**
-     * Returns true if the slot is managed by MenuKit rather than vanilla.
-     * Covers both the old architecture ({@code MKSlot} in the widget package)
-     * and the new architecture ({@code MenuKitSlot} in the core package).
-     *
-     * <p>Uses a package-name check to avoid a compile-time dependency on the
-     * old widget package, which is on the chopping block in Phase 5.
-     */
-    private static boolean isMenuKitManagedSlot(Slot slot) {
-        // New architecture: direct instanceof check
-        if (slot instanceof MenuKitSlot) return true;
-        // Old architecture: package-name check (avoids compile dependency on widget.MKSlot)
-        return slot.getClass().getName().startsWith("com.trevorschoeny.menukit.widget.MKSlot");
-    }
 }

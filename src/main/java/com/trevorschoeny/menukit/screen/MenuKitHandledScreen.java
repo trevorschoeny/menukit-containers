@@ -2,7 +2,7 @@ package com.trevorschoeny.menukit.screen;
 
 import com.trevorschoeny.menukit.core.*;
 import com.trevorschoeny.menukit.mixin.SlotPositionAccessor;
-import com.trevorschoeny.menukit.panel.MKPanel;
+import com.trevorschoeny.menukit.core.PanelRendering;
 
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -298,10 +298,10 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
             PanelBounds bounds = panelBounds.get(panel.getId());
             if (bounds == null) continue;
 
-            MKPanel.renderPanel(graphics,
+            PanelRendering.renderPanel(graphics,
                     leftPos + bounds.x(), topPos + bounds.y(),
                     bounds.width(), bounds.height(),
-                    mapStyle(panel.getStyle()));
+                    panel.getStyle());
         }
 
         // ── Slot backgrounds (screen space) ────────────────────────────
@@ -309,7 +309,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         // background wraps around the 16x16 item area).
         for (Slot slot : menu.slots) {
             if (!slot.isActive()) continue;
-            MKPanel.renderSlotBackground(graphics,
+            PanelRendering.renderSlotBackground(graphics,
                     leftPos + slot.x - 1, topPos + slot.y - 1);
         }
 
@@ -455,6 +455,12 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
          * A shift-click (quick move) is about to happen on a MenuKitSlot.
          * Fires BEFORE vanilla routes the items — destination is unknown
          * at this point. The movedStack is a copy of what's in the source.
+         *
+         * <p><b>Scope:</b> shift-click only. Other item-movement paths
+         * (drag-collect, double-click collect, hopper insertion, cursor
+         * placement, creative middle-click) do NOT fire this event — the
+         * name intentionally matches vanilla's {@code quickMoveStack}.
+         * For those paths, observe the relevant ecosystem hooks directly.
          *
          * <p>Use for logging, analytics, or pre-transfer checks. For
          * post-routing observation (where items ended up), a future
@@ -678,16 +684,4 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         return false;
     }
 
-    // ── Style Mapping ──────────────────────────────────────────────────
-    // Maps the core PanelStyle enum to MKPanel.Style for rendering.
-    // MKPanel is a static rendering utility — no old-architecture baggage.
-
-    private static MKPanel.Style mapStyle(PanelStyle style) {
-        return switch (style) {
-            case RAISED -> MKPanel.Style.RAISED;
-            case DARK -> MKPanel.Style.DARK;
-            case INSET -> MKPanel.Style.INSET;
-            case NONE -> MKPanel.Style.NONE;
-        };
-    }
 }
