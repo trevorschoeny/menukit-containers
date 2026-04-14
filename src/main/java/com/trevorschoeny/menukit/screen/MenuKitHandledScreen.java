@@ -59,10 +59,8 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
     // ── Per-Instance Layout State ──────────────────────────────────────
     // Recomputed each frame from the panel tree. No global statics.
 
-    private record PanelBounds(int x, int y, int width, int height) {}
-
     /** Panel ID → computed screen-relative bounds. Rebuilt each frame. */
-    private final Map<String, PanelBounds> panelBounds = new LinkedHashMap<>();
+    private Map<String, PanelBounds> panelBounds = new LinkedHashMap<>();
 
     // ── Hover Tracking ─────────────────────────────────────────────────
     // Tracks the previously hovered MenuKitSlot to fire enter/exit events.
@@ -156,8 +154,6 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
      * is overridden to include them.
      */
     private void computeLayout() {
-        panelBounds.clear();
-
         // Phase 1: Compute each panel's size (even hidden ones — we
         // need sizes available in case they become visible mid-frame).
         Map<String, int[]> sizes = new LinkedHashMap<>();
@@ -165,55 +161,27 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
             sizes.put(panel.getId(), computePanelSize(panel));
         }
 
-        // Phase 2: Position body panels — vertical stack with BODY_GAP
+        // Phase 2: Resolve panel positions via the shared layout utility.
+        // PanelLayout is context-neutral — it handles BODY-stack and
+        // relative-to-anchor constraints for both inventory menus and
+        // standalone screens.
+        panelBounds = PanelLayout.resolve(
+                menu.getPanels(), sizes, BODY_GAP, RELATIVE_GAP, TITLE_HEIGHT);
+
+        // Phase 3: Derive inventory-specific layout (imageWidth/imageHeight
+        // for AbstractContainerScreen centering; inventoryLabelY positioning).
         int bodyWidth = 0;
-        int bodyY = TITLE_HEIGHT; // room for the title label
+        int bodyBottomY = TITLE_HEIGHT;
         for (Panel panel : menu.getPanels()) {
             if (!panel.isVisible()) continue;
             if (panel.getPosition().mode() != PanelPosition.Mode.BODY) continue;
-
-            int[] size = sizes.get(panel.getId());
-            panelBounds.put(panel.getId(),
-                    new PanelBounds(0, bodyY, size[0], size[1]));
-            bodyWidth = Math.max(bodyWidth, size[0]);
-            bodyY += size[1] + BODY_GAP;
+            PanelBounds bounds = panelBounds.get(panel.getId());
+            if (bounds == null) continue;
+            bodyWidth = Math.max(bodyWidth, bounds.width());
+            bodyBottomY = Math.max(bodyBottomY, bounds.y() + bounds.height());
         }
-
-        // Phase 3: Position relative panels — offset from anchor
-        for (Panel panel : menu.getPanels()) {
-            if (!panel.isVisible()) continue;
-            if (panel.getPosition().mode() == PanelPosition.Mode.BODY) continue;
-
-            String anchorId = panel.getPosition().anchorPanelId();
-            PanelBounds anchor = panelBounds.get(anchorId);
-            if (anchor == null) continue; // anchor not visible — skip
-
-            int[] size = sizes.get(panel.getId());
-            PanelBounds bounds = switch (panel.getPosition().mode()) {
-                case RIGHT_OF -> new PanelBounds(
-                        anchor.x() + anchor.width() + RELATIVE_GAP,
-                        anchor.y(), size[0], size[1]);
-                case LEFT_OF -> new PanelBounds(
-                        anchor.x() - size[0] - RELATIVE_GAP,
-                        anchor.y(), size[0], size[1]);
-                case ABOVE -> new PanelBounds(
-                        anchor.x(),
-                        anchor.y() - size[1] - RELATIVE_GAP,
-                        size[0], size[1]);
-                case BELOW -> new PanelBounds(
-                        anchor.x(),
-                        anchor.y() + anchor.height() + RELATIVE_GAP,
-                        size[0], size[1]);
-                default -> null; // BODY handled above
-            };
-            if (bounds != null) {
-                panelBounds.put(panel.getId(), bounds);
-            }
-        }
-
-        // imageWidth/imageHeight cover the body column only
-        imageWidth = Math.max(bodyWidth, 176);       // minimum vanilla width
-        imageHeight = Math.max(bodyY - BODY_GAP, 100); // remove trailing gap
+        imageWidth = Math.max(bodyWidth, 176);   // minimum vanilla width
+        imageHeight = Math.max(bodyBottomY, 100); // includes TITLE_HEIGHT
 
         // Position the "Inventory" label relative to the player panel
         PanelBounds playerBounds = panelBounds.get("player");
