@@ -323,10 +323,11 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
 
             int contentX = leftPos + bounds.x() + PANEL_PADDING;
             int contentY = topPos + bounds.y() + PANEL_PADDING;
+            RenderContext ctx = new RenderContext(graphics, contentX, contentY, mouseX, mouseY);
 
             for (PanelElement element : panel.getElements()) {
                 if (!element.isVisible()) continue;
-                element.render(graphics, contentX, contentY, mouseX, mouseY);
+                element.render(ctx);
             }
         }
 
