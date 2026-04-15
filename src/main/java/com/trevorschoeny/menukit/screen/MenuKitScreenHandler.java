@@ -726,6 +726,19 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
             return this;
         }
 
+        /**
+         * Adds a radio button referencing an externally-constructed
+         * {@link RadioGroup}. Multiple Radios sharing the same group form a
+         * single-selection set. For supplier-based labels or a disabled
+         * predicate, use {@code .element(new Radio<>(...))}.
+         */
+        public <T> PanelBuilder radio(int childX, int childY, T value,
+                                      net.minecraft.network.chat.Component label,
+                                      RadioGroup<T> group) {
+            elements.add(new Radio<>(childX, childY, value, label, group));
+            return this;
+        }
+
         /** Adds an arbitrary panel element (for custom element types). */
         public PanelBuilder element(PanelElement element) {
             elements.add(element);
