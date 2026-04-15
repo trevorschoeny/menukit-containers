@@ -612,6 +612,17 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
             return this;
         }
 
+        /**
+         * Adds a text label with supplier-driven content (dark gray, no shadow).
+         * For explicit color/shadow with a supplier, use
+         * {@code .element(new TextLabel(x, y, supplier, color, shadow))}.
+         */
+        public PanelBuilder text(int childX, int childY,
+                                 java.util.function.Supplier<net.minecraft.network.chat.Component> text) {
+            elements.add(new TextLabel(childX, childY, text));
+            return this;
+        }
+
         /** Adds an icon element with a fixed sprite. */
         public PanelBuilder icon(int childX, int childY, int width, int height,
                                  net.minecraft.resources.Identifier sprite) {
@@ -736,6 +747,19 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
                                       net.minecraft.network.chat.Component label,
                                       RadioGroup<T> group) {
             elements.add(new Radio<>(childX, childY, value, label, group));
+            return this;
+        }
+
+        /**
+         * Adds a standalone Tooltip element — a persistent info box rendered
+         * at the declared position with a RAISED panel background. Distinct
+         * from hover-triggered tooltips attached to interactive elements via
+         * their {@code .tooltip(...)} setters. For supplier-based text, use
+         * {@code .element(new Tooltip(x, y, supplier))}.
+         */
+        public PanelBuilder tooltip(int childX, int childY,
+                                    net.minecraft.network.chat.Component text) {
+            elements.add(new Tooltip(childX, childY, text));
             return this;
         }
 
