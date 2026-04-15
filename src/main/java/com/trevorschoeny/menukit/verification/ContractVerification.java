@@ -97,6 +97,7 @@ public final class ContractVerification {
     // ── MenuType + screen registration ──────────────────────────────────
 
     private static MenuType<MenuKitScreenHandler> testMenuType;
+    private static MenuType<MenuKitScreenHandler> elementDemoMenuType;
 
     /** Called from {@code MenuKit.init()} — server-safe MenuType + commands. */
     public static void initServer() {
@@ -107,18 +108,27 @@ public final class ContractVerification {
                 Identifier.fromNamespaceAndPath("menukit", "contract_verify"),
                 testMenuType);
 
+        elementDemoMenuType = new MenuType<>(
+                (syncId, inv) -> ElementDemoHandler.create(syncId, inv, elementDemoMenuType),
+                net.minecraft.world.flag.FeatureFlagSet.of());
+        Registry.register(BuiltInRegistries.MENU,
+                Identifier.fromNamespaceAndPath("menukit", "element_demo"),
+                elementDemoMenuType);
+
         CommandRegistrationCallback.EVENT.register((dispatcher, access, env) ->
                 dispatcher.register(literal("mkverify")
                         .then(literal("composability").executes(ContractVerification::cmdComposability))
                         .then(literal("substitutability").executes(ContractVerification::cmdSubstitutability))
                         .then(literal("syncsafety").executes(ContractVerification::cmdSyncSafety))
                         .then(literal("uniform").executes(ContractVerification::cmdUniform))
-                        .then(literal("inertness").executes(ContractVerification::cmdInertness))));
+                        .then(literal("inertness").executes(ContractVerification::cmdInertness))
+                        .then(literal("elements").executes(ContractVerification::cmdElements))));
     }
 
     /** Called from {@code MenuKitClient.onInitializeClient()} — screen factory. */
     public static void initClient() {
         MenuScreens.register(testMenuType, TestContractScreen::new);
+        MenuScreens.register(elementDemoMenuType, ElementDemoScreen::new);
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -136,6 +146,36 @@ public final class ContractVerification {
                 return TestContractHandler.create(syncId, inv, testMenuType);
             }
         });
+    }
+
+    /** Opens the element-demo screen for the player. */
+    private static void openElementDemoScreen(ServerPlayer player) {
+        player.openMenu(new MenuProvider() {
+            @Override public Component getDisplayName() {
+                return Component.literal("MenuKit Element Demo");
+            }
+            @Override public AbstractContainerMenu createMenu(int syncId, Inventory inv, Player p) {
+                return ElementDemoHandler.create(syncId, inv, elementDemoMenuType);
+            }
+        });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 6. Element demo (visual verification surface — not a canonical contract)
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // Opens a clean screen with just a demo panel, no slots, no player
+    // inventory rendering. Used for visual verification of element rendering
+    // during phase work. Per-phase test elements live in ElementDemoHandler;
+    // edit there to add/remove test elements.
+
+    private static int cmdElements(CommandContext<CommandSourceStack> ctx)
+            throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        openElementDemoScreen(player);
+        ctx.getSource().sendSuccess(
+                () -> Component.literal("[Verify] Element demo screen is now open."), false);
+        return 1;
     }
 
     /** Short description of an ItemStack for log lines. */
