@@ -612,6 +612,46 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
             return this;
         }
 
+        /** Adds an icon element with a fixed sprite. */
+        public PanelBuilder icon(int childX, int childY, int width, int height,
+                                 net.minecraft.resources.Identifier sprite) {
+            elements.add(new Icon(childX, childY, width, height, sprite));
+            return this;
+        }
+
+        /** Adds an icon element whose sprite is driven by a supplier. */
+        public PanelBuilder icon(int childX, int childY, int width, int height,
+                                 java.util.function.Supplier<net.minecraft.resources.Identifier> sprite) {
+            elements.add(new Icon(childX, childY, width, height, sprite));
+            return this;
+        }
+
+        /** Adds a horizontal divider with the default color and thickness. */
+        public PanelBuilder horizontalDivider(int childX, int childY, int length) {
+            elements.add(Divider.horizontal(childX, childY, length));
+            return this;
+        }
+
+        /** Adds a horizontal divider with explicit color and thickness. */
+        public PanelBuilder horizontalDivider(int childX, int childY, int length,
+                                              int color, int thickness) {
+            elements.add(Divider.horizontal(childX, childY, length, color, thickness));
+            return this;
+        }
+
+        /** Adds a vertical divider with the default color and thickness. */
+        public PanelBuilder verticalDivider(int childX, int childY, int length) {
+            elements.add(Divider.vertical(childX, childY, length));
+            return this;
+        }
+
+        /** Adds a vertical divider with explicit color and thickness. */
+        public PanelBuilder verticalDivider(int childX, int childY, int length,
+                                            int color, int thickness) {
+            elements.add(Divider.vertical(childX, childY, length, color, thickness));
+            return this;
+        }
+
         /** Adds an arbitrary panel element (for custom element types). */
         public PanelBuilder element(PanelElement element) {
             elements.add(element);
