@@ -114,9 +114,16 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
     // visibility toggles instantly without a separate invalidation step.
 
     /**
-     * Computes the pixel size of a panel from its groups' slot grids.
-     * Width = widest group * SLOT_SIZE + padding.
-     * Height = sum of all group rows * SLOT_SIZE + row gaps + padding.
+     * Computes the pixel size of a panel, factoring in both its slot groups
+     * and its elements so the visible background fully contains everything
+     * the panel renders.
+     *
+     * <p>Width = max(widest slot group * SLOT_SIZE, rightmost element edge) + 2 * padding.
+     * Height = max(total slot rows * SLOT_SIZE + row gaps, bottommost element edge) + 2 * padding.
+     *
+     * <p>Element bounds contribute so that panels with only elements (no slot
+     * groups) render at a meaningful size — not just the 2×padding default
+     * that the slot-only computation would produce.
      */
     private int[] computePanelSize(Panel panel) {
         int maxCols = 0;
@@ -135,8 +142,22 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
             }
         }
 
-        int width = maxCols * SLOT_SIZE + 2 * PANEL_PADDING;
-        int height = totalSlotHeight + 2 * PANEL_PADDING;
+        int slotContentWidth = maxCols * SLOT_SIZE;
+        int slotContentHeight = totalSlotHeight;
+
+        // Factor in elements so the panel grows to contain them. Element
+        // child-coordinates are relative to the content area (inside the
+        // padding), so the rightmost / bottommost edge is childX + width
+        // and childY + height respectively.
+        int elementContentWidth = 0;
+        int elementContentHeight = 0;
+        for (PanelElement element : panel.getElements()) {
+            elementContentWidth  = Math.max(elementContentWidth,  element.getChildX() + element.getWidth());
+            elementContentHeight = Math.max(elementContentHeight, element.getChildY() + element.getHeight());
+        }
+
+        int width  = Math.max(slotContentWidth,  elementContentWidth)  + 2 * PANEL_PADDING;
+        int height = Math.max(slotContentHeight, elementContentHeight) + 2 * PANEL_PADDING;
         return new int[]{width, height};
     }
 
@@ -331,8 +352,14 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         // to 0xFF404040 (vanilla's dark gray on light backgrounds).
         graphics.drawString(this.font, this.title,
                 this.titleLabelX, this.titleLabelY, 0xFFFFFFFF, true);
-        graphics.drawString(this.font, this.playerInventoryTitle,
-                this.inventoryLabelX, this.inventoryLabelY, 0xFFFFFFFF, true);
+        // Only draw the vanilla "Inventory" label when the handler actually
+        // has a player-inventory panel. Screens that deliberately omit the
+        // player panel (e.g., the element-demo screen) shouldn't display
+        // a floating label for content they don't render.
+        if (panelBounds.get("player") != null) {
+            graphics.drawString(this.font, this.playerInventoryTitle,
+                    this.inventoryLabelX, this.inventoryLabelY, 0xFFFFFFFF, true);
+        }
     }
 
     // ── Panel Visibility (public API) ──────────────────────────────────
