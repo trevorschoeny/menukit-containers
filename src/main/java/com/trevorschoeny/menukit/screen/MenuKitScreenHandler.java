@@ -652,6 +652,58 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
             return this;
         }
 
+        /** Adds an item display with a fixed stack, default 16×16 size, overlays on. */
+        public PanelBuilder itemDisplay(int childX, int childY,
+                                        net.minecraft.world.item.ItemStack stack) {
+            elements.add(new ItemDisplay(childX, childY, stack));
+            return this;
+        }
+
+        /** Adds an item display with a supplier-driven stack, default size, overlays on. */
+        public PanelBuilder itemDisplay(int childX, int childY,
+                                        java.util.function.Supplier<net.minecraft.world.item.ItemStack> stack) {
+            elements.add(new ItemDisplay(childX, childY, stack));
+            return this;
+        }
+
+        /** Adds an item display with a fixed stack, explicit size, explicit overlays. */
+        public PanelBuilder itemDisplay(int childX, int childY, int size,
+                                        net.minecraft.world.item.ItemStack stack,
+                                        boolean showCount, boolean showDurability) {
+            elements.add(new ItemDisplay(childX, childY, size, stack, showCount, showDurability));
+            return this;
+        }
+
+        /** Adds an item display with a supplier-driven stack, explicit size, explicit overlays. */
+        public PanelBuilder itemDisplay(int childX, int childY, int size,
+                                        java.util.function.Supplier<net.minecraft.world.item.ItemStack> stack,
+                                        boolean showCount, boolean showDurability) {
+            elements.add(new ItemDisplay(childX, childY, size, stack, showCount, showDurability));
+            return this;
+        }
+
+        /**
+         * Adds a progress bar with a fixed value, left-to-right direction,
+         * and default colors. For direction, custom colors, or a label, use
+         * {@code .element(new ProgressBar(...))} with the full constructor.
+         */
+        public PanelBuilder progressBar(int childX, int childY, int width, int height, float value) {
+            elements.add(new ProgressBar(childX, childY, width, height, value));
+            return this;
+        }
+
+        /**
+         * Adds a progress bar with a supplier-driven value, left-to-right
+         * direction, and default colors. For direction, custom colors, or a
+         * label, use {@code .element(new ProgressBar(...))} with the full
+         * constructor.
+         */
+        public PanelBuilder progressBar(int childX, int childY, int width, int height,
+                                        java.util.function.Supplier<Float> value) {
+            elements.add(new ProgressBar(childX, childY, width, height, value));
+            return this;
+        }
+
         /** Adds an arbitrary panel element (for custom element types). */
         public PanelBuilder element(PanelElement element) {
             elements.add(element);
