@@ -704,6 +704,28 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
             return this;
         }
 
+        /**
+         * Adds an always-enabled toggle. For a disabled-predicate toggle,
+         * use {@code .element(new Toggle(..., disabledWhen))}.
+         */
+        public PanelBuilder toggle(int childX, int childY, int width, int height,
+                                   boolean initialState,
+                                   java.util.function.Consumer<Boolean> onToggle) {
+            elements.add(new Toggle(childX, childY, width, height, initialState, onToggle));
+            return this;
+        }
+
+        /**
+         * Adds a labeled checkbox with the fixed-label form. For supplier-based
+         * labels or a disabled predicate, use {@code .element(new Checkbox(...))}.
+         */
+        public PanelBuilder checkbox(int childX, int childY, boolean initialState,
+                                     net.minecraft.network.chat.Component label,
+                                     java.util.function.Consumer<Boolean> onToggle) {
+            elements.add(new Checkbox(childX, childY, initialState, label, onToggle));
+            return this;
+        }
+
         /** Adds an arbitrary panel element (for custom element types). */
         public PanelBuilder element(PanelElement element) {
             elements.add(element);
