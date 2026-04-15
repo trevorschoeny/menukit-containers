@@ -33,9 +33,9 @@ import static net.minecraft.commands.Commands.literal;
 
 /**
  * Contract-verification orchestrator. Registers a test MenuType, a test
- * screen factory, and a {@code /mkverify} command suite that exercises
- * each of MenuKit's five canonical guarantees, producing log evidence for
- * phase reports.
+ * screen factory, and the {@code /mkverify} command that exercises each of
+ * MenuKit's five canonical guarantees in a single run, producing log
+ * evidence for phase reports.
  *
  * <p>First run at the end of Phase 5 to verify the inventory-menu
  * architecture as landed. Lives in the repo from Phase 7 onward so each
@@ -43,38 +43,46 @@ import static net.minecraft.commands.Commands.literal;
  * completes — contract regressions are caught empirically rather than
  * assumed absent.
  *
- * <p>Each subcommand is self-contained: it arranges its own menu context
- * (uses {@link Player#containerMenu} — which defaults to
- * {@link Player#inventoryMenu} when no screen is open — for vanilla
- * evidence, and opens the {@link TestContractHandler} test screen via
- * {@code player.openMenu} for MenuKit evidence). This matters because
- * players can't type chat commands while a menu screen is open, so the
- * command has to orchestrate menu state itself rather than assume it.
+ * <h3>Commands</h3>
  *
- * <p>The five contracts, each with its own subcommand:
+ * <ul>
+ *   <li>{@code /mkverify all} — runs all five contract probes in sequence,
+ *       orchestrating menu state across the open-test-screen boundary.
+ *       Phase A (vanilla evidence) runs first against {@link Player#inventoryMenu};
+ *       the test screen is opened once; Phase B (MenuKit evidence) runs
+ *       against the {@link TestContractHandler}. Each contract emits its
+ *       own {@code VERDICT} line. Scan the log for VERDICT to check results.</li>
+ *   <li>{@code /mkverify elements} — opens a clean {@link ElementDemoHandler}
+ *       screen for visual verification of element rendering. Not a
+ *       canonical contract; per-phase dev tooling.</li>
+ * </ul>
+ *
+ * <h3>The five contracts (all run by {@code /mkverify all})</h3>
+ *
  * <ol>
- *   <li>{@code /mkverify composability} — global {@code Slot.mayPlace}
- *       mixin fires identically on vanilla and MenuKit slots. Two phases
- *       in one command: vanilla first, then opens test screen for MK.</li>
- *   <li>{@code /mkverify substitutability} — MenuKit slots pass
- *       {@code instanceof Slot}; ecosystem mixins on {@code Slot.getItem}
- *       observe them. Opens test screen.</li>
- *   <li>{@code /mkverify syncsafety} — rapid visibility toggle on hidden
- *       panel produces consistent slot state; protocol never sees phantom
- *       items. Opens test screen.</li>
- *   <li>{@code /mkverify uniform} — {@code HandlerRecognizerRegistry.findGroup}
- *       returns {@code SlotGroupLike} for both native and observed
- *       handlers via the same consumer API. Two phases: vanilla first,
- *       then opens test screen for MK.</li>
- *   <li>{@code /mkverify inertness} — hidden-panel slots report EMPTY /
- *       inactive / mayPlace=false / mayPickup=false; toggle restores.
- *       Opens test screen.</li>
+ *   <li>{@code Composability} — global {@code Slot.mayPlace} mixin
+ *       ({@link com.trevorschoeny.menukit.mixin.VerifyMayPlaceMixin}) fires
+ *       identically on vanilla and MenuKit slots. Two phases: vanilla
+ *       {@code player.inventoryMenu} first, then MK handler after open.</li>
+ *   <li>{@code Substitutability} — MenuKit slots pass {@code instanceof Slot};
+ *       ecosystem mixins on {@code Slot.getItem}
+ *       ({@link com.trevorschoeny.menukit.mixin.VerifyGetItemMixin})
+ *       observe them. Single phase, MK handler only.</li>
+ *   <li>{@code SyncSafety} — rapid visibility toggle on a hidden panel
+ *       produces consistent slot state; protocol never sees phantom items.
+ *       Single phase, MK handler only, 10-iteration stress.</li>
+ *   <li>{@code Uniform} — {@code HandlerRecognizerRegistry.findGroup}
+ *       returns {@code SlotGroupLike} for both native and observed handlers
+ *       via the same consumer API. Two phases: vanilla first, then MK.</li>
+ *   <li>{@code Inertness} — hidden-panel slots report EMPTY / inactive /
+ *       mayPlace=false / mayPickup=false; toggle restores. Single phase,
+ *       MK handler only, hidden→visible flip.</li>
  * </ol>
  *
  * <p>The two verify mixins ({@code VerifyMayPlaceMixin},
- * {@code VerifyGetItemMixin}) target vanilla {@link Slot} globally but
- * gate their bodies on {@link #isActive()} — armed only during a single
- * command's execution window. Outside verification, they're no-ops.
+ * {@code VerifyGetItemMixin}) target vanilla {@link Slot} globally but gate
+ * their bodies on {@link #isActive()} — armed only within the probe bodies
+ * that need the mixin's behavior. Outside verification, they're no-ops.
  */
 public final class ContractVerification {
 
@@ -85,9 +93,11 @@ public final class ContractVerification {
 
     // ── Active-state gate for verify mixins ─────────────────────────────
     //
-    // Armed only within the scope of a single command's execution
-    // (at the beginning, disarmed at the end). Keeps the vanilla Slot
-    // mixins silent outside verification runs.
+    // Armed only within the scope of a probe body that needs the mixin's
+    // behavior (composability phase A+B, substitutability getItem loop).
+    // Keeps the vanilla Slot mixins silent outside their evidence windows
+    // so the log isn't drowned by mayPlace/getItem calls during unrelated
+    // probes (sync-safety toggles iterate getItem hundreds of times).
 
     private static volatile boolean active = false;
     public static boolean isActive() { return active; }
@@ -117,11 +127,7 @@ public final class ContractVerification {
 
         CommandRegistrationCallback.EVENT.register((dispatcher, access, env) ->
                 dispatcher.register(literal("mkverify")
-                        .then(literal("composability").executes(ContractVerification::cmdComposability))
-                        .then(literal("substitutability").executes(ContractVerification::cmdSubstitutability))
-                        .then(literal("syncsafety").executes(ContractVerification::cmdSyncSafety))
-                        .then(literal("uniform").executes(ContractVerification::cmdUniform))
-                        .then(literal("inertness").executes(ContractVerification::cmdInertness))
+                        .then(literal("all").executes(ContractVerification::cmdAll))
                         .then(literal("elements").executes(ContractVerification::cmdElements))));
     }
 
@@ -160,8 +166,61 @@ public final class ContractVerification {
         });
     }
 
+    /** Short description of an ItemStack for log lines. */
+    private static String desc(ItemStack stack) {
+        return stack.isEmpty() ? "EMPTY"
+                : stack.getItem().toString() + "x" + stack.getCount();
+    }
+
     // ══════════════════════════════════════════════════════════════════════
-    // 6. Element demo (visual verification surface — not a canonical contract)
+    // /mkverify all — runs all five contracts in sequence
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // Menu-state sequencing: player.containerMenu starts as whatever screen
+    // (if any) the player currently has open — defaults to inventoryMenu
+    // when no screen is open. The command can't be typed with a screen
+    // open, so we reliably start on inventoryMenu.
+    //
+    // Composability and Uniform need vanilla evidence, so their Phase A
+    // runs BEFORE openTestScreen — that's the only window when
+    // player.inventoryMenu is observable through the command path. After
+    // openTestScreen, player.containerMenu points at the test handler and
+    // Phase B runs against it.
+    //
+    // Substitutability, SyncSafety, Inertness are single-phase MK probes
+    // that all run after open.
+
+    private static int cmdAll(CommandContext<CommandSourceStack> ctx)
+            throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+
+        LOGGER.info("[Verify] BEGIN — /mkverify all — running all five contracts");
+
+        // ── Vanilla phases (before opening test screen) ─────────────────
+        composabilityPhaseA(player);
+        uniformPhaseA(player);
+
+        // ── Switch to test handler ──────────────────────────────────────
+        openTestScreen(player);
+        MenuKitScreenHandler handler = (MenuKitScreenHandler) player.containerMenu;
+
+        // ── MK phases ───────────────────────────────────────────────────
+        composabilityPhaseB(handler);
+        substitutability(handler);
+        uniformPhaseB(handler);
+        syncSafety(handler);
+        inertness(player, handler);
+
+        LOGGER.info("[Verify] END — five contracts checked. Scan log for VERDICT lines.");
+
+        ctx.getSource().sendSuccess(
+                () -> Component.literal("[Verify] All five contracts — see log. Test screen is now open."),
+                false);
+        return 1;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // /mkverify elements (visual-verification surface, not a canonical contract)
     // ══════════════════════════════════════════════════════════════════════
     //
     // Opens a clean screen with just a demo panel, no slots, no player
@@ -178,35 +237,24 @@ public final class ContractVerification {
         return 1;
     }
 
-    /** Short description of an ItemStack for log lines. */
-    private static String desc(ItemStack stack) {
-        return stack.isEmpty() ? "EMPTY"
-                : stack.getItem().toString() + "x" + stack.getCount();
-    }
-
     // ══════════════════════════════════════════════════════════════════════
     // 1. Composability
     // ══════════════════════════════════════════════════════════════════════
     //
     // Expected evidence: VerifyMayPlaceMixin (a global Slot.mayPlace
     // @Inject at HEAD that rejects cobblestone while armed) fires on both
-    // vanilla slots (player.inventoryMenu has 46 vanilla slots: armor,
-    // offhand, crafting, result, hotbar, main) AND MenuKit slots (the
-    // test screen's 46 MenuKitSlot instances). The mixin's per-invocation
+    // vanilla slots (player.inventoryMenu has 46 vanilla slots) AND MenuKit
+    // slots (test screen's 46 MenuKitSlot instances). Mixin's per-invocation
     // log lines show it reaching both slot types, and cobblestone is
-    // rejected uniformly. That's the ecosystem-mixin composition guarantee.
+    // rejected uniformly.
 
-    private static int cmdComposability(CommandContext<CommandSourceStack> ctx)
-            throws CommandSyntaxException {
-        ServerPlayer player = ctx.getSource().getPlayerOrException();
-
-        LOGGER.info("[Verify.Composability] BEGIN");
+    private static void composabilityPhaseA(ServerPlayer player) {
+        LOGGER.info("[Verify.Composability] Phase A — BEGIN (vanilla slots)");
         arm();
         try {
             ItemStack cobble = new ItemStack(Items.COBBLESTONE, 1);
             ItemStack diamond = new ItemStack(Items.DIAMOND, 1);
 
-            // ── Phase A: vanilla slots (player.inventoryMenu) ─────────
             AbstractContainerMenu vanillaMenu = player.inventoryMenu;
             LOGGER.info("[Verify.Composability] Phase A — probing {} vanilla slots in {}",
                     vanillaMenu.slots.size(), vanillaMenu.getClass().getSimpleName());
@@ -220,15 +268,23 @@ public final class ContractVerification {
             LOGGER.info("[Verify.Composability] Phase A result — {} MK / {} vanilla slots, "
                             + "cobble rejected on {}, diamond accepted on {}",
                     aMk, aVanilla, aCobbleRejected, aDiamondAccepted);
+        } finally {
+            disarm();
+        }
+    }
 
-            // ── Phase B: open test screen, probe MenuKit slots ────────
-            openTestScreen(player);
-            AbstractContainerMenu mkMenu = player.containerMenu;
+    private static void composabilityPhaseB(MenuKitScreenHandler handler) {
+        LOGGER.info("[Verify.Composability] Phase B — BEGIN (MK slots)");
+        arm();
+        try {
+            ItemStack cobble = new ItemStack(Items.COBBLESTONE, 1);
+            ItemStack diamond = new ItemStack(Items.DIAMOND, 1);
+
             LOGGER.info("[Verify.Composability] Phase B — probing {} MK slots in {}",
-                    mkMenu.slots.size(), mkMenu.getClass().getSimpleName());
+                    handler.slots.size(), handler.getClass().getSimpleName());
 
             int bMk = 0, bVanilla = 0, bCobbleRejected = 0, bDiamondAccepted = 0;
-            for (Slot slot : mkMenu.slots) {
+            for (Slot slot : handler.slots) {
                 if (slot instanceof MenuKitSlot) bMk++; else bVanilla++;
                 if (!slot.mayPlace(cobble)) bCobbleRejected++;
                 if (slot.mayPlace(diamond)) bDiamondAccepted++;
@@ -237,18 +293,11 @@ public final class ContractVerification {
                             + "cobble rejected on {}, diamond accepted on {}",
                     bMk, bVanilla, bCobbleRejected, bDiamondAccepted);
 
-            LOGGER.info("[Verify.Composability] VERDICT — mixin fired on both vanilla ({} slots) "
-                            + "and MK ({} slots) slot types; global cobblestone filter applied uniformly",
-                    aVanilla, bMk);
+            LOGGER.info("[Verify.Composability] VERDICT — mixin fired on both vanilla and MK "
+                            + "slot types; global cobblestone filter applied uniformly");
         } finally {
             disarm();
         }
-        LOGGER.info("[Verify.Composability] END");
-
-        ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify] Composability — see log. Test screen is now open."),
-                false);
-        return 1;
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -256,22 +305,15 @@ public final class ContractVerification {
     // ══════════════════════════════════════════════════════════════════════
     //
     // Expected evidence: every MenuKitSlot passes `instanceof Slot`
-    // (structural check). Then VerifyGetItemMixin (a global
-    // Slot.getItem @Inject at RETURN logging MK-class invocations) fires
-    // on MK slots, demonstrating that ecosystem-style Slot.getItem mixins
-    // compose with MenuKit's override. RETURN injection observes the
-    // result *after* MenuKit's inertness check runs, so a hidden-panel
-    // slot's return value is EMPTY in the mixin's log — that's
-    // composition, not replacement.
+    // (structural check). Then VerifyGetItemMixin (a global Slot.getItem
+    // @Inject at RETURN logging MK-class invocations) fires on MK slots,
+    // demonstrating that ecosystem-style Slot.getItem mixins compose with
+    // MenuKit's override. RETURN injection observes the result *after*
+    // MenuKit's inertness check runs, so a hidden-panel slot's return value
+    // is EMPTY in the mixin's log — that's composition, not replacement.
 
-    private static int cmdSubstitutability(CommandContext<CommandSourceStack> ctx)
-            throws CommandSyntaxException {
-        ServerPlayer player = ctx.getSource().getPlayerOrException();
-
+    private static void substitutability(MenuKitScreenHandler handler) {
         LOGGER.info("[Verify.Substitutability] BEGIN");
-
-        openTestScreen(player);
-        MenuKitScreenHandler handler = (MenuKitScreenHandler) player.containerMenu;
 
         int total = 0, mk = 0, passedInstance = 0;
         for (Slot slot : handler.slots) {
@@ -295,10 +337,10 @@ public final class ContractVerification {
             }
         }
 
-        // Trigger the Slot.getItem mixin on every MK slot.
-        // RETURN-phase injection: runs after MenuKit's getItem() has
-        // computed its result (including any inertness override), so the
-        // mixin observes the composed output.
+        // Trigger the Slot.getItem mixin on every MK slot. RETURN-phase
+        // injection runs after MenuKit's getItem() has computed its result
+        // (including any inertness override), so the mixin observes the
+        // composed output.
         arm();
         try {
             LOGGER.info("[Verify.Substitutability] Triggering getItem() on all MK slots (mixin armed)…");
@@ -312,36 +354,26 @@ public final class ContractVerification {
         LOGGER.info("[Verify.Substitutability] VERDICT — all {} MK slots pass `instanceof Slot`, "
                 + "and Slot.getItem RETURN mixin fires on MK slots with the composed return value "
                 + "(including inertness-driven EMPTY for any hidden panel)", mk);
-        LOGGER.info("[Verify.Substitutability] END");
-
-        ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify] Substitutability — see log."), false);
-        return 1;
     }
 
     // ══════════════════════════════════════════════════════════════════════
     // 3. Sync-safety
     // ══════════════════════════════════════════════════════════════════════
     //
-    // Expected evidence: rapid visibility toggles on the hidden panel
-    // leave slot state consistent every cycle. The library's inertness
-    // layer guarantees that the protocol only sees what visibility
-    // dictates — hidden panel → slot.getItem() returns EMPTY regardless
-    // of backing storage. The 10-toggle stress test checks this invariant
-    // after each toggle; any desync is logged as a concrete failure.
+    // Expected evidence: rapid visibility toggles on the hidden panel leave
+    // slot state consistent every cycle. Library's inertness layer
+    // guarantees the protocol only sees what visibility dictates — hidden
+    // panel → slot.getItem() returns EMPTY regardless of backing storage.
+    // 10-toggle stress test checks this invariant after each toggle; any
+    // desync is logged as a concrete failure.
 
-    private static int cmdSyncSafety(CommandContext<CommandSourceStack> ctx)
-            throws CommandSyntaxException {
-        ServerPlayer player = ctx.getSource().getPlayerOrException();
-
+    private static void syncSafety(MenuKitScreenHandler handler) {
         LOGGER.info("[Verify.SyncSafety] BEGIN");
-        openTestScreen(player);
-        MenuKitScreenHandler handler = (MenuKitScreenHandler) player.containerMenu;
 
         Panel hidden = handler.getPanel("hidden");
         if (hidden == null) {
             LOGGER.info("[Verify.SyncSafety] 'hidden' panel not found — abort");
-            return 0;
+            return;
         }
 
         int hiddenStart = Integer.MAX_VALUE, hiddenEnd = Integer.MIN_VALUE;
@@ -379,8 +411,8 @@ public final class ContractVerification {
                     iter, targetVisible, reportedVisible, desync);
         }
 
-        // Leave panel visible so the follow-up inertness test (if run)
-        // has a clean starting state, and log the real contents.
+        // Leave panel visible so the follow-up inertness probe has a clean
+        // starting state, and log the real contents.
         handler.setPanelVisible("hidden", true);
         StringBuilder finalState = new StringBuilder();
         for (int s = hiddenStart; s < hiddenEnd; s++) {
@@ -392,48 +424,30 @@ public final class ContractVerification {
         LOGGER.info("[Verify.SyncSafety] VERDICT — 10 toggles, {} inconsistencies. "
                         + "{} the protocol's view stayed consistent with visibility.",
                 inconsistencies, inconsistencies == 0 ? "PASS —" : "FAIL —");
-        LOGGER.info("[Verify.SyncSafety] END");
-
-        ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify] SyncSafety — see log."), false);
-        return 1;
     }
 
     // ══════════════════════════════════════════════════════════════════════
     // 4. Uniform abstraction
     // ══════════════════════════════════════════════════════════════════════
     //
-    // Expected evidence: findGroup returns Optional<SlotGroupLike> for
-    // both vanilla handlers (observed → VirtualSlotGroup) and MenuKit
-    // handlers (native → SlotGroup). Consumer code calling findGroup or
-    // iterating recognize() gets uniform SlotGroupLike instances
-    // regardless of handler type — that's the structural uniform-
-    // abstraction promise.
+    // Expected evidence: findGroup returns Optional<SlotGroupLike> for both
+    // vanilla handlers (observed → VirtualSlotGroup) and MenuKit handlers
+    // (native → SlotGroup). Consumer code calling findGroup or iterating
+    // recognize() gets uniform SlotGroupLike instances regardless of handler
+    // type — that's the structural uniform-abstraction promise.
 
-    private static int cmdUniform(CommandContext<CommandSourceStack> ctx)
-            throws CommandSyntaxException {
-        ServerPlayer player = ctx.getSource().getPlayerOrException();
+    private static void uniformPhaseA(ServerPlayer player) {
+        LOGGER.info("[Verify.Uniform] Phase A — BEGIN (vanilla handler)");
+        logUniformProbe("Phase A", player.inventoryMenu);
+    }
 
-        LOGGER.info("[Verify.Uniform] BEGIN");
-
-        // ── Phase A: vanilla handler (player.inventoryMenu) ──────────
-        AbstractContainerMenu vanilla = player.inventoryMenu;
-        logUniformProbe("Phase A", vanilla);
-
-        // ── Phase B: MenuKit-native handler ──────────────────────────
-        openTestScreen(player);
-        AbstractContainerMenu mk = player.containerMenu;
-        logUniformProbe("Phase B", mk);
+    private static void uniformPhaseB(MenuKitScreenHandler handler) {
+        LOGGER.info("[Verify.Uniform] Phase B — BEGIN (MK handler)");
+        logUniformProbe("Phase B", handler);
 
         LOGGER.info("[Verify.Uniform] VERDICT — same findGroup() API used against both "
-                + "vanilla ({}) and MenuKit ({}) handlers; both return Optional<SlotGroupLike>, "
-                + "concrete implementations (VirtualSlotGroup vs SlotGroup) transparent to caller",
-                vanilla.getClass().getSimpleName(), mk.getClass().getSimpleName());
-        LOGGER.info("[Verify.Uniform] END");
-
-        ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify] Uniform — see log."), false);
-        return 1;
+                + "vanilla and MenuKit handlers; both return Optional<SlotGroupLike>, "
+                + "concrete implementations (VirtualSlotGroup vs SlotGroup) transparent to caller");
     }
 
     /** Probes {@code findGroup} + {@code recognize} on a handler, logging
@@ -447,7 +461,7 @@ public final class ContractVerification {
             return;
         }
 
-        // findGroup on slot 0 — the simple single-slot lookup pattern
+        // findGroup on slot 0 — the simple single-slot lookup pattern.
         Slot probe = menu.slots.get(0);
         var result = HandlerRecognizerRegistry.findGroup(menu, probe);
         if (result.isPresent()) {
@@ -495,18 +509,13 @@ public final class ContractVerification {
     // interaction policy, getItem returns real storage contents,
     // isInert()=false).
 
-    private static int cmdInertness(CommandContext<CommandSourceStack> ctx)
-            throws CommandSyntaxException {
-        ServerPlayer player = ctx.getSource().getPlayerOrException();
-
+    private static void inertness(ServerPlayer player, MenuKitScreenHandler handler) {
         LOGGER.info("[Verify.Inertness] BEGIN");
-        openTestScreen(player);
-        MenuKitScreenHandler handler = (MenuKitScreenHandler) player.containerMenu;
 
         Panel hidden = handler.getPanel("hidden");
         if (hidden == null) {
             LOGGER.info("[Verify.Inertness] 'hidden' panel not found — abort");
-            return 0;
+            return;
         }
 
         int hiddenStart = Integer.MAX_VALUE, hiddenEnd = Integer.MIN_VALUE;
@@ -576,10 +585,5 @@ public final class ContractVerification {
         LOGGER.info("[Verify.Inertness] VERDICT — inertness holds: hidden slots report fully "
                 + "inert ({}/{} OK); visible slots flip back ({}/{} restored)",
                 allInert, checked, flipped, checked);
-        LOGGER.info("[Verify.Inertness] END");
-
-        ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify] Inertness — see log."), false);
-        return 1;
     }
 }
