@@ -160,7 +160,10 @@ public final class ContractVerification {
         CommandRegistrationCallback.EVENT.register((dispatcher, access, env) ->
                 dispatcher.register(literal("mkverify")
                         .then(literal("all").executes(ContractVerification::cmdAll))
-                        .then(literal("elements").executes(ContractVerification::cmdElements))));
+                        .then(literal("elements").executes(ContractVerification::cmdElements))
+                        .then(literal("regions")
+                                .executes(ContractVerification::cmdRegionsToggle)
+                                .then(literal("stack").executes(ContractVerification::cmdRegionsStackToggle)))));
     }
 
     /** Called from {@code MenuKitClient.onInitializeClient()} — screen factory. */
@@ -272,6 +275,40 @@ public final class ContractVerification {
         openElementDemoScreen(player);
         ctx.getSource().sendSuccess(
                 () -> Component.literal("[Verify] Element demo screen is now open."), false);
+        return 1;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // /mkverify regions — M5 §9.2 integration-level visual verification
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // Toggles client-side region probes on/off. When on, 17 colored 18×18
+    // squares render at the 8 inventory regions + 9 HUD regions, plus two
+    // additional squares in RIGHT_ALIGN_TOP for stacking inspection.
+    //
+    // /mkverify regions         — master toggle
+    // /mkverify regions stack   — flip the middle stacking probe's visibility
+    //                             (verifies per-frame reflow of subsequent
+    //                             panels when a mid-stack panel hides)
+    //
+    // Command runs on the server thread but the probes are client-side state;
+    // the dev client is single-player so the server-thread → client-thread
+    // read/write of the volatile flags is consistent enough for verification.
+
+    private static int cmdRegionsToggle(CommandContext<CommandSourceStack> ctx) {
+        boolean on = com.trevorschoeny.menukit.verification.RegionProbes.toggleMaster();
+        ctx.getSource().sendSuccess(
+                () -> Component.literal("[Verify.Regions] probes " + (on ? "ON" : "OFF")),
+                false);
+        return 1;
+    }
+
+    private static int cmdRegionsStackToggle(CommandContext<CommandSourceStack> ctx) {
+        boolean visible = com.trevorschoeny.menukit.verification.RegionProbes.toggleStackMiddle();
+        ctx.getSource().sendSuccess(
+                () -> Component.literal("[Verify.Regions] stack middle probe "
+                        + (visible ? "VISIBLE" : "HIDDEN")),
+                false);
         return 1;
     }
 

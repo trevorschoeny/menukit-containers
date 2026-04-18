@@ -103,6 +103,8 @@ public class MenuKit implements ModInitializer {
         LOGGER.info("[MenuKit] Client initialized");
         com.trevorschoeny.menukit.state.SlotStateHooks.registerClient();
         com.trevorschoeny.menukit.verification.ContractVerification.initClient();
+        // M5 §9.2 dev probes — invisible unless /mkverify regions is toggled on.
+        com.trevorschoeny.menukit.verification.RegionProbes.registerClient();
     }
 
     // ══════════════════════════════════════════════════════════════════════
