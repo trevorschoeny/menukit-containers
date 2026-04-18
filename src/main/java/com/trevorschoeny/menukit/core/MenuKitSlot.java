@@ -142,21 +142,46 @@ public class MenuKitSlot extends Slot {
     // container.getMaxStackSize() (99), which is correct as the slot-level
     // capacity limit. Item-specific limits are handled by the ItemStack overload above.
 
-    // getItem() is NOT overridden. Vanilla's Slot.getItem() flows through
-    // the Container (StorageContainerAdapter) directly. Hidden-panel slots
-    // are protected by: isActive()=false (UI skips render/interaction),
-    // mayPlace()=false (moveItemStackTo skips insertion), mayPickup()=false
-    // (safeTake blocks extraction). broadcastChanges syncs real items for
-    // hidden slots — the client Container has accurate data, but the UI
-    // doesn't render it. When the panel becomes visible, no re-sync is
-    // needed because the data was never falsified.
+    /**
+     * Returns the item in this slot, or {@link ItemStack#EMPTY} when the
+     * panel is inert. This is the data-level inertness — hidden panels'
+     * backing storage is never exposed to the world.
+     *
+     * <p><b>Why this override is load-bearing.</b> Behavioral inertness
+     * ({@link #isActive} false, {@link #mayPlace} false, {@link #mayPickup}
+     * false) blocks interaction but not observation. Without this override,
+     * any caller that reads {@code slot.getItem()} on a hidden slot — vanilla
+     * {@code broadcastChanges} syncing to the client, foreign mixins on
+     * {@code Slot.getItem}, consumer code iterating {@code menu.slots} —
+     * sees the real backing content. That leaks per-player state held in
+     * hidden-panel storage (e.g., lock metadata, private inventories, sort
+     * state) across the client-server boundary and through arbitrary mod
+     * hooks.
+     *
+     * <p>Falsifying to EMPTY while inert closes that seam. When the panel
+     * becomes visible, {@code broadcastChanges} detects the change and
+     * pushes real content to the client. This is a deliberate, localized
+     * falsification — the backing {@link com.trevorschoeny.menukit.core.Storage}
+     * still holds the truth, accessible via the storage directly for
+     * consumer code that owns the panel.
+     *
+     * <p>Contract: inertness is "hidden == invisible to the world" —
+     * interaction <em>and</em> observation. Both layers are load-bearing
+     * for the library's canonical inertness guarantee (see
+     * {@code /mkverify all}'s Inertness + SyncSafety probes).
+     */
+    @Override
+    public ItemStack getItem() {
+        if (isInert()) return ItemStack.EMPTY;
+        return super.getItem();
+    }
 
     /**
      * Returns whether this slot is active (visible and interactable).
      *
      * <p>When false, vanilla skips this slot for rendering and hover
-     * detection. Combined with getItem returning EMPTY, this makes
-     * hidden slots truly invisible to the world.
+     * detection. Combined with {@link #getItem} returning EMPTY while
+     * inert, this makes hidden slots truly invisible to the world.
      */
     @Override
     public boolean isActive() {
