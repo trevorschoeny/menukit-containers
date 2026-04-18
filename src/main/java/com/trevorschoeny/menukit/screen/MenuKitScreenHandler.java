@@ -318,92 +318,9 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
     }
 
     // ── Container Adapter ───────────────────────────────────────────────
-    //
-    // Wraps a Storage into vanilla's Container interface so Slot's
-    // constructor and vanilla's sync machinery work. Lives on the handler,
-    // not on Storage, keeping Storage narrow.
-
-    /**
-     * Adapts a {@link Storage} to vanilla's {@link Container} interface.
-     * Used internally during slot construction — consumers never see this.
-     */
-    static class StorageContainerAdapter implements Container {
-
-        private final Storage storage;
-
-        StorageContainerAdapter(Storage storage) {
-            this.storage = storage;
-        }
-
-        @Override
-        public int getContainerSize() {
-            return storage.size();
-        }
-
-        @Override
-        public int getMaxStackSize() {
-            // Match vanilla SimpleContainer default (99).
-            // Individual items cap themselves via ItemStack.getMaxStackSize().
-            return 99;
-        }
-
-        @Override
-        public boolean isEmpty() {
-            for (int i = 0; i < storage.size(); i++) {
-                if (!storage.getStack(i).isEmpty()) return false;
-            }
-            return true;
-        }
-
-        @Override
-        public ItemStack getItem(int slot) {
-            return storage.getStack(slot);
-        }
-
-        @Override
-        public ItemStack removeItem(int slot, int amount) {
-            ItemStack current = storage.getStack(slot);
-            if (current.isEmpty() || amount <= 0) return ItemStack.EMPTY;
-
-            ItemStack removed = current.split(amount);
-            if (current.isEmpty()) {
-                storage.setStack(slot, ItemStack.EMPTY);
-            } else {
-                storage.setStack(slot, current);
-            }
-            storage.markDirty();
-            return removed;
-        }
-
-        @Override
-        public ItemStack removeItemNoUpdate(int slot) {
-            ItemStack current = storage.getStack(slot);
-            storage.setStack(slot, ItemStack.EMPTY);
-            return current;
-        }
-
-        @Override
-        public void setItem(int slot, ItemStack stack) {
-            storage.setStack(slot, stack);
-        }
-
-        @Override
-        public void setChanged() {
-            storage.markDirty();
-        }
-
-        @Override
-        public boolean stillValid(Player player) {
-            return true;
-        }
-
-        @Override
-        public void clearContent() {
-            for (int i = 0; i < storage.size(); i++) {
-                storage.setStack(i, ItemStack.EMPTY);
-            }
-        }
-    }
+    // Extracted to core/StorageContainerAdapter.java for reuse by
+    // SlotInjector (M4 vanilla-handler grafting). The adapter bridges
+    // Storage → Container for Slot construction.
 
     // ── Builder API ─────────────────────────────────────────────────────
 

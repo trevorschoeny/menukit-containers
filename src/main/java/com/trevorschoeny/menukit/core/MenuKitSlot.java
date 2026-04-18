@@ -142,24 +142,14 @@ public class MenuKitSlot extends Slot {
     // container.getMaxStackSize() (99), which is correct as the slot-level
     // capacity limit. Item-specific limits are handled by the ItemStack overload above.
 
-    /**
-     * Returns the item in this slot — or EMPTY if the slot is inert.
-     *
-     * <p>This is the key inertness move. When the panel is hidden, the
-     * real stack sits safely in the backing storage. MenuKit just refuses
-     * to admit it exists. When the panel becomes visible again, this
-     * method returns the real stack and sendContentUpdates pushes it
-     * to the client.
-     *
-     * <p>An inert slot is a valid vanilla slot that happens to be empty —
-     * a legal state. A mixin on getItem still runs via super when the
-     * slot is visible, composing correctly.
-     */
-    @Override
-    public ItemStack getItem() {
-        if (isInert()) return ItemStack.EMPTY;
-        return super.getItem();
-    }
+    // getItem() is NOT overridden. Vanilla's Slot.getItem() flows through
+    // the Container (StorageContainerAdapter) directly. Hidden-panel slots
+    // are protected by: isActive()=false (UI skips render/interaction),
+    // mayPlace()=false (moveItemStackTo skips insertion), mayPickup()=false
+    // (safeTake blocks extraction). broadcastChanges syncs real items for
+    // hidden slots — the client Container has accurate data, but the UI
+    // doesn't render it. When the panel becomes visible, no re-sync is
+    // needed because the data was never falsified.
 
     /**
      * Returns whether this slot is active (visible and interactable).
