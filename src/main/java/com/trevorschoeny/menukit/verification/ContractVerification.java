@@ -1,12 +1,19 @@
 package com.trevorschoeny.menukit.verification;
 
 import com.trevorschoeny.menukit.core.HandlerRecognizerRegistry;
+import com.trevorschoeny.menukit.core.HudRegion;
+import com.trevorschoeny.menukit.core.InventoryRegion;
 import com.trevorschoeny.menukit.core.MenuKitSlot;
 import com.trevorschoeny.menukit.core.Panel;
+import com.trevorschoeny.menukit.core.RegionMath;
 import com.trevorschoeny.menukit.core.SlotGroup;
 import com.trevorschoeny.menukit.core.SlotGroupLike;
 import com.trevorschoeny.menukit.core.VirtualSlotGroup;
+import com.trevorschoeny.menukit.inject.ScreenBounds;
+import com.trevorschoeny.menukit.inject.ScreenOrigin;
 import com.trevorschoeny.menukit.screen.MenuKitScreenHandler;
+
+import java.util.Optional;
 
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -194,7 +201,10 @@ public final class ContractVerification {
             throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
 
-        LOGGER.info("[Verify] BEGIN — /mkverify all — running all five contracts");
+        LOGGER.info("[Verify] BEGIN — /mkverify all — running all six contracts");
+
+        // ── Pure-math contract (no menu state) ──────────────────────────
+        regionMath();
 
         // ── Vanilla phases (before opening test screen) ─────────────────
         composabilityPhaseA(player);
@@ -211,10 +221,10 @@ public final class ContractVerification {
         syncSafety(handler);
         inertness(player, handler);
 
-        LOGGER.info("[Verify] END — five contracts checked. Scan log for VERDICT lines.");
+        LOGGER.info("[Verify] END — six contracts checked. Scan log for VERDICT lines.");
 
         ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify] All five contracts — see log. Test screen is now open."),
+                () -> Component.literal("[Verify] All six contracts — see log. Test screen is now open."),
                 false);
         return 1;
     }
@@ -585,5 +595,157 @@ public final class ContractVerification {
         LOGGER.info("[Verify.Inertness] VERDICT — inertness holds: hidden slots report fully "
                 + "inert ({}/{} OK); visible slots flip back ({}/{} restored)",
                 allInert, checked, flipped, checked);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 6. Region math (pure, no menu state)
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // Phase 12 M5 — the region math is pure given explicit inputs, so this
+    // probe runs without opening any screen. Validates:
+    //   - each of 8 inventory regions at prefix=0 produces the expected
+    //     first-panel origin (formulas from design doc §3.4)
+    //   - same regions at prefix=20 advance along the flow axis by 20px
+    //   - each of 9 HUD regions at prefix=0 produces the expected first-panel
+    //     origin (§3.5)
+    //   - overflow: a prefix exceeding the region's available space returns
+    //     Optional.empty() (maps to OUT_OF_REGION at the adapter boundary)
+    //
+    // Synthetic inputs:
+    //   inventory bounds = (leftPos=100, topPos=50, imageWidth=176, imageHeight=166)
+    //   panel size = (20, 20)
+    //   hud screen = (sw=800, sh=600), panel size = (20, 20)
+
+    private static void regionMath() {
+        LOGGER.info("[Verify.RegionMath] BEGIN");
+
+        ScreenBounds bounds = new ScreenBounds(100, 50, 176, 166);
+        int pw = 20, ph = 20;
+        int[] counts = {0, 0}; // [total, failed]
+
+        // ── Inventory regions at prefix=0 ───────────────────────────────
+        checkInventory(counts, bounds, pw, ph, 0, InventoryRegion.RIGHT_ALIGN_TOP,    278, 50);
+        checkInventory(counts, bounds, pw, ph, 0, InventoryRegion.RIGHT_ALIGN_BOTTOM, 278, 196);
+        checkInventory(counts, bounds, pw, ph, 0, InventoryRegion.LEFT_ALIGN_TOP,     78,  50);
+        checkInventory(counts, bounds, pw, ph, 0, InventoryRegion.LEFT_ALIGN_BOTTOM,  78,  196);
+        checkInventory(counts, bounds, pw, ph, 0, InventoryRegion.TOP_ALIGN_LEFT,     100, 28);
+        checkInventory(counts, bounds, pw, ph, 0, InventoryRegion.TOP_ALIGN_RIGHT,    256, 28);
+        checkInventory(counts, bounds, pw, ph, 0, InventoryRegion.BOTTOM_ALIGN_LEFT,  100, 218);
+        checkInventory(counts, bounds, pw, ph, 0, InventoryRegion.BOTTOM_ALIGN_RIGHT, 256, 218);
+
+        // ── Inventory regions at prefix=20 (stacking offset) ────────────
+        checkInventory(counts, bounds, pw, ph, 20, InventoryRegion.RIGHT_ALIGN_TOP,    278, 70);
+        checkInventory(counts, bounds, pw, ph, 20, InventoryRegion.RIGHT_ALIGN_BOTTOM, 278, 176);
+        checkInventory(counts, bounds, pw, ph, 20, InventoryRegion.LEFT_ALIGN_TOP,     78,  70);
+        checkInventory(counts, bounds, pw, ph, 20, InventoryRegion.LEFT_ALIGN_BOTTOM,  78,  176);
+        checkInventory(counts, bounds, pw, ph, 20, InventoryRegion.TOP_ALIGN_LEFT,     120, 28);
+        checkInventory(counts, bounds, pw, ph, 20, InventoryRegion.TOP_ALIGN_RIGHT,    236, 28);
+        checkInventory(counts, bounds, pw, ph, 20, InventoryRegion.BOTTOM_ALIGN_LEFT,  120, 218);
+        checkInventory(counts, bounds, pw, ph, 20, InventoryRegion.BOTTOM_ALIGN_RIGHT, 236, 218);
+
+        // ── Inventory overflow — prefix > imageHeight ───────────────────
+        checkOverflowInventory(counts, bounds, pw, ph, 200, InventoryRegion.RIGHT_ALIGN_TOP);
+
+        // ── HUD regions at prefix=0 ─────────────────────────────────────
+        int sw = 800, sh = 600;
+        checkHud(counts, sw, sh, pw, ph, 0, HudRegion.TOP_LEFT,      4,   4);
+        checkHud(counts, sw, sh, pw, ph, 0, HudRegion.TOP_CENTER,    390, 4);
+        checkHud(counts, sw, sh, pw, ph, 0, HudRegion.TOP_RIGHT,     776, 4);
+        checkHud(counts, sw, sh, pw, ph, 0, HudRegion.LEFT_CENTER,   4,   300);
+        checkHud(counts, sw, sh, pw, ph, 0, HudRegion.RIGHT_CENTER,  776, 300);
+        checkHud(counts, sw, sh, pw, ph, 0, HudRegion.BOTTOM_LEFT,   4,   576);
+        checkHud(counts, sw, sh, pw, ph, 0, HudRegion.BOTTOM_CENTER, 390, 576);
+        checkHud(counts, sw, sh, pw, ph, 0, HudRegion.BOTTOM_RIGHT,  776, 576);
+        checkHud(counts, sw, sh, pw, ph, 0, HudRegion.CENTER,        390, 316);
+
+        // ── HUD overflow ────────────────────────────────────────────────
+        checkOverflowHud(counts, sw, sh, pw, ph, 700, HudRegion.TOP_LEFT);
+
+        int total = counts[0], failed = counts[1];
+        int passed = total - failed;
+        LOGGER.info("[Verify.RegionMath] VERDICT — {}/{} cases pass ({})",
+                passed, total, failed == 0 ? "PASS" : "FAIL — see above");
+    }
+
+    /**
+     * Asserts inventory resolution. Updates {@code counts[0]} (total)
+     * and {@code counts[1]} (failed) based on the assertion outcome.
+     */
+    private static void checkInventory(int[] counts, ScreenBounds bounds,
+                                        int pw, int ph, int prefix,
+                                        InventoryRegion region,
+                                        int expectedX, int expectedY) {
+        counts[0]++;
+        Optional<ScreenOrigin> result = RegionMath.resolveInventory(
+                region, bounds, pw, ph, prefix);
+        if (result.isEmpty()) {
+            LOGGER.info("[Verify.RegionMath] {} prefix={} → EMPTY (FAIL, expected ({}, {}))",
+                    region, prefix, expectedX, expectedY);
+            counts[1]++;
+            return;
+        }
+        ScreenOrigin o = result.get();
+        if (o.x() == expectedX && o.y() == expectedY) {
+            LOGGER.info("[Verify.RegionMath] {} prefix={} → ({}, {}) OK",
+                    region, prefix, o.x(), o.y());
+        } else {
+            LOGGER.info("[Verify.RegionMath] {} prefix={} → ({}, {}) FAIL (expected ({}, {}))",
+                    region, prefix, o.x(), o.y(), expectedX, expectedY);
+            counts[1]++;
+        }
+    }
+
+    /** Asserts HUD resolution. Same counts semantics as {@link #checkInventory}. */
+    private static void checkHud(int[] counts, int sw, int sh, int pw, int ph,
+                                  int prefix, HudRegion region,
+                                  int expectedX, int expectedY) {
+        counts[0]++;
+        Optional<ScreenOrigin> result = RegionMath.resolveHud(
+                region, sw, sh, pw, ph, prefix);
+        if (result.isEmpty()) {
+            LOGGER.info("[Verify.RegionMath] HUD {} prefix={} → EMPTY (FAIL, expected ({}, {}))",
+                    region, prefix, expectedX, expectedY);
+            counts[1]++;
+            return;
+        }
+        ScreenOrigin o = result.get();
+        if (o.x() == expectedX && o.y() == expectedY) {
+            LOGGER.info("[Verify.RegionMath] HUD {} prefix={} → ({}, {}) OK",
+                    region, prefix, o.x(), o.y());
+        } else {
+            LOGGER.info("[Verify.RegionMath] HUD {} prefix={} → ({}, {}) FAIL (expected ({}, {}))",
+                    region, prefix, o.x(), o.y(), expectedX, expectedY);
+            counts[1]++;
+        }
+    }
+
+    /** Asserts inventory overflow returns Optional.empty. */
+    private static void checkOverflowInventory(int[] counts, ScreenBounds bounds,
+                                                 int pw, int ph, int prefix,
+                                                 InventoryRegion region) {
+        counts[0]++;
+        Optional<ScreenOrigin> result = RegionMath.resolveInventory(
+                region, bounds, pw, ph, prefix);
+        if (result.isEmpty()) {
+            LOGGER.info("[Verify.RegionMath] OVERFLOW {} prefix={} → empty (OK)", region, prefix);
+        } else {
+            LOGGER.info("[Verify.RegionMath] OVERFLOW {} prefix={} → {} (FAIL, expected empty)",
+                    region, prefix, result.get());
+            counts[1]++;
+        }
+    }
+
+    /** Asserts HUD overflow returns Optional.empty. */
+    private static void checkOverflowHud(int[] counts, int sw, int sh,
+                                          int pw, int ph, int prefix, HudRegion region) {
+        counts[0]++;
+        Optional<ScreenOrigin> result = RegionMath.resolveHud(region, sw, sh, pw, ph, prefix);
+        if (result.isEmpty()) {
+            LOGGER.info("[Verify.RegionMath] OVERFLOW HUD {} prefix={} → empty (OK)", region, prefix);
+        } else {
+            LOGGER.info("[Verify.RegionMath] OVERFLOW HUD {} prefix={} → {} (FAIL, expected empty)",
+                    region, prefix, result.get());
+            counts[1]++;
+        }
     }
 }

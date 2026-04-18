@@ -168,9 +168,22 @@ public class MenuKit implements ModInitializer {
             // Compute panel size (auto or explicit)
             int[] size = def.computeSize();
 
-            // Resolve anchor to absolute screen position
-            int[] pos = def.anchor().resolve(screenW, screenH,
-                    size[0], size[1], def.offsetX(), def.offsetY());
+            // Resolve to absolute screen position — region-based if the
+            // consumer called .region() at build time, otherwise fall back
+            // to anchor + offset. The two are mutually exclusive at build.
+            int[] pos;
+            if (def.region() != null) {
+                int prefix = com.trevorschoeny.menukit.inject.RegionRegistry
+                        .axialPrefix(def, def.region());
+                var origin = com.trevorschoeny.menukit.core.RegionMath
+                        .resolveHud(def.region(), screenW, screenH,
+                                size[0], size[1], prefix);
+                if (origin.isEmpty()) continue;  // overflow — skip this frame
+                pos = new int[]{origin.get().x(), origin.get().y()};
+            } else {
+                pos = def.anchor().resolve(screenW, screenH,
+                        size[0], size[1], def.offsetX(), def.offsetY());
+            }
 
             // Background
             if (def.style() != PanelStyle.NONE) {
