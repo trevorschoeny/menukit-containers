@@ -11,8 +11,9 @@ import net.minecraft.world.item.ItemStack;
  * the narrower {@link Storage} interface.
  *
  * <p>Used by {@link com.trevorschoeny.menukit.screen.MenuKitScreenHandler}
- * for MenuKit-native handlers and by {@link SlotInjector} for vanilla-handler
- * grafting. Consumers never interact with this directly.
+ * for MenuKit-native handlers. Consumers grafting slots onto vanilla handlers
+ * (M4) also wrap a Storage in this adapter when calling {@code addSlot} with
+ * a {@link net.minecraft.world.inventory.Slot} instance.
  */
 public class StorageContainerAdapter implements Container {
 

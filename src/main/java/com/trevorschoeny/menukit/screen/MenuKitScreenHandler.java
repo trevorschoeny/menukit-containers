@@ -318,9 +318,9 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
     }
 
     // ── Container Adapter ───────────────────────────────────────────────
-    // Extracted to core/StorageContainerAdapter.java for reuse by
-    // SlotInjector (M4 vanilla-handler grafting). The adapter bridges
-    // Storage → Container for Slot construction.
+    // Extracted to core/StorageContainerAdapter.java so M4 consumers
+    // grafting slots onto vanilla handlers can reuse it. The adapter
+    // bridges Storage → Container for Slot construction.
 
     // ── Builder API ─────────────────────────────────────────────────────
 
