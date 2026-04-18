@@ -87,6 +87,12 @@ public class MenuKit implements ModInitializer {
      *  test MenuType) so phase verification can be re-run at any time. */
     public static void init() {
         LOGGER.info("[MenuKit] Initialized");
+        // M1 per-slot state — attachments + shared networking types register
+        // here (attachment registration must run on both sides; networking
+        // payload-type registration is also symmetric).
+        com.trevorschoeny.menukit.state.SlotStateAttachments.register();
+        com.trevorschoeny.menukit.state.SlotStateHooks.registerCommon();
+        com.trevorschoeny.menukit.state.SlotStateHooks.registerServer();
         com.trevorschoeny.menukit.verification.ContractVerification.initServer();
     }
 
@@ -95,6 +101,7 @@ public class MenuKit implements ModInitializer {
      *  verification test-screen factory. */
     public static void initClient() {
         LOGGER.info("[MenuKit] Client initialized");
+        com.trevorschoeny.menukit.state.SlotStateHooks.registerClient();
         com.trevorschoeny.menukit.verification.ContractVerification.initClient();
     }
 

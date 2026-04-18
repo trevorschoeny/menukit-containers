@@ -1,17 +1,29 @@
 package com.trevorschoeny.menukit.verification;
 
+import com.mojang.serialization.Codec;
 import com.trevorschoeny.menukit.core.HandlerRecognizerRegistry;
 import com.trevorschoeny.menukit.core.HudRegion;
 import com.trevorschoeny.menukit.core.InventoryRegion;
+import com.trevorschoeny.menukit.core.MKSlotState;
 import com.trevorschoeny.menukit.core.MenuKitSlot;
 import com.trevorschoeny.menukit.core.Panel;
+import com.trevorschoeny.menukit.core.PersistentContainerKey;
 import com.trevorschoeny.menukit.core.RegionMath;
 import com.trevorschoeny.menukit.core.SlotGroup;
 import com.trevorschoeny.menukit.core.SlotGroupLike;
+import com.trevorschoeny.menukit.core.SlotStateChannel;
 import com.trevorschoeny.menukit.core.VirtualSlotGroup;
 import com.trevorschoeny.menukit.inject.ScreenBounds;
 import com.trevorschoeny.menukit.inject.ScreenOrigin;
 import com.trevorschoeny.menukit.screen.MenuKitScreenHandler;
+import com.trevorschoeny.menukit.state.SlotStateAttachments;
+import com.trevorschoeny.menukit.state.SlotStateBag;
+
+import net.minecraft.nbt.ByteTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
 
 import java.util.Optional;
 
@@ -116,6 +128,19 @@ public final class ContractVerification {
     private static MenuType<MenuKitScreenHandler> testMenuType;
     private static MenuType<MenuKitScreenHandler> elementDemoMenuType;
 
+    // ── Per-slot state test channel (M1 contract 7) ─────────────────────
+    // Registered in initServer so the channel exists before /mkverify runs.
+    // Namespace "menukit-verify" is cleaned at the start of every run so
+    // probe writes don't accumulate in the player's attachment.
+
+    public static final SlotStateChannel<Boolean> TEST_BOOL = MKSlotState.register(
+            net.minecraft.resources.Identifier.fromNamespaceAndPath("menukit-verify", "test_bool"),
+            Codec.BOOL,
+            StreamCodec.<RegistryFriendlyByteBuf, Boolean>of(
+                    (buf, v) -> buf.writeBoolean(v),
+                    buf -> buf.readBoolean()),
+            false);
+
     /** Called from {@code MenuKit.init()} — server-safe MenuType + commands. */
     public static void initServer() {
         testMenuType = new MenuType<>(
@@ -201,10 +226,13 @@ public final class ContractVerification {
             throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
 
-        LOGGER.info("[Verify] BEGIN — /mkverify all — running all six contracts");
+        LOGGER.info("[Verify] BEGIN — /mkverify all — running all seven contracts");
 
         // ── Pure-math contract (no menu state) ──────────────────────────
         regionMath();
+
+        // ── Per-slot state contract (server-side; no menu needed) ───────
+        slotState(player);
 
         // ── Vanilla phases (before opening test screen) ─────────────────
         composabilityPhaseA(player);
@@ -221,10 +249,10 @@ public final class ContractVerification {
         syncSafety(handler);
         inertness(player, handler);
 
-        LOGGER.info("[Verify] END — six contracts checked. Scan log for VERDICT lines.");
+        LOGGER.info("[Verify] END — seven contracts checked. Scan log for VERDICT lines.");
 
         ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify] All six contracts — see log. Test screen is now open."),
+                () -> Component.literal("[Verify] All seven contracts — see log. Test screen is now open."),
                 false);
         return 1;
     }
@@ -745,6 +773,82 @@ public final class ContractVerification {
         } else {
             LOGGER.info("[Verify.RegionMath] OVERFLOW HUD {} prefix={} → {} (FAIL, expected empty)",
                     region, prefix, result.get());
+            counts[1]++;
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 7. Per-slot persistent state (M1)
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // Exercises the full server-side persistence path against the test
+    // player's PlayerInventory attachment. Covers:
+    //   - default read for an unset slot returns the channel's default
+    //   - slot-less write + read round-trip via PlayerInventory key
+    //   - Tag-native storage: stored value is a ByteTag matching Codec.BOOL
+    //     encoding (ByteTag.ONE for true) — verifies THESIS principle 6
+    //   - cleanup: after clearing the verify namespace, reads return default
+    //
+    // The "menukit-verify:*" namespace is cleared at the start of each run
+    // so probes don't accumulate state in the player's save file.
+
+    private static void slotState(ServerPlayer player) {
+        LOGGER.info("[Verify.SlotState] BEGIN");
+        int[] counts = {0, 0}; // [total, failed]
+
+        // Clean up any leftover state from a previous run
+        SlotStateBag bag = player.getAttachedOrCreate(SlotStateAttachments.PLAYER_INVENTORY);
+        bag.clearChannel(TEST_BOOL.id());
+
+        PersistentContainerKey key = new PersistentContainerKey.PlayerInventory(player.getUUID());
+
+        // Case 1: default read (no value stored yet)
+        check(counts, "default read", TEST_BOOL.get(player, key, 5) == Boolean.FALSE);
+
+        // Case 2: slot-less write via PlayerInventory key
+        TEST_BOOL.set(player, key, 5, Boolean.TRUE);
+
+        // Case 3: slot-less read returns the written value
+        check(counts, "write+read", TEST_BOOL.get(player, key, 5) == Boolean.TRUE);
+
+        // Case 4: Tag-native storage — inspect the raw bag
+        Tag storedTag = bag.read(TEST_BOOL.id(), 5);
+        check(counts, "tag stored", storedTag != null);
+        check(counts, "tag is ByteTag",
+                storedTag instanceof ByteTag);
+        if (storedTag instanceof ByteTag bt) {
+            check(counts, "byte value = 1", bt.byteValue() == 1);
+        } else {
+            counts[0]++;
+            counts[1]++;
+            LOGGER.info("[Verify.SlotState] byte value check — FAIL (tag wasn't a ByteTag)");
+        }
+
+        // Case 5: writing a different slot leaves the original untouched
+        TEST_BOOL.set(player, key, 12, Boolean.TRUE);
+        check(counts, "slot isolation", TEST_BOOL.get(player, key, 5) == Boolean.TRUE
+                                       && TEST_BOOL.get(player, key, 12) == Boolean.TRUE
+                                       && TEST_BOOL.get(player, key, 6) == Boolean.FALSE);
+
+        // Case 6: clearChannel wipes the channel; default returns
+        bag.clearChannel(TEST_BOOL.id());
+        check(counts, "cleanup",
+                TEST_BOOL.get(player, key, 5) == Boolean.FALSE
+                && TEST_BOOL.get(player, key, 12) == Boolean.FALSE);
+
+        int total = counts[0];
+        int failed = counts[1];
+        int passed = total - failed;
+        LOGGER.info("[Verify.SlotState] VERDICT — {}/{} cases pass ({})",
+                passed, total, failed == 0 ? "PASS" : "FAIL — see above");
+    }
+
+    private static void check(int[] counts, String label, boolean condition) {
+        counts[0]++;
+        if (condition) {
+            LOGGER.info("[Verify.SlotState] {} — OK", label);
+        } else {
+            LOGGER.info("[Verify.SlotState] {} — FAIL", label);
             counts[1]++;
         }
     }
