@@ -187,7 +187,15 @@ public class MenuKit implements ModInitializer {
                 var origin = com.trevorschoeny.menukit.core.RegionMath
                         .resolveHud(def.region(), screenW, screenH,
                                 size[0], size[1], prefix);
-                if (origin.isEmpty()) continue;  // overflow — skip this frame
+                if (origin.isEmpty()) {
+                    // Overflow — skip this frame. Log once per (panel, region)
+                    // pair so consumers see a diagnostic instead of silent
+                    // no-render. Phase 12.5 V4 finding.
+                    com.trevorschoeny.menukit.inject.RegionRegistry
+                            .warnHudOverflowOnce(def, def.region(),
+                                    size[0], size[1], prefix, screenW, screenH);
+                    continue;
+                }
                 pos = new int[]{origin.get().x(), origin.get().y()};
             } else {
                 pos = def.anchor().resolve(screenW, screenH,
