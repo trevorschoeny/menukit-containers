@@ -2,7 +2,7 @@ package com.trevorschoeny.menukit.verification;
 
 import com.trevorschoeny.menukit.MenuKit;
 import com.trevorschoeny.menukit.core.HudRegion;
-import com.trevorschoeny.menukit.core.InventoryRegion;
+import com.trevorschoeny.menukit.core.MenuRegion;
 import com.trevorschoeny.menukit.core.Panel;
 import com.trevorschoeny.menukit.core.PanelElement;
 import com.trevorschoeny.menukit.core.PanelStyle;
@@ -27,7 +27,7 @@ import java.util.List;
  * <p>What's exercised:
  * <ul>
  *   <li>Single-panel placement in each of 8 inventory regions + 9 HUD regions.</li>
- *   <li>Multi-panel stacking in {@link InventoryRegion#RIGHT_ALIGN_TOP} (3 probes).</li>
+ *   <li>Multi-panel stacking in {@link MenuRegion#RIGHT_ALIGN_TOP} (3 probes).</li>
  *   <li>Mid-stack visibility toggle → reflow (middle probe's {@code showWhen} flips).</li>
  *   <li>Frame-responsive coord tracking (Trevor opens inventory → recipe book →
  *       chest → shulker → etc.; probes track each screen's {@link ScreenBounds}).</li>
@@ -80,7 +80,7 @@ public final class RegionProbes {
     private static final int PROBE_SIZE = 18;
 
     // Colors for inventory probes — distinct per region for quick eyeballing.
-    private static int colorFor(InventoryRegion region) {
+    private static int colorFor(MenuRegion region) {
         return switch (region) {
             case LEFT_ALIGN_TOP     -> 0xFFFF4444; // red
             case LEFT_ALIGN_BOTTOM  -> 0xFFFF8800; // orange
@@ -117,7 +117,7 @@ public final class RegionProbes {
      */
     public static void registerClient() {
         // ── 8 inventory probes (one per region) ───────────────────────
-        for (InventoryRegion region : InventoryRegion.values()) {
+        for (MenuRegion region : MenuRegion.values()) {
             Panel probe = new Panel("probe_inv_" + region.name().toLowerCase(),
                     List.of(filledRect(PROBE_SIZE, colorFor(region))));
             probe.showWhen(() -> master);
@@ -130,12 +130,12 @@ public final class RegionProbes {
         Panel stackMid = new Panel("probe_stack_mid",
                 List.of(filledRect(PROBE_SIZE, 0xFFFF44FF))); // magenta
         stackMid.showWhen(() -> master && stackMiddleVisible);
-        INVENTORY_ADAPTERS.add(new ScreenPanelAdapter(stackMid, InventoryRegion.RIGHT_ALIGN_TOP));
+        INVENTORY_ADAPTERS.add(new ScreenPanelAdapter(stackMid, MenuRegion.RIGHT_ALIGN_TOP));
 
         Panel stackBot = new Panel("probe_stack_bot",
                 List.of(filledRect(PROBE_SIZE, 0xFF44AAFF))); // light blue
         stackBot.showWhen(() -> master);
-        INVENTORY_ADAPTERS.add(new ScreenPanelAdapter(stackBot, InventoryRegion.RIGHT_ALIGN_TOP));
+        INVENTORY_ADAPTERS.add(new ScreenPanelAdapter(stackBot, MenuRegion.RIGHT_ALIGN_TOP));
 
         // ── 9 HUD probes (one per region) ─────────────────────────────
         for (HudRegion region : HudRegion.values()) {

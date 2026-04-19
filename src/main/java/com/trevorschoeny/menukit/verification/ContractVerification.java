@@ -3,7 +3,7 @@ package com.trevorschoeny.menukit.verification;
 import com.mojang.serialization.Codec;
 import com.trevorschoeny.menukit.core.HandlerRecognizerRegistry;
 import com.trevorschoeny.menukit.core.HudRegion;
-import com.trevorschoeny.menukit.core.InventoryRegion;
+import com.trevorschoeny.menukit.core.MenuRegion;
 import com.trevorschoeny.menukit.core.MKSlotState;
 import com.trevorschoeny.menukit.core.MenuKitSlot;
 import com.trevorschoeny.menukit.core.Panel;
@@ -689,27 +689,27 @@ public final class ContractVerification {
         int[] counts = {0, 0}; // [total, failed]
 
         // ── Inventory regions at prefix=0 ───────────────────────────────
-        checkInventory(counts, bounds, pw, ph, 0, InventoryRegion.RIGHT_ALIGN_TOP,    278, 50);
-        checkInventory(counts, bounds, pw, ph, 0, InventoryRegion.RIGHT_ALIGN_BOTTOM, 278, 196);
-        checkInventory(counts, bounds, pw, ph, 0, InventoryRegion.LEFT_ALIGN_TOP,     78,  50);
-        checkInventory(counts, bounds, pw, ph, 0, InventoryRegion.LEFT_ALIGN_BOTTOM,  78,  196);
-        checkInventory(counts, bounds, pw, ph, 0, InventoryRegion.TOP_ALIGN_LEFT,     100, 28);
-        checkInventory(counts, bounds, pw, ph, 0, InventoryRegion.TOP_ALIGN_RIGHT,    256, 28);
-        checkInventory(counts, bounds, pw, ph, 0, InventoryRegion.BOTTOM_ALIGN_LEFT,  100, 218);
-        checkInventory(counts, bounds, pw, ph, 0, InventoryRegion.BOTTOM_ALIGN_RIGHT, 256, 218);
+        checkInventory(counts, bounds, pw, ph, 0, MenuRegion.RIGHT_ALIGN_TOP,    278, 50);
+        checkInventory(counts, bounds, pw, ph, 0, MenuRegion.RIGHT_ALIGN_BOTTOM, 278, 196);
+        checkInventory(counts, bounds, pw, ph, 0, MenuRegion.LEFT_ALIGN_TOP,     78,  50);
+        checkInventory(counts, bounds, pw, ph, 0, MenuRegion.LEFT_ALIGN_BOTTOM,  78,  196);
+        checkInventory(counts, bounds, pw, ph, 0, MenuRegion.TOP_ALIGN_LEFT,     100, 28);
+        checkInventory(counts, bounds, pw, ph, 0, MenuRegion.TOP_ALIGN_RIGHT,    256, 28);
+        checkInventory(counts, bounds, pw, ph, 0, MenuRegion.BOTTOM_ALIGN_LEFT,  100, 218);
+        checkInventory(counts, bounds, pw, ph, 0, MenuRegion.BOTTOM_ALIGN_RIGHT, 256, 218);
 
         // ── Inventory regions at prefix=20 (stacking offset) ────────────
-        checkInventory(counts, bounds, pw, ph, 20, InventoryRegion.RIGHT_ALIGN_TOP,    278, 70);
-        checkInventory(counts, bounds, pw, ph, 20, InventoryRegion.RIGHT_ALIGN_BOTTOM, 278, 176);
-        checkInventory(counts, bounds, pw, ph, 20, InventoryRegion.LEFT_ALIGN_TOP,     78,  70);
-        checkInventory(counts, bounds, pw, ph, 20, InventoryRegion.LEFT_ALIGN_BOTTOM,  78,  176);
-        checkInventory(counts, bounds, pw, ph, 20, InventoryRegion.TOP_ALIGN_LEFT,     120, 28);
-        checkInventory(counts, bounds, pw, ph, 20, InventoryRegion.TOP_ALIGN_RIGHT,    236, 28);
-        checkInventory(counts, bounds, pw, ph, 20, InventoryRegion.BOTTOM_ALIGN_LEFT,  120, 218);
-        checkInventory(counts, bounds, pw, ph, 20, InventoryRegion.BOTTOM_ALIGN_RIGHT, 236, 218);
+        checkInventory(counts, bounds, pw, ph, 20, MenuRegion.RIGHT_ALIGN_TOP,    278, 70);
+        checkInventory(counts, bounds, pw, ph, 20, MenuRegion.RIGHT_ALIGN_BOTTOM, 278, 176);
+        checkInventory(counts, bounds, pw, ph, 20, MenuRegion.LEFT_ALIGN_TOP,     78,  70);
+        checkInventory(counts, bounds, pw, ph, 20, MenuRegion.LEFT_ALIGN_BOTTOM,  78,  176);
+        checkInventory(counts, bounds, pw, ph, 20, MenuRegion.TOP_ALIGN_LEFT,     120, 28);
+        checkInventory(counts, bounds, pw, ph, 20, MenuRegion.TOP_ALIGN_RIGHT,    236, 28);
+        checkInventory(counts, bounds, pw, ph, 20, MenuRegion.BOTTOM_ALIGN_LEFT,  120, 218);
+        checkInventory(counts, bounds, pw, ph, 20, MenuRegion.BOTTOM_ALIGN_RIGHT, 236, 218);
 
         // ── Inventory overflow — prefix > imageHeight ───────────────────
-        checkOverflowInventory(counts, bounds, pw, ph, 200, InventoryRegion.RIGHT_ALIGN_TOP);
+        checkOverflowInventory(counts, bounds, pw, ph, 200, MenuRegion.RIGHT_ALIGN_TOP);
 
         // ── HUD regions at prefix=0 ─────────────────────────────────────
         int sw = 800, sh = 600;
@@ -738,10 +738,10 @@ public final class ContractVerification {
      */
     private static void checkInventory(int[] counts, ScreenBounds bounds,
                                         int pw, int ph, int prefix,
-                                        InventoryRegion region,
+                                        MenuRegion region,
                                         int expectedX, int expectedY) {
         counts[0]++;
-        Optional<ScreenOrigin> result = RegionMath.resolveInventory(
+        Optional<ScreenOrigin> result = RegionMath.resolveMenu(
                 region, bounds, pw, ph, prefix);
         if (result.isEmpty()) {
             LOGGER.info("[Verify.RegionMath] {} prefix={} → EMPTY (FAIL, expected ({}, {}))",
@@ -787,9 +787,9 @@ public final class ContractVerification {
     /** Asserts inventory overflow returns Optional.empty. */
     private static void checkOverflowInventory(int[] counts, ScreenBounds bounds,
                                                  int pw, int ph, int prefix,
-                                                 InventoryRegion region) {
+                                                 MenuRegion region) {
         counts[0]++;
-        Optional<ScreenOrigin> result = RegionMath.resolveInventory(
+        Optional<ScreenOrigin> result = RegionMath.resolveMenu(
                 region, bounds, pw, ph, prefix);
         if (result.isEmpty()) {
             LOGGER.info("[Verify.RegionMath] OVERFLOW {} prefix={} → empty (OK)", region, prefix);
