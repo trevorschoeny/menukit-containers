@@ -201,7 +201,7 @@ public final class RegionProbes {
             }
         }
         for (ScreenPanelAdapter adapter : INVENTORY_ADAPTERS) {
-            adapter.render(graphics, bounds, mouseX, mouseY);
+            adapter.render(graphics, bounds, mouseX, mouseY, screen);
         }
     }
 
