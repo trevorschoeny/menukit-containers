@@ -8,14 +8,8 @@ import com.trevorschoeny.menukit.core.PanelElement;
 import com.trevorschoeny.menukit.core.PanelStyle;
 import com.trevorschoeny.menukit.core.RenderContext;
 import com.trevorschoeny.menukit.hud.MKHudPanel;
-import com.trevorschoeny.menukit.inject.ScreenBounds;
 import com.trevorschoeny.menukit.inject.ScreenPanelAdapter;
-import com.trevorschoeny.menukit.mixin.AbstractContainerScreenAccessor;
 
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -26,15 +20,25 @@ import java.util.List;
  *
  * <p>What's exercised:
  * <ul>
- *   <li>Single-panel placement in each of 8 inventory regions + 9 HUD regions.</li>
+ *   <li>Single-panel placement in each of 8 MenuContext regions + 9 HUD regions.</li>
  *   <li>Multi-panel stacking in {@link MenuRegion#RIGHT_ALIGN_TOP} (3 probes).</li>
  *   <li>Mid-stack visibility toggle → reflow (middle probe's {@code showWhen} flips).</li>
  *   <li>Frame-responsive coord tracking (Trevor opens inventory → recipe book →
- *       chest → shulker → etc.; probes track each screen's {@link ScreenBounds}).</li>
+ *       chest → shulker → etc.; probes track each screen's frame bounds).</li>
  * </ul>
  *
  * <p>Not exercised in v1 probes: overflow cutoff (covered by {@code /mkverify all}
  * contract 6's pure-math overflow cases; visual overflow isn't additive).
+ *
+ * <h3>M8 dispatch</h3>
+ *
+ * Probes are region-based adapters declaring {@code .onAny()} — they fire
+ * on every opened {@link net.minecraft.client.gui.screens.inventory.AbstractContainerScreen}
+ * via
+ * {@link com.trevorschoeny.menukit.inject.ScreenPanelRegistry}. The pre-M8
+ * probe mixins (ProbeRenderMixin / ProbeRenderRecipeBookMixin) are retired;
+ * registry dispatch covers every screen class including the recipe-book
+ * family the mixins had coverage gaps on.
  */
 public final class RegionProbes {
 
@@ -50,9 +54,6 @@ public final class RegionProbes {
      * it verifies per-frame reflow of subsequent stacking entries.
      */
     private static volatile boolean stackMiddleVisible = true;
-
-    /** Inventory-probe adapters — rendered by {@code ProbeRenderMixin}. */
-    private static final List<ScreenPanelAdapter> INVENTORY_ADAPTERS = new ArrayList<>();
 
     // ── Probe visuals ───────────────────────────────────────────────────
 
@@ -79,7 +80,7 @@ public final class RegionProbes {
 
     private static final int PROBE_SIZE = 18;
 
-    // Colors for inventory probes — distinct per region for quick eyeballing.
+    // Colors for MenuContext probes — distinct per region for quick eyeballing.
     private static int colorFor(MenuRegion region) {
         return switch (region) {
             case LEFT_ALIGN_TOP     -> 0xFFFF4444; // red
@@ -114,34 +115,39 @@ public final class RegionProbes {
      * Called from {@link MenuKit#initClient()}. Registration is a side
      * effect of adapter/builder construction; panels only render when
      * {@link #master} is true (gated via {@link Panel#showWhen}).
+     *
+     * <p>MenuContext probes use {@code .onAny()} — every
+     * {@link net.minecraft.client.gui.screens.inventory.AbstractContainerScreen}
+     * gets probe coverage via the library-owned
+     * {@link com.trevorschoeny.menukit.inject.ScreenPanelRegistry}. No
+     * dedicated probe mixin anymore.
      */
     public static void registerClient() {
+        int inventoryCount = 0;
+
         // ── 8 MenuContext probes (one per region) ─────────────────────
-        // Probes .onAny() — they fire on every AbstractContainerScreen so
-        // the MenuContext region system gets exercised across chests,
-        // crafting screens, furnaces, etc. Step 3 wires the dispatch; for
-        // step 2, the declaration just records targeting.
         for (MenuRegion region : MenuRegion.values()) {
             Panel probe = new Panel("probe_inv_" + region.name().toLowerCase(),
                     List.of(filledRect(PROBE_SIZE, colorFor(region))));
             probe.showWhen(() -> master);
-            INVENTORY_ADAPTERS.add(new ScreenPanelAdapter(probe, region).onAny());
+            new ScreenPanelAdapter(probe, region).onAny();
+            inventoryCount++;
         }
 
         // ── 2 extra probes in RIGHT_ALIGN_TOP for stacking test ───────
-        // The existing single RIGHT_ALIGN_TOP probe registered above is the
-        // top of the stack; these two stack below it. Middle is toggleable.
+        // The single RIGHT_ALIGN_TOP probe registered above is the top of
+        // the stack; these two stack below it. Middle is toggleable.
         Panel stackMid = new Panel("probe_stack_mid",
                 List.of(filledRect(PROBE_SIZE, 0xFFFF44FF))); // magenta
         stackMid.showWhen(() -> master && stackMiddleVisible);
-        INVENTORY_ADAPTERS.add(
-                new ScreenPanelAdapter(stackMid, MenuRegion.RIGHT_ALIGN_TOP).onAny());
+        new ScreenPanelAdapter(stackMid, MenuRegion.RIGHT_ALIGN_TOP).onAny();
+        inventoryCount++;
 
         Panel stackBot = new Panel("probe_stack_bot",
                 List.of(filledRect(PROBE_SIZE, 0xFF44AAFF))); // light blue
         stackBot.showWhen(() -> master);
-        INVENTORY_ADAPTERS.add(
-                new ScreenPanelAdapter(stackBot, MenuRegion.RIGHT_ALIGN_TOP).onAny());
+        new ScreenPanelAdapter(stackBot, MenuRegion.RIGHT_ALIGN_TOP).onAny();
+        inventoryCount++;
 
         // ── 9 HUD probes (one per region) ─────────────────────────────
         for (HudRegion region : HudRegion.values()) {
@@ -154,18 +160,14 @@ public final class RegionProbes {
                     .build();
         }
 
-        MenuKit.LOGGER.info("[RegionProbes] DIAG — registered {} inventory adapters",
-                INVENTORY_ADAPTERS.size());
+        MenuKit.LOGGER.info("[RegionProbes] registered {} MenuContext probes + 9 HUD probes",
+                inventoryCount);
     }
-
-    /** Set to true on master toggle; logs once-per-toggle inside renderInventoryProbes. */
-    private static boolean logNextRender = false;
 
     // ── Toggles (called from /mkverify regions commands) ───────────────
 
     public static boolean toggleMaster() {
         master = !master;
-        if (master) logNextRender = true;
         return master;
     }
 
@@ -176,47 +178,4 @@ public final class RegionProbes {
 
     public static boolean isMasterOn() { return master; }
     public static boolean isStackMiddleVisible() { return stackMiddleVisible; }
-
-    // ── Render path (called from ProbeRenderMixin) ─────────────────────
-
-    /**
-     * Iterates registered inventory probe adapters and renders them against
-     * the given screen's bounds. Short-circuits when {@link #master} is false
-     * (the adapters' panels will also self-short-circuit, but saving the
-     * per-adapter call when probes are globally off is zero work).
-     */
-    public static void renderInventoryProbes(AbstractContainerScreen<?> screen,
-                                              GuiGraphics graphics,
-                                              int mouseX, int mouseY) {
-        if (!master) return;
-        ScreenBounds bounds = boundsOf(screen);
-        if (logNextRender) {
-            logNextRender = false;
-            MenuKit.LOGGER.info(
-                    "[RegionProbes] DIAG — renderInventoryProbes reached; adapters={} bounds=(left={}, top={}, w={}, h={}) screen={}",
-                    INVENTORY_ADAPTERS.size(),
-                    bounds.leftPos(), bounds.topPos(), bounds.imageWidth(), bounds.imageHeight(),
-                    screen.getClass().getSimpleName());
-            // Also log the first probe's computed origin
-            if (!INVENTORY_ADAPTERS.isEmpty()) {
-                ScreenPanelAdapter first = INVENTORY_ADAPTERS.get(0);
-                Panel p = first.getPanel();
-                MenuKit.LOGGER.info(
-                        "[RegionProbes] DIAG — first probe '{}' visible={} width={} height={}",
-                        p.getId(), p.isVisible(), p.getWidth(), p.getHeight());
-            }
-        }
-        for (ScreenPanelAdapter adapter : INVENTORY_ADAPTERS) {
-            adapter.render(graphics, bounds, mouseX, mouseY, screen);
-        }
-    }
-
-    private static ScreenBounds boundsOf(AbstractContainerScreen<?> screen) {
-        var acc = (AbstractContainerScreenAccessor) screen;
-        return new ScreenBounds(
-                acc.trevorMod$getLeftPos(),
-                acc.trevorMod$getTopPos(),
-                acc.trevorMod$getImageWidth(),
-                acc.trevorMod$getImageHeight());
-    }
 }
