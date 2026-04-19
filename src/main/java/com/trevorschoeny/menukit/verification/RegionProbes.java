@@ -116,12 +116,16 @@ public final class RegionProbes {
      * {@link #master} is true (gated via {@link Panel#showWhen}).
      */
     public static void registerClient() {
-        // ── 8 inventory probes (one per region) ───────────────────────
+        // ── 8 MenuContext probes (one per region) ─────────────────────
+        // Probes .onAny() — they fire on every AbstractContainerScreen so
+        // the MenuContext region system gets exercised across chests,
+        // crafting screens, furnaces, etc. Step 3 wires the dispatch; for
+        // step 2, the declaration just records targeting.
         for (MenuRegion region : MenuRegion.values()) {
             Panel probe = new Panel("probe_inv_" + region.name().toLowerCase(),
                     List.of(filledRect(PROBE_SIZE, colorFor(region))));
             probe.showWhen(() -> master);
-            INVENTORY_ADAPTERS.add(new ScreenPanelAdapter(probe, region));
+            INVENTORY_ADAPTERS.add(new ScreenPanelAdapter(probe, region).onAny());
         }
 
         // ── 2 extra probes in RIGHT_ALIGN_TOP for stacking test ───────
@@ -130,12 +134,14 @@ public final class RegionProbes {
         Panel stackMid = new Panel("probe_stack_mid",
                 List.of(filledRect(PROBE_SIZE, 0xFFFF44FF))); // magenta
         stackMid.showWhen(() -> master && stackMiddleVisible);
-        INVENTORY_ADAPTERS.add(new ScreenPanelAdapter(stackMid, MenuRegion.RIGHT_ALIGN_TOP));
+        INVENTORY_ADAPTERS.add(
+                new ScreenPanelAdapter(stackMid, MenuRegion.RIGHT_ALIGN_TOP).onAny());
 
         Panel stackBot = new Panel("probe_stack_bot",
                 List.of(filledRect(PROBE_SIZE, 0xFF44AAFF))); // light blue
         stackBot.showWhen(() -> master);
-        INVENTORY_ADAPTERS.add(new ScreenPanelAdapter(stackBot, MenuRegion.RIGHT_ALIGN_TOP));
+        INVENTORY_ADAPTERS.add(
+                new ScreenPanelAdapter(stackBot, MenuRegion.RIGHT_ALIGN_TOP).onAny());
 
         // ── 9 HUD probes (one per region) ─────────────────────────────
         for (HudRegion region : HudRegion.values()) {
