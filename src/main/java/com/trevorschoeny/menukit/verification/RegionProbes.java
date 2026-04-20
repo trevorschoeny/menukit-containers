@@ -7,8 +7,11 @@ import com.trevorschoeny.menukit.core.Panel;
 import com.trevorschoeny.menukit.core.PanelElement;
 import com.trevorschoeny.menukit.core.PanelStyle;
 import com.trevorschoeny.menukit.core.RenderContext;
+import com.trevorschoeny.menukit.core.SlotGroupCategory;
+import com.trevorschoeny.menukit.core.SlotGroupRegion;
 import com.trevorschoeny.menukit.hud.MKHudPanel;
 import com.trevorschoeny.menukit.inject.ScreenPanelAdapter;
+import com.trevorschoeny.menukit.inject.SlotGroupPanelAdapter;
 
 import java.util.List;
 
@@ -80,6 +83,13 @@ public final class RegionProbes {
 
     private static final int PROBE_SIZE = 18;
 
+    /**
+     * Smaller size for SlotGroupContext probes so they're visually
+     * distinguishable from the 18×18 MenuContext probes when both render
+     * on the same screen.
+     */
+    private static final int SG_PROBE_SIZE = 12;
+
     // Colors for MenuContext probes — distinct per region for quick eyeballing.
     private static int colorFor(MenuRegion region) {
         return switch (region) {
@@ -149,6 +159,37 @@ public final class RegionProbes {
         new ScreenPanelAdapter(stackBot, MenuRegion.RIGHT_ALIGN_TOP).onAny();
         inventoryCount++;
 
+        // ── SlotGroupContext probes ───────────────────────────────────
+        // Two probes exercising M8's SlotGroupContext dispatch:
+        //
+        //   1. PLAYER_INVENTORY × TOP_ALIGN_RIGHT (hot pink, 12×12) — above
+        //      the right edge of the player inventory's bounding box.
+        //      Appears in every AbstractContainerScreen whose resolver
+        //      produces PLAYER_INVENTORY slots (which is every vanilla menu
+        //      that calls addStandardInventorySlots — effectively all of
+        //      them except LecternMenu, which is deferred from v1).
+        //
+        //   2. CHEST_STORAGE × RIGHT_ALIGN_TOP (mint, 12×12) — right of
+        //      the chest storage bounding box. Appears only when
+        //      ChestMenu (chests, barrels) opens — absent in other menus.
+        //
+        // Different size (12 vs 18) keeps SlotGroup probes visually
+        // distinguishable from MenuContext probes; different anchor
+        // (inside-frame slot bounds vs outside-frame screen bounds) means
+        // they won't overlap in practice.
+
+        Panel sgPlayerInv = new Panel("probe_sg_player_inv",
+                List.of(filledRect(SG_PROBE_SIZE, 0xFFFF44BB))); // hot pink
+        sgPlayerInv.showWhen(() -> master);
+        new SlotGroupPanelAdapter(sgPlayerInv, SlotGroupRegion.TOP_ALIGN_RIGHT)
+                .on(SlotGroupCategory.PLAYER_INVENTORY);
+
+        Panel sgChestStorage = new Panel("probe_sg_chest_storage",
+                List.of(filledRect(SG_PROBE_SIZE, 0xFF44DDCC))); // mint
+        sgChestStorage.showWhen(() -> master);
+        new SlotGroupPanelAdapter(sgChestStorage, SlotGroupRegion.RIGHT_ALIGN_TOP)
+                .on(SlotGroupCategory.CHEST_STORAGE);
+
         // ── 9 HUD probes (one per region) ─────────────────────────────
         for (HudRegion region : HudRegion.values()) {
             MKHudPanel.builder("probe_hud_" + region.name().toLowerCase())
@@ -160,7 +201,8 @@ public final class RegionProbes {
                     .build();
         }
 
-        MenuKit.LOGGER.info("[RegionProbes] registered {} MenuContext probes + 9 HUD probes",
+        MenuKit.LOGGER.info(
+                "[RegionProbes] registered {} MenuContext probes + 2 SlotGroup probes + 9 HUD probes",
                 inventoryCount);
     }
 
