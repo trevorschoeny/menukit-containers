@@ -504,6 +504,35 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
             return this;
         }
 
+        /**
+         * Declares a directional pairing from the last-added group to a target
+         * group, identified by {@code "{panelId}.{groupId}"}. Paired targets
+         * sort first in shift-click routing (Layer 1 in
+         * {@link MenuKitScreenHandler#quickMoveStack}), ahead of the
+         * source-aware baseline and declared priority.
+         *
+         * <p>Exposure-only wrapper over the already-shipped routing semantics
+         * ({@link SlotGroup#pairsWith} + {@link SlotGroup#getPairedWith}).
+         * Modeled on {@link #rightClick}: replaces the last group config with
+         * one that appends a target to its pairing-targets list. The build
+         * loop resolves the string references to live {@link SlotGroup}
+         * instances and wires the pairings before the handler is constructed.
+         *
+         * <p>Call once per target to declare a pairing; multiple calls stack
+         * to declare multi-target pairing from the same source group.
+         */
+        public PanelBuilder pairsWith(String targetPanelId, String targetGroupId) {
+            if (!groups.isEmpty()) {
+                GroupConfig last = groups.remove(groups.size() - 1);
+                List<String> newTargets = new ArrayList<>(last.pairingTargets);
+                newTargets.add(targetPanelId + "." + targetGroupId);
+                groups.add(new GroupConfig(last.id, last.storage, last.policy,
+                        last.qmp, last.priority, last.columns, last.rowGapAfter,
+                        last.rowGapSize, newTargets, last.rightClickHandler));
+            }
+            return this;
+        }
+
         // ── Panel Elements ──────────────────────────────────────────
 
         /** Adds a button element at the given position within the panel content area. */
