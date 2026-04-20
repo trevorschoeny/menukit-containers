@@ -341,9 +341,11 @@ public final class VanillaSlotGroupResolvers {
      *   <li>Non-INVENTORY tab (54 slots): 45 creative items at indices 0-44,
      *       player hotbar at 45-53. Only {@code PLAYER_HOTBAR} resolves —
      *       the hotbar is always visually present in creative.</li>
-     *   <li>INVENTORY tab (46 slots): player-inventory layout identical to
-     *       {@code InventoryMenu}. All player-scope categories plus crafting
-     *       input/output resolve.</li>
+     *   <li>INVENTORY tab (47 slots): player-inventory layout identical to
+     *       {@code InventoryMenu} (46 slot wrappers) plus a vanilla-added
+     *       {@code destroyItemSlot} trash bin at index 46. All player-scope
+     *       categories plus crafting input/output resolve; index 46 (the
+     *       trash bin) isn't a named category and is skipped.</li>
      * </ul>
      *
      * <p>Slot-count discrimination is the same fragility tier as every other
@@ -354,8 +356,10 @@ public final class VanillaSlotGroupResolvers {
         SlotGroupCategories.register(CreativeModeInventoryScreen.ItemPickerMenu.class, menu -> {
             List<Slot> s = menu.slots;
             Map<SlotGroupCategory, List<Slot>> out = new HashMap<>();
-            if (s.size() == 46) {
-                // INVENTORY tab: player-inventory layout (same as InventoryMenu).
+            if (s.size() == 47) {
+                // INVENTORY tab: 46 SlotWrappers of InventoryMenu slots +
+                // 1 destroyItemSlot at index 46. Skip the trash bin; it's
+                // not a named category.
                 out.put(SlotGroupCategory.CRAFTING_OUTPUT, s.subList(0, 1));
                 out.put(SlotGroupCategory.CRAFTING_INPUT, s.subList(1, 5));
                 out.put(SlotGroupCategory.PLAYER_ARMOR, s.subList(5, 9));
