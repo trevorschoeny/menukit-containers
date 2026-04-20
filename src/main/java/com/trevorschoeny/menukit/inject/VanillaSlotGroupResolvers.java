@@ -2,6 +2,7 @@ package com.trevorschoeny.menukit.inject;
 
 import com.trevorschoeny.menukit.core.SlotGroupCategory;
 
+import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.AnvilMenu;
 import net.minecraft.world.inventory.BeaconMenu;
@@ -65,6 +66,7 @@ public final class VanillaSlotGroupResolvers {
         registerUtilityBlocks();
         registerBrewingTradingBeacon();
         registerMounts();
+        registerCreativeItemPicker();
     }
 
     // ── Shared helpers ──────────────────────────────────────────────────
@@ -323,6 +325,51 @@ public final class VanillaSlotGroupResolvers {
             out.put(SlotGroupCategory.MOUNT_SADDLE, s.subList(0, 1));
             out.put(SlotGroupCategory.MOUNT_BODY_ARMOR, s.subList(1, 2));
             addPlayerInvTail(out, s, 2);
+            return Map.copyOf(out);
+        });
+    }
+
+    // ── Creative ItemPickerMenu — dynamic (per-tab) resolution ──────────
+
+    /**
+     * Creative inventory uses its own {@code ItemPickerMenu} which rebuilds
+     * {@code menu.slots} on every tab change. ScreenPanelRegistry re-resolves
+     * slot groups per frame (M8 §5.4), so the resolver discriminates by the
+     * current slot count:
+     *
+     * <ul>
+     *   <li>Non-INVENTORY tab (54 slots): 45 creative items at indices 0-44,
+     *       player hotbar at 45-53. Only {@code PLAYER_HOTBAR} resolves —
+     *       the hotbar is always visually present in creative.</li>
+     *   <li>INVENTORY tab (46 slots): player-inventory layout identical to
+     *       {@code InventoryMenu}. All player-scope categories plus crafting
+     *       input/output resolve.</li>
+     * </ul>
+     *
+     * <p>Slot-count discrimination is the same fragility tier as every other
+     * vanilla resolver — vanilla slot-layout changes invalidate all resolvers
+     * alike. See M8 §5.4 for the per-frame-resolution rationale.
+     */
+    private static void registerCreativeItemPicker() {
+        SlotGroupCategories.register(CreativeModeInventoryScreen.ItemPickerMenu.class, menu -> {
+            List<Slot> s = menu.slots;
+            Map<SlotGroupCategory, List<Slot>> out = new HashMap<>();
+            if (s.size() == 46) {
+                // INVENTORY tab: player-inventory layout (same as InventoryMenu).
+                out.put(SlotGroupCategory.CRAFTING_OUTPUT, s.subList(0, 1));
+                out.put(SlotGroupCategory.CRAFTING_INPUT, s.subList(1, 5));
+                out.put(SlotGroupCategory.PLAYER_ARMOR, s.subList(5, 9));
+                out.put(SlotGroupCategory.PLAYER_INVENTORY, s.subList(9, 36));
+                out.put(SlotGroupCategory.PLAYER_HOTBAR, s.subList(36, 45));
+                out.put(SlotGroupCategory.PLAYER_OFFHAND, s.subList(45, 46));
+            } else if (s.size() == 54) {
+                // Non-INVENTORY tab: 45 creative-item slots + 9 hotbar.
+                // PLAYER_INVENTORY absent (main inventory isn't visible here);
+                // PLAYER_HOTBAR resolves because the hotbar IS always visible.
+                out.put(SlotGroupCategory.PLAYER_HOTBAR, s.subList(45, 54));
+            }
+            // Any other slot count (modded tabs, pre-tab-selection transient
+            // state) returns empty — silent skip rather than partial match.
             return Map.copyOf(out);
         });
     }
