@@ -1,6 +1,5 @@
 package com.trevorschoeny.menukit;
 
-import com.trevorschoeny.menukit.config.MKFamily;
 import com.trevorschoeny.menukit.core.PanelElement;
 import com.trevorschoeny.menukit.core.PanelRendering;
 import com.trevorschoeny.menukit.core.PanelStyle;
@@ -18,15 +17,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
  * Mod entry point for MenuKit, plus thin facades for the orthogonal
- * subsystems that want a process-wide home: family config, HUD panels,
- * notifications.
+ * subsystems that want a process-wide home: HUD panels, notifications.
  *
  * <p>MenuKit's canonical surface lives elsewhere:
  * <ul>
@@ -43,19 +39,13 @@ import java.util.Map;
  *
  * <p>This class intentionally stays small. Anything screen-scoped lives on
  * {@code MenuKitHandledScreen}; anything group-scoped lives on {@code SlotGroup};
- * anything truly process-wide (config families, HUD overlays, notification
- * triggers) is the only thing that lives here.
+ * anything truly process-wide (HUD overlays, notification triggers) is the
+ * only thing that lives here.
  */
 public class MenuKit implements ModInitializer {
 
     /** MenuKit's own logger — independent of any consuming mod's logger. */
     public static final Logger LOGGER = LoggerFactory.getLogger("menukit");
-
-    // ── Family registry ────────────────────────────────────────────────────
-    // Families group multiple mods under a shared config screen + keybind
-    // category. Each call to family(id) returns the same MKFamily instance;
-    // multiple mods calling family("trevmods") share one identity.
-    private static final Map<String, MKFamily> families = new LinkedHashMap<>();
 
     // ── HUD panel registry (registered at mod init, client-only) ──────────
     private static final Map<String, MKHudPanelDef> hudPanels = new LinkedHashMap<>();
@@ -105,32 +95,6 @@ public class MenuKit implements ModInitializer {
         com.trevorschoeny.menukit.verification.ContractVerification.initClient();
         // M5 §9.2 dev probes — invisible unless /mkverify regions is toggled on.
         com.trevorschoeny.menukit.verification.RegionProbes.registerClient();
-    }
-
-    // ══════════════════════════════════════════════════════════════════════
-    // Family API
-    // ══════════════════════════════════════════════════════════════════════
-
-    /**
-     * Returns the family with the given ID, creating it if it doesn't exist.
-     * Multiple mods calling {@code family("trevmods")} get the same instance.
-     * Each mod can then set the display name, description, and add config
-     * categories — they accumulate additively.
-     *
-     * @param id unique family identifier (e.g., "trevmods")
-     */
-    public static MKFamily family(String id) {
-        return families.computeIfAbsent(id, MKFamily::new);
-    }
-
-    /** Returns the family with the given ID, or null if not registered. */
-    public static @Nullable MKFamily getFamily(String id) {
-        return families.get(id);
-    }
-
-    /** Returns all registered families. */
-    public static Collection<MKFamily> getFamilies() {
-        return Collections.unmodifiableCollection(families.values());
     }
 
     // ══════════════════════════════════════════════════════════════════════
