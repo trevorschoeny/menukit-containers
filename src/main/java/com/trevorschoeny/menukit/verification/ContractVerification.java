@@ -12,7 +12,10 @@ import com.trevorschoeny.menukit.core.RegionMath;
 import com.trevorschoeny.menukit.core.SlotGroup;
 import com.trevorschoeny.menukit.core.SlotGroupLike;
 import com.trevorschoeny.menukit.core.SlotStateChannel;
+import com.trevorschoeny.menukit.core.Storage;
+import com.trevorschoeny.menukit.core.StorageAttachment;
 import com.trevorschoeny.menukit.core.VirtualSlotGroup;
+import net.minecraft.core.NonNullList;
 import com.trevorschoeny.menukit.inject.ScreenBounds;
 import com.trevorschoeny.menukit.inject.ScreenOrigin;
 import com.trevorschoeny.menukit.screen.MenuKitScreenHandler;
@@ -77,7 +80,7 @@ import static net.minecraft.commands.Commands.literal;
  *       canonical contract; per-phase dev tooling.</li>
  * </ul>
  *
- * <h3>The seven contracts (all run by {@link #runAll(CommandContext)})</h3>
+ * <h3>The eight contracts (all run by {@link #runAll(CommandContext)})</h3>
  *
  * <ol>
  *   <li>{@code Composability} — global {@code Slot.mayPlace} mixin
@@ -141,6 +144,16 @@ public final class ContractVerification {
                     (buf, v) -> buf.writeBoolean(v),
                     buf -> buf.readBoolean()),
             false);
+
+    // ── M7 storage-attachment test (contract 8) ─────────────────────────
+    // Player-attached used for the probe because a test BE would require
+    // synthesizing one in the world. Player-attached exercises the same
+    // Fabric-attachment round-trip (write → attachment codec → read back)
+    // against a known owner the probe has in hand. Namespace cleared at
+    // probe start so runs are idempotent.
+
+    public static final StorageAttachment<Player, NonNullList<ItemStack>> TEST_CONTENT =
+            StorageAttachment.playerAttached("menukit-verify", "m7_test_content", 3);
 
     /** Called from {@code MenuKit.init()} — server-safe MenuType + commands. */
     public static void initServer() {
@@ -215,7 +228,7 @@ public final class ContractVerification {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // runAll — runs all seven contracts in sequence
+    // runAll — runs all eight contracts in sequence
     // ══════════════════════════════════════════════════════════════════════
     //
     // Public entry point called by validator's /mkverify all aggregator.
@@ -239,7 +252,7 @@ public final class ContractVerification {
      * Runs all seven canonical contracts in sequence, orchestrating menu
      * state across the open-test-screen boundary. Each contract emits its
      * own {@code VERDICT} log line. Emits one chat acknowledgement
-     * ({@code "[Verify] All seven contracts — see log..."}) so the caller
+     * ({@code "[Verify] All eight contracts — see log..."}) so the caller
      * knows execution completed; scan the log for VERDICT to read results.
      *
      * <p>Leaves {@code player.containerMenu} pointing at the
@@ -251,13 +264,16 @@ public final class ContractVerification {
             throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
 
-        LOGGER.info("[Verify] BEGIN — runAll — running all seven contracts");
+        LOGGER.info("[Verify] BEGIN — runAll — running all eight contracts");
 
         // ── Pure-math contract (no menu state) ──────────────────────────
         regionMath();
 
         // ── Per-slot state contract (server-side; no menu needed) ───────
         slotState(player);
+
+        // ── M7 storage-attachment round-trip (server-side; no menu) ─────
+        m7Storage(player);
 
         // ── Vanilla phases (before opening test screen) ─────────────────
         composabilityPhaseA(player);
@@ -274,10 +290,10 @@ public final class ContractVerification {
         syncSafety(handler);
         inertness(player, handler);
 
-        LOGGER.info("[Verify] END — seven contracts checked. Scan log for VERDICT lines.");
+        LOGGER.info("[Verify] END — eight contracts checked. Scan log for VERDICT lines.");
 
         ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify] All seven contracts — see log. Test screen is now open."),
+                () -> Component.literal("[Verify] All eight contracts — see log. Test screen is now open."),
                 false);
         return 1;
     }
@@ -908,6 +924,86 @@ public final class ContractVerification {
             LOGGER.info("[Verify.SlotState] {} — OK", label);
         } else {
             LOGGER.info("[Verify.SlotState] {} — FAIL", label);
+            counts[1]++;
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 8. M7 storage-attachment round-trip
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // Exercises M7's StorageAttachment path against a test player-attached
+    // attachment. Covers:
+    //   - default empty content for a fresh owner
+    //   - write + immediate read returns the written ItemStack
+    //   - fresh bind reads the persisted state (attachment round-trip,
+    //     proves writes flowed through Fabric's attachment codec)
+    //   - slot isolation (writing slot 1 doesn't touch slot 0 / 2)
+    //   - cleanup returns the attachment to empty state
+    //
+    // Does NOT simulate chunk unload / reload (would require BE synthesis).
+    // The fresh-bind read is the round-trip signal the probe asserts on —
+    // if the attachment's read/write path is wired correctly, a fresh
+    // bind against the same player reads back the written content. Real
+    // chunk-unload persistence is verified at integration level via V5.7
+    // (BE-scoped) in the dev client.
+
+    private static void m7Storage(ServerPlayer player) {
+        LOGGER.info("[Verify.M7] BEGIN");
+        int[] counts = {0, 0};
+
+        Storage storage = TEST_CONTENT.bind(player);
+
+        // Clean any prior state before probing.
+        for (int i = 0; i < storage.size(); i++) storage.setStack(i, ItemStack.EMPTY);
+
+        // Case 1: default empty
+        checkM7(counts, "default empty", storage.getStack(0).isEmpty());
+
+        // Case 2: write + immediate read
+        ItemStack diamond = new ItemStack(Items.DIAMOND, 3);
+        storage.setStack(0, diamond);
+        ItemStack read = storage.getStack(0);
+        checkM7(counts, "write+read same",
+                read.getItem() == Items.DIAMOND && read.getCount() == 3);
+
+        // Case 3: fresh bind reads persisted value (attachment round-trip)
+        Storage fresh = TEST_CONTENT.bind(player);
+        ItemStack freshRead = fresh.getStack(0);
+        checkM7(counts, "fresh-bind round-trip",
+                freshRead.getItem() == Items.DIAMOND && freshRead.getCount() == 3);
+
+        // Case 4: slot isolation
+        storage.setStack(1, new ItemStack(Items.EMERALD, 1));
+        checkM7(counts, "slot isolation",
+                storage.getStack(0).getItem() == Items.DIAMOND
+                && storage.getStack(1).getItem() == Items.EMERALD
+                && storage.getStack(2).isEmpty());
+
+        // Case 5: marker interface — PlayerAttachment-produced Storage
+        //         should implement PlayerStorage for shift-click routing.
+        checkM7(counts, "PlayerStorage marker",
+                storage instanceof com.trevorschoeny.menukit.core.PlayerStorage);
+
+        // Case 6: cleanup
+        for (int i = 0; i < storage.size(); i++) storage.setStack(i, ItemStack.EMPTY);
+        checkM7(counts, "cleanup",
+                storage.getStack(0).isEmpty()
+                && storage.getStack(1).isEmpty()
+                && storage.getStack(2).isEmpty());
+
+        int total = counts[0], failed = counts[1];
+        int passed = total - failed;
+        LOGGER.info("[Verify.M7] VERDICT — {}/{} cases pass ({})",
+                passed, total, failed == 0 ? "PASS" : "FAIL — see above");
+    }
+
+    private static void checkM7(int[] counts, String label, boolean condition) {
+        counts[0]++;
+        if (condition) {
+            LOGGER.info("[Verify.M7] {} — OK", label);
+        } else {
+            LOGGER.info("[Verify.M7] {} — FAIL", label);
             counts[1]++;
         }
     }

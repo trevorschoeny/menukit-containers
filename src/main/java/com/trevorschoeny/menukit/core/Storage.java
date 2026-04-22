@@ -11,13 +11,17 @@ import net.minecraft.world.item.ItemStack;
  * binding registry — never here.
  *
  * <p>Each Storage is adapted internally to vanilla's {@code Container}
- * interface by the handler during slot construction. Consumers never
- * see {@code Container}; they see Storage.
+ * interface by the handler during slot construction (via
+ * {@link StorageContainerAdapter}). Consumers never see {@code Container};
+ * they see Storage.
  *
- * <p>For implementations that need save/load, see {@link PersistentStorage}.
+ * <p>For persistent storage (BlockEntity-scoped, Player-attached, Item-attached),
+ * see {@link StorageAttachment}. M7's factories produce Storage views
+ * backed by Fabric attachments or DataComponents with auto-persistence.
+ * For session-only storage, see {@link EphemeralStorage}. For virtual
+ * observer views, see {@link VirtualStorage}.
  *
- * @see PersistentStorage
- * @see PlayerStorage
+ * @see StorageAttachment
  * @see EphemeralStorage
  * @see VirtualStorage
  */

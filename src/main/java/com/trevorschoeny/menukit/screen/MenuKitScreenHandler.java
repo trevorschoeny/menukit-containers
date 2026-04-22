@@ -328,10 +328,17 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
      * Creates a builder for declaratively constructing a MenuKitScreenHandler.
      *
      * <pre>{@code
+     * // Mod-init: declare attachments via M7's StorageAttachment.
+     * public static final StorageAttachment<BlockEntity, NonNullList<ItemStack>> CHEST_EXTRA =
+     *     StorageAttachment.blockScoped("my-mod", "chest_extra", 9);
+     * public static final StorageAttachment<Player, NonNullList<ItemStack>> POCKETS =
+     *     StorageAttachment.playerAttached("my-mod", "pockets", 27);
+     *
+     * // Menu construction: bind attachments to owner instances.
      * MenuKitScreenHandler.builder(MY_MENU_TYPE)
      *     .panel("main", p -> p
-     *         .group("container", BlockEntityStorage.of(pos), InteractionPolicy.free())
-     *         .group("player", PlayerStorage.of(player), InteractionPolicy.free()))
+     *         .group("container", CHEST_EXTRA.bind(blockEntity), InteractionPolicy.free())
+     *         .group("player", POCKETS.bind(player), InteractionPolicy.free()))
      *     .panel("upgrades", p -> p
      *         .group("slots", EphemeralStorage.of(4), InteractionPolicy.input(isUpgrade))
      *         .hidden())
