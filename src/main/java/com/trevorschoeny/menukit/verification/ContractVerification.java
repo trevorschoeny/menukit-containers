@@ -65,18 +65,19 @@ import static net.minecraft.commands.Commands.literal;
  * <h3>Commands</h3>
  *
  * <ul>
- *   <li>{@code /mkverify all} — runs all five contract probes in sequence,
- *       orchestrating menu state across the open-test-screen boundary.
- *       Phase A (vanilla evidence) runs first against {@link Player#inventoryMenu};
- *       the test screen is opened once; Phase B (MenuKit evidence) runs
- *       against the {@link TestContractHandler}. Each contract emits its
- *       own {@code VERDICT} line. Scan the log for VERDICT to check results.</li>
+ *   <li>{@code /mkverify all} — NOT registered by this class. The validator
+ *       mod's aggregator command (see {@code mkvalidator.cmd.ValidatorCommand})
+ *       owns {@code /mkverify all} so a single invocation runs the library
+ *       contracts AND the Phase 12.5 validator scenarios in one pass. This
+ *       class exposes {@link #runAll(CommandContext)} as the public entry
+ *       point the aggregator calls. Standalone probe execution without the
+ *       scenarios is available via that method (e.g. from other tooling).</li>
  *   <li>{@code /mkverify elements} — opens a clean {@link ElementDemoHandler}
  *       screen for visual verification of element rendering. Not a
  *       canonical contract; per-phase dev tooling.</li>
  * </ul>
  *
- * <h3>The five contracts (all run by {@code /mkverify all})</h3>
+ * <h3>The seven contracts (all run by {@link #runAll(CommandContext)})</h3>
  *
  * <ol>
  *   <li>{@code Composability} — global {@code Slot.mayPlace} mixin
@@ -157,9 +158,15 @@ public final class ContractVerification {
                 Identifier.fromNamespaceAndPath("menukit", "element_demo"),
                 elementDemoMenuType);
 
+        // /mkverify all is registered by the validator mod's aggregator
+        // command (ValidatorCommand.register), which composes the library
+        // contracts (via runAll below) with the Phase 12.5 validator
+        // scenarios. MenuKit does not self-register "all" — that would
+        // collide with the validator's registration under the same Brigadier
+        // literal, and the combined-surface aggregator is the ergonomic
+        // shape Trevor actually uses in practice.
         CommandRegistrationCallback.EVENT.register((dispatcher, access, env) ->
                 dispatcher.register(literal("mkverify")
-                        .then(literal("all").executes(ContractVerification::cmdAll))
                         .then(literal("elements").executes(ContractVerification::cmdElements))
                         .then(literal("regions")
                                 .executes(ContractVerification::cmdRegionsToggle)
@@ -208,8 +215,11 @@ public final class ContractVerification {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // /mkverify all — runs all five contracts in sequence
+    // runAll — runs all seven contracts in sequence
     // ══════════════════════════════════════════════════════════════════════
+    //
+    // Public entry point called by validator's /mkverify all aggregator.
+    // Not itself registered as a Brigadier command — see initServer().
     //
     // Menu-state sequencing: player.containerMenu starts as whatever screen
     // (if any) the player currently has open — defaults to inventoryMenu
@@ -225,11 +235,23 @@ public final class ContractVerification {
     // Substitutability, SyncSafety, Inertness are single-phase MK probes
     // that all run after open.
 
-    private static int cmdAll(CommandContext<CommandSourceStack> ctx)
+    /**
+     * Runs all seven canonical contracts in sequence, orchestrating menu
+     * state across the open-test-screen boundary. Each contract emits its
+     * own {@code VERDICT} log line. Emits one chat acknowledgement
+     * ({@code "[Verify] All seven contracts — see log..."}) so the caller
+     * knows execution completed; scan the log for VERDICT to read results.
+     *
+     * <p>Leaves {@code player.containerMenu} pointing at the
+     * {@link TestContractHandler} (the test screen opens partway through).
+     * Subsequent callers that read {@link Player#inventoryMenu} directly
+     * (as the Phase 12.5 validator scenarios do) are unaffected.
+     */
+    public static int runAll(CommandContext<CommandSourceStack> ctx)
             throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
 
-        LOGGER.info("[Verify] BEGIN — /mkverify all — running all seven contracts");
+        LOGGER.info("[Verify] BEGIN — runAll — running all seven contracts");
 
         // ── Pure-math contract (no menu state) ──────────────────────────
         regionMath();
