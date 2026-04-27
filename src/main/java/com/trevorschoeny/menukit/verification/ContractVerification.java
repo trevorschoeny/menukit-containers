@@ -80,7 +80,11 @@ import static net.minecraft.commands.Commands.literal;
  *       canonical contract; per-phase dev tooling.</li>
  * </ul>
  *
- * <h3>The eight contracts (all run by {@link #runAll(CommandContext)})</h3>
+ * <h3>The nine contracts (all run by {@link #runAll(CommandContext)})</h3>
+ *
+ * 1 Composability · 2 Substitutability · 3 SyncSafety · 4 Uniform ·
+ * 5 Inertness · 6 RegionMath · 7 SlotState · 8 M7 storage round-trip ·
+ * 9 M8 layout math.
  *
  * <ol>
  *   <li>{@code Composability} — global {@code Slot.mayPlace} mixin
@@ -228,7 +232,7 @@ public final class ContractVerification {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // runAll — runs all eight contracts in sequence
+    // runAll — runs all nine contracts in sequence
     // ══════════════════════════════════════════════════════════════════════
     //
     // Public entry point called by validator's /mkverify all aggregator.
@@ -252,7 +256,7 @@ public final class ContractVerification {
      * Runs all seven canonical contracts in sequence, orchestrating menu
      * state across the open-test-screen boundary. Each contract emits its
      * own {@code VERDICT} log line. Emits one chat acknowledgement
-     * ({@code "[Verify] All eight contracts — see log..."}) so the caller
+     * ({@code "[Verify] All nine contracts — see log..."}) so the caller
      * knows execution completed; scan the log for VERDICT to read results.
      *
      * <p>Leaves {@code player.containerMenu} pointing at the
@@ -264,7 +268,7 @@ public final class ContractVerification {
             throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
 
-        LOGGER.info("[Verify] BEGIN — runAll — running all eight contracts");
+        LOGGER.info("[Verify] BEGIN — runAll — running all nine contracts");
 
         // ── Pure-math contract (no menu state) ──────────────────────────
         regionMath();
@@ -274,6 +278,9 @@ public final class ContractVerification {
 
         // ── M7 storage-attachment round-trip (server-side; no menu) ─────
         m7Storage(player);
+
+        // ── M8 layout-math probe (pure; no menu, no state) ──────────────
+        m8LayoutMath();
 
         // ── Vanilla phases (before opening test screen) ─────────────────
         composabilityPhaseA(player);
@@ -290,10 +297,10 @@ public final class ContractVerification {
         syncSafety(handler);
         inertness(player, handler);
 
-        LOGGER.info("[Verify] END — eight contracts checked. Scan log for VERDICT lines.");
+        LOGGER.info("[Verify] END — nine contracts checked. Scan log for VERDICT lines.");
 
         ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify] All eight contracts — see log. Test screen is now open."),
+                () -> Component.literal("[Verify] All nine contracts — see log. Test screen is now open."),
                 false);
         return 1;
     }
@@ -1004,6 +1011,135 @@ public final class ContractVerification {
             LOGGER.info("[Verify.M7] {} — OK", label);
         } else {
             LOGGER.info("[Verify.M7] {} — FAIL", label);
+            counts[1]++;
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 9. M8 layout math (pure; no menu, no state)
+    // ══════════════════════════════════════════════════════════════════════
+    //
+    // Exercises Row / Column / nested layouts and CrossAlign math against
+    // synthetic ElementSpecs. Asserts the emitted PanelElements have the
+    // expected childX/childY values. No live screen; no Fabric attachment.
+    //
+    // Each test uses an ad-hoc anonymous ElementSpec to avoid coupling to
+    // any concrete element class — the probe verifies layout math in
+    // isolation from element rendering.
+
+    private static void m8LayoutMath() {
+        LOGGER.info("[Verify.M8] BEGIN");
+        int[] counts = {0, 0};
+
+        // Synthetic spec factory — produces ElementSpec of given dimensions
+        // wrapping a no-op anonymous PanelElement. Used to verify layout
+        // math in isolation from any concrete element type.
+        java.util.function.BiFunction<Integer, Integer,
+                com.trevorschoeny.menukit.core.layout.ElementSpec> spec = (w, h) ->
+                new com.trevorschoeny.menukit.core.layout.ElementSpec() {
+                    @Override public int width()  { return w; }
+                    @Override public int height() { return h; }
+                    @Override public com.trevorschoeny.menukit.core.PanelElement at(int x, int y) {
+                        return new com.trevorschoeny.menukit.core.PanelElement() {
+                            @Override public int getChildX() { return x; }
+                            @Override public int getChildY() { return y; }
+                            @Override public int getWidth()  { return w; }
+                            @Override public int getHeight() { return h; }
+                            @Override public void render(
+                                    com.trevorschoeny.menukit.core.RenderContext ctx) {}
+                        };
+                    }
+                };
+
+        // Case 1: Row of 3 × (20, 20) at (10, 5) with spacing 4 →
+        //   children at X = 10, 34, 58 (Y = 5 throughout).
+        var row = com.trevorschoeny.menukit.core.layout.Row.at(10, 5).spacing(4)
+                .add(spec.apply(20, 20))
+                .add(spec.apply(20, 20))
+                .add(spec.apply(20, 20))
+                .build();
+        checkM8(counts, "row size = 3", row.size() == 3);
+        checkM8(counts, "row[0] = (10, 5)",
+                row.get(0).getChildX() == 10 && row.get(0).getChildY() == 5);
+        checkM8(counts, "row[1] = (34, 5)",
+                row.get(1).getChildX() == 34 && row.get(1).getChildY() == 5);
+        checkM8(counts, "row[2] = (58, 5)",
+                row.get(2).getChildX() == 58 && row.get(2).getChildY() == 5);
+
+        // Case 2: Column of 3 × (20, 10) at (0, 0) with spacing 2 →
+        //   children at Y = 0, 12, 24.
+        var col = com.trevorschoeny.menukit.core.layout.Column.at(0, 0).spacing(2)
+                .add(spec.apply(20, 10))
+                .add(spec.apply(20, 10))
+                .add(spec.apply(20, 10))
+                .build();
+        checkM8(counts, "col[0] Y = 0",  col.get(0).getChildY() == 0);
+        checkM8(counts, "col[1] Y = 12", col.get(1).getChildY() == 12);
+        checkM8(counts, "col[2] Y = 24", col.get(2).getChildY() == 24);
+
+        // Case 3: Row with CrossAlign.CENTER — mixed-height children.
+        //   Heights 10 and 20; bounding 20; height-10 child centers at Y+5.
+        var centered = com.trevorschoeny.menukit.core.layout.Row.at(0, 0).spacing(0)
+                .crossAlign(com.trevorschoeny.menukit.core.layout.CrossAlign.CENTER)
+                .add(spec.apply(20, 10))   // height 10 → centered → y = (20-10)/2 = 5
+                .add(spec.apply(20, 20))   // height 20 → at y = 0
+                .build();
+        checkM8(counts, "center: short child Y = 5", centered.get(0).getChildY() == 5);
+        checkM8(counts, "center: tall  child Y = 0", centered.get(1).getChildY() == 0);
+
+        // Case 4: nested Column of two Rows. Inner row 1 at column-y 0,
+        //   row 2 at column-y 22 (row 1 height 20 + spacing 2).
+        //   Each row has 2 × (10, 20) children with spacing 4 → Xs = 0, 14.
+        var nested = com.trevorschoeny.menukit.core.layout.Column.at(0, 0).spacing(2)
+                .addRow(r -> r.spacing(4)
+                        .add(spec.apply(10, 20))
+                        .add(spec.apply(10, 20)))
+                .addRow(r -> r.spacing(4)
+                        .add(spec.apply(10, 20))
+                        .add(spec.apply(10, 20)))
+                .build();
+        checkM8(counts, "nested[0] = (0, 0)",
+                nested.get(0).getChildX() == 0 && nested.get(0).getChildY() == 0);
+        checkM8(counts, "nested[1] = (14, 0)",
+                nested.get(1).getChildX() == 14 && nested.get(1).getChildY() == 0);
+        checkM8(counts, "nested[2] = (0, 22)",
+                nested.get(2).getChildX() == 0 && nested.get(2).getChildY() == 22);
+        checkM8(counts, "nested[3] = (14, 22)",
+                nested.get(3).getChildX() == 14 && nested.get(3).getChildY() == 22);
+
+        // Case 5: edge cases — empty + single-element.
+        var empty = com.trevorschoeny.menukit.core.layout.Row.at(0, 0).spacing(4).build();
+        checkM8(counts, "empty row → empty list", empty.isEmpty());
+
+        var single = com.trevorschoeny.menukit.core.layout.Row.at(7, 11).spacing(4)
+                .add(spec.apply(10, 10))
+                .build();
+        checkM8(counts, "single-element row at origin",
+                single.size() == 1
+                && single.get(0).getChildX() == 7
+                && single.get(0).getChildY() == 11);
+
+        // Case 6: negative spacing rejected with IllegalArgumentException.
+        boolean threw = false;
+        try {
+            com.trevorschoeny.menukit.core.layout.Row.at(0, 0).spacing(-1);
+        } catch (IllegalArgumentException expected) {
+            threw = true;
+        }
+        checkM8(counts, "negative spacing → IAE", threw);
+
+        int total = counts[0], failed = counts[1];
+        int passed = total - failed;
+        LOGGER.info("[Verify.M8] VERDICT — {}/{} cases pass ({})",
+                passed, total, failed == 0 ? "PASS" : "FAIL — see above");
+    }
+
+    private static void checkM8(int[] counts, String label, boolean condition) {
+        counts[0]++;
+        if (condition) {
+            LOGGER.info("[Verify.M8] {} — OK", label);
+        } else {
+            LOGGER.info("[Verify.M8] {} — FAIL", label);
             counts[1]++;
         }
     }
