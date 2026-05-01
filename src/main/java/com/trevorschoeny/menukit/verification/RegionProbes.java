@@ -101,6 +101,7 @@ public final class RegionProbes {
             case TOP_ALIGN_RIGHT    -> 0xFF4488FF; // blue
             case BOTTOM_ALIGN_LEFT  -> 0xFFCC44FF; // purple
             case BOTTOM_ALIGN_RIGHT -> 0xFFFFFFFF; // white
+            case CENTER             -> 0xFFFF44FF; // magenta (Phase 14d-1 addition)
         };
     }
 

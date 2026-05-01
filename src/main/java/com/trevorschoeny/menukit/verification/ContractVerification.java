@@ -80,11 +80,12 @@ import static net.minecraft.commands.Commands.literal;
  *       canonical contract; per-phase dev tooling.</li>
  * </ul>
  *
- * <h3>The nine contracts (all run by {@link #runAll(CommandContext)})</h3>
+ * <h3>The eleven contracts (all run by {@link #runAll(CommandContext)})</h3>
  *
  * 1 Composability · 2 Substitutability · 3 SyncSafety · 4 Uniform ·
  * 5 Inertness · 6 RegionMath · 7 SlotState · 8 M7 storage round-trip ·
- * 9 M8 layout math.
+ * 9 M8 layout math · 10 modal click-eat (Phase 14d-1) ·
+ * 11 dialog composition (Phase 14d-1).
  *
  * <ol>
  *   <li>{@code Composability} — global {@code Slot.mayPlace} mixin
@@ -187,13 +188,108 @@ public final class ContractVerification {
                         .then(literal("elements").executes(ContractVerification::cmdElements))
                         .then(literal("regions")
                                 .executes(ContractVerification::cmdRegionsToggle)
-                                .then(literal("stack").executes(ContractVerification::cmdRegionsStackToggle)))));
+                                .then(literal("stack").executes(ContractVerification::cmdRegionsStackToggle)))
+                        .then(literal("dialog").executes(ContractVerification::cmdDialogToggle))));
     }
 
     /** Called from {@code MenuKitClient.onInitializeClient()} — screen factory. */
     public static void initClient() {
         MenuScreens.register(testMenuType, TestContractScreen::new);
         MenuScreens.register(elementDemoMenuType, ElementDemoScreen::new);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Phase 14d-1 dialog smoke wire-up — visual verification of the modal
+    // click-eat primitive on the MenuContext path. /mkverify dialog flips
+    // the visibility flag; the adapter dispatches on InventoryScreen open
+    // via ScreenPanelRegistry.
+    // ══════════════════════════════════════════════════════════════════════
+
+    /** Visibility flag for the smoke-test dialog. Flipped by /mkverify dialog. */
+    private static volatile boolean dialogVisible = false;
+
+    /**
+     * Wires the smoke-test ConfirmDialog adapter. Called from
+     * {@link com.trevorschoeny.menukit.MenuKitClient#onInitializeClient()}
+     * via {@code Minecraft.getInstance().execute(...)} so the construction
+     * (which calls {@code TextLabel.spec(...)} → font.width) runs on the
+     * render thread after font initialization completes. Constructs once;
+     * the adapter is process-lifetime.
+     */
+    public static void wireDialogSmoke() {
+        com.trevorschoeny.menukit.core.Panel dialog =
+                com.trevorschoeny.menukit.core.dialog.ConfirmDialog.builder()
+                        .title(Component.literal("Smoke test — modal dialog"))
+                        .body(Component.literal("Click outside, Cancel, or Confirm."))
+                        .onConfirm(() -> {
+                            dialogVisible = false;
+                            chatToPlayer("§a[Verify] Confirm clicked — dialog dismissed.");
+                        })
+                        .onCancel(() -> {
+                            dialogVisible = false;
+                            chatToPlayer("§e[Verify] Cancel clicked — dialog dismissed.");
+                        })
+                        .id("mkverify-smoke-dialog")
+                        .build()
+                        .showWhen(() -> dialogVisible);
+
+        new com.trevorschoeny.menukit.inject.ScreenPanelAdapter(
+                dialog, com.trevorschoeny.menukit.core.MenuRegion.CENTER)
+                .on(net.minecraft.client.gui.screens.inventory.InventoryScreen.class,
+                    net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen.class);
+
+        // Phase 14d-1 modal-dim smoke companion — a region-based test panel
+        // registered for the inventory screens, always visible. Used to
+        // verify the two-pass render order in ScreenPanelRegistry: when
+        // modal up, this panel should render first (pass 1) and then be
+        // covered by the dim overlay (pass 2). Region-based registration
+        // ensures it goes through ScreenPanelRegistry's menuMatches loop
+        // (lambda-based adapters from consumer mods bypass that path).
+        java.util.List<com.trevorschoeny.menukit.core.PanelElement> testElements =
+                java.util.List.of(
+                        new com.trevorschoeny.menukit.core.Button(
+                                0, 0, 60, 20,
+                                Component.literal("Test"),
+                                btn -> chatToPlayer("§7[Verify] Test panel button clicked.")));
+        com.trevorschoeny.menukit.core.Panel testPanel =
+                new com.trevorschoeny.menukit.core.Panel(
+                        "mkverify-smoke-test-panel",
+                        testElements,
+                        /*visible=*/ true,
+                        com.trevorschoeny.menukit.core.PanelStyle.RAISED,
+                        com.trevorschoeny.menukit.core.PanelPosition.BODY,
+                        /*toggleKey=*/ -1);
+        new com.trevorschoeny.menukit.inject.ScreenPanelAdapter(
+                testPanel, com.trevorschoeny.menukit.core.MenuRegion.LEFT_ALIGN_TOP)
+                .on(net.minecraft.client.gui.screens.inventory.InventoryScreen.class,
+                    net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen.class);
+
+        LOGGER.info("[Verify.dialog] Smoke-test ConfirmDialog wired (targets: " +
+                "InventoryScreen + CreativeModeInventoryScreen). " +
+                "Run /mkverify dialog then open inventory (E) to show. " +
+                "Plus test panel at LEFT_ALIGN_TOP for dim-coverage check.");
+    }
+
+    /** Send a chat message to the local player (client-side log surface). */
+    private static void chatToPlayer(String text) {
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc != null && mc.player != null) {
+            mc.player.displayClientMessage(Component.literal(text), false);
+        }
+    }
+
+    /**
+     * /mkverify dialog — flips the smoke-test dialog's visibility flag.
+     * Player runs this with their inventory open to see the dialog appear.
+     */
+    private static int cmdDialogToggle(CommandContext<CommandSourceStack> ctx) {
+        dialogVisible = !dialogVisible;
+        boolean nowVisible = dialogVisible;
+        ctx.getSource().sendSuccess(
+                () -> Component.literal("[Verify] Dialog " +
+                        (nowVisible ? "shown — open inventory if not already." : "hidden.")),
+                false);
+        return 1;
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -232,7 +328,7 @@ public final class ContractVerification {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // runAll — runs all nine contracts in sequence
+    // runAll — runs all eleven contracts in sequence
     // ══════════════════════════════════════════════════════════════════════
     //
     // Public entry point called by validator's /mkverify all aggregator.
@@ -256,7 +352,7 @@ public final class ContractVerification {
      * Runs all seven canonical contracts in sequence, orchestrating menu
      * state across the open-test-screen boundary. Each contract emits its
      * own {@code VERDICT} log line. Emits one chat acknowledgement
-     * ({@code "[Verify] All nine contracts — see log..."}) so the caller
+     * ({@code "[Verify] All eleven contracts — see log..."}) so the caller
      * knows execution completed; scan the log for VERDICT to read results.
      *
      * <p>Leaves {@code player.containerMenu} pointing at the
@@ -268,7 +364,7 @@ public final class ContractVerification {
             throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
 
-        LOGGER.info("[Verify] BEGIN — runAll — running all nine contracts");
+        LOGGER.info("[Verify] BEGIN — runAll — running all eleven contracts");
 
         // ── Pure-math contract (no menu state) ──────────────────────────
         regionMath();
@@ -281,6 +377,12 @@ public final class ContractVerification {
 
         // ── M8 layout-math probe (pure; no menu, no state) ──────────────
         m8LayoutMath();
+
+        // ── M10 modal click-eat (Panel flag + dispatcher decision; pure) ─
+        m10ModalClickEat();
+
+        // ── M11 dialog composition (ConfirmDialog + AlertDialog; pure) ──
+        m11DialogComposition();
 
         // ── Vanilla phases (before opening test screen) ─────────────────
         composabilityPhaseA(player);
@@ -297,10 +399,10 @@ public final class ContractVerification {
         syncSafety(handler);
         inertness(player, handler);
 
-        LOGGER.info("[Verify] END — nine contracts checked. Scan log for VERDICT lines.");
+        LOGGER.info("[Verify] END — eleven contracts checked. Scan log for VERDICT lines.");
 
         ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify] All nine contracts — see log. Test screen is now open."),
+                () -> Component.literal("[Verify] All eleven contracts — see log. Test screen is now open."),
                 false);
         return 1;
     }
@@ -1026,6 +1128,236 @@ public final class ContractVerification {
     // Each test uses an ad-hoc anonymous ElementSpec to avoid coupling to
     // any concrete element class — the probe verifies layout math in
     // isolation from element rendering.
+
+    private static void m10ModalClickEat() {
+        LOGGER.info("[Verify.M10] BEGIN — modal click-eat (Panel flag + dispatcher decision)");
+        int[] counts = {0, 0};
+
+        // ── Panel.cancelsUnhandledClicks API ─────────────────────────────
+        var panel = new com.trevorschoeny.menukit.core.Panel(
+                "test-modal-flag",
+                java.util.List.of(),
+                /*visible=*/ true,
+                com.trevorschoeny.menukit.core.PanelStyle.RAISED,
+                com.trevorschoeny.menukit.core.PanelPosition.BODY,
+                /*toggleKey=*/ -1);
+
+        checkM10(counts, "default flag is false", !panel.cancelsUnhandledClicks());
+
+        var returned = panel.cancelsUnhandledClicks(true);
+        checkM10(counts, "setter is chainable (returns the same panel)", returned == panel);
+        checkM10(counts, "after set(true), getter returns true", panel.cancelsUnhandledClicks());
+
+        panel.cancelsUnhandledClicks(false);
+        checkM10(counts, "after set(false), getter returns false", !panel.cancelsUnhandledClicks());
+
+        // ── ScreenPanelRegistry.shouldEatUnhandledClick decision ─────────
+        // Truth table for the modal-eat decision: only when modal is
+        // visible AND nothing consumed the click does the dispatcher eat it.
+        checkM10(counts, "decision: not-modal + not-consumed → pass through",
+                !com.trevorschoeny.menukit.inject.ScreenPanelRegistry
+                        .shouldEatUnhandledClick(false, false));
+        checkM10(counts, "decision: not-modal + consumed → pass through",
+                !com.trevorschoeny.menukit.inject.ScreenPanelRegistry
+                        .shouldEatUnhandledClick(false, true));
+        checkM10(counts, "decision: modal-visible + not-consumed → EAT",
+                com.trevorschoeny.menukit.inject.ScreenPanelRegistry
+                        .shouldEatUnhandledClick(true, false));
+        checkM10(counts, "decision: modal-visible + consumed → pass through",
+                !com.trevorschoeny.menukit.inject.ScreenPanelRegistry
+                        .shouldEatUnhandledClick(true, true));
+
+        // ── MenuRegion.CENTER resolver — sanity check the new region ─────
+        // Centered at (50, 60) within a 176×166 frame (vanilla menu sized)
+        // for a 60×40 panel: x = 50 + (176-60)/2 = 108; y = 60 + (166-40)/2 = 123
+        var bounds = new com.trevorschoeny.menukit.inject.ScreenBounds(50, 60, 176, 166);
+        var origin = com.trevorschoeny.menukit.core.RegionMath.resolveMenu(
+                com.trevorschoeny.menukit.core.MenuRegion.CENTER,
+                bounds, /*pw=*/ 60, /*ph=*/ 40, /*prefix=*/ 0);
+        checkM10(counts, "MenuRegion.CENTER resolves",
+                origin.isPresent());
+        checkM10(counts, "MenuRegion.CENTER x = leftPos + (imageW - pw)/2",
+                origin.isPresent() && origin.get().x() == 50 + (176 - 60) / 2);
+        checkM10(counts, "MenuRegion.CENTER y = topPos + (imageH - ph)/2",
+                origin.isPresent() && origin.get().y() == 60 + (166 - 40) / 2);
+
+        // CENTER overflow when panel exceeds either axis
+        var oversized = com.trevorschoeny.menukit.core.RegionMath.resolveMenu(
+                com.trevorschoeny.menukit.core.MenuRegion.CENTER,
+                bounds, /*pw=*/ 200, /*ph=*/ 40, /*prefix=*/ 0);
+        checkM10(counts, "MenuRegion.CENTER overflow (pw > imageW) → empty",
+                oversized.isEmpty());
+
+        int total = counts[0], failed = counts[1];
+        int passed = total - failed;
+        LOGGER.info("[Verify.M10] VERDICT — {}/{} cases pass ({})",
+                passed, total, failed == 0 ? "PASS" : "FAIL — see above");
+    }
+
+    private static void checkM10(int[] counts, String label, boolean condition) {
+        counts[0]++;
+        if (condition) {
+            LOGGER.info("[Verify.M10] {} — OK", label);
+        } else {
+            LOGGER.info("[Verify.M10] {} — FAIL", label);
+            counts[1]++;
+        }
+    }
+
+    private static void m11DialogComposition() {
+        LOGGER.info("[Verify.M11] BEGIN — dialog builder validation (ConfirmDialog + AlertDialog)");
+        // SCOPE NOTE: this probe runs from the server thread (Brigadier
+        // command dispatch). The dialog builders' .build() path calls
+        // TextLabel.spec(...) which touches Minecraft.getInstance().font —
+        // a render-thread resource not safely accessible from server thread.
+        // V11 is therefore scoped to what's testable on server thread:
+        //   - required-field validation (throws IllegalStateException)
+        //   - builder fluency (chainable returns)
+        // Visual composition (4-element ConfirmDialog Panel, 3-element
+        // AlertDialog Panel, modal flag set, etc.) is verified by 14d-1
+        // smoke testing on a real screen.
+        int[] counts = {0, 0};
+
+        // ── ConfirmDialog: required-field validation ─────────────────────
+        // Each missing required field should throw IllegalStateException
+        // from build(). Validates the contract that consumers can't
+        // accidentally ship a half-configured dialog.
+
+        boolean threwOnMissingTitle = false;
+        try {
+            com.trevorschoeny.menukit.core.dialog.ConfirmDialog.builder()
+                    .body(net.minecraft.network.chat.Component.literal("body"))
+                    .onConfirm(() -> {})
+                    .onCancel(() -> {})
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnMissingTitle = true;
+        }
+        checkM11(counts, "ConfirmDialog: missing title → IllegalStateException",
+                threwOnMissingTitle);
+
+        boolean threwOnMissingBody = false;
+        try {
+            com.trevorschoeny.menukit.core.dialog.ConfirmDialog.builder()
+                    .title(net.minecraft.network.chat.Component.literal("title"))
+                    .onConfirm(() -> {})
+                    .onCancel(() -> {})
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnMissingBody = true;
+        }
+        checkM11(counts, "ConfirmDialog: missing body → IllegalStateException",
+                threwOnMissingBody);
+
+        boolean threwOnMissingConfirm = false;
+        try {
+            com.trevorschoeny.menukit.core.dialog.ConfirmDialog.builder()
+                    .title(net.minecraft.network.chat.Component.literal("title"))
+                    .body(net.minecraft.network.chat.Component.literal("body"))
+                    .onCancel(() -> {})
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnMissingConfirm = true;
+        }
+        checkM11(counts, "ConfirmDialog: missing onConfirm → IllegalStateException",
+                threwOnMissingConfirm);
+
+        boolean threwOnMissingCancel = false;
+        try {
+            com.trevorschoeny.menukit.core.dialog.ConfirmDialog.builder()
+                    .title(net.minecraft.network.chat.Component.literal("title"))
+                    .body(net.minecraft.network.chat.Component.literal("body"))
+                    .onConfirm(() -> {})
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnMissingCancel = true;
+        }
+        checkM11(counts, "ConfirmDialog: missing onCancel → IllegalStateException",
+                threwOnMissingCancel);
+
+        // ── ConfirmDialog: builder fluency / non-null guards ─────────────
+        var confirmBuilder = com.trevorschoeny.menukit.core.dialog.ConfirmDialog.builder();
+        checkM11(counts, "ConfirmDialog: builder() returns non-null",
+                confirmBuilder != null);
+
+        // Setter null-guards: each setter calls Objects.requireNonNull and
+        // throws NullPointerException for null arguments.
+        boolean threwOnNullTitle = false;
+        try {
+            com.trevorschoeny.menukit.core.dialog.ConfirmDialog.builder().title(null);
+        } catch (NullPointerException expected) {
+            threwOnNullTitle = true;
+        }
+        checkM11(counts, "ConfirmDialog: title(null) → NullPointerException",
+                threwOnNullTitle);
+
+        // ── AlertDialog: required-field validation ───────────────────────
+
+        boolean threwOnAlertMissingTitle = false;
+        try {
+            com.trevorschoeny.menukit.core.dialog.AlertDialog.builder()
+                    .body(net.minecraft.network.chat.Component.literal("body"))
+                    .onAcknowledge(() -> {})
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnAlertMissingTitle = true;
+        }
+        checkM11(counts, "AlertDialog: missing title → IllegalStateException",
+                threwOnAlertMissingTitle);
+
+        boolean threwOnAlertMissingBody = false;
+        try {
+            com.trevorschoeny.menukit.core.dialog.AlertDialog.builder()
+                    .title(net.minecraft.network.chat.Component.literal("title"))
+                    .onAcknowledge(() -> {})
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnAlertMissingBody = true;
+        }
+        checkM11(counts, "AlertDialog: missing body → IllegalStateException",
+                threwOnAlertMissingBody);
+
+        boolean threwOnMissingAck = false;
+        try {
+            com.trevorschoeny.menukit.core.dialog.AlertDialog.builder()
+                    .title(net.minecraft.network.chat.Component.literal("title"))
+                    .body(net.minecraft.network.chat.Component.literal("body"))
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnMissingAck = true;
+        }
+        checkM11(counts, "AlertDialog: missing onAcknowledge → IllegalStateException",
+                threwOnMissingAck);
+
+        // ── AlertDialog: builder fluency / non-null guards ───────────────
+        var alertBuilder = com.trevorschoeny.menukit.core.dialog.AlertDialog.builder();
+        checkM11(counts, "AlertDialog: builder() returns non-null",
+                alertBuilder != null);
+
+        boolean threwOnAlertNullAck = false;
+        try {
+            com.trevorschoeny.menukit.core.dialog.AlertDialog.builder().onAcknowledge(null);
+        } catch (NullPointerException expected) {
+            threwOnAlertNullAck = true;
+        }
+        checkM11(counts, "AlertDialog: onAcknowledge(null) → NullPointerException",
+                threwOnAlertNullAck);
+
+        int total = counts[0], failed = counts[1];
+        int passed = total - failed;
+        LOGGER.info("[Verify.M11] VERDICT — {}/{} cases pass ({})",
+                passed, total, failed == 0 ? "PASS" : "FAIL — see above");
+    }
+
+    private static void checkM11(int[] counts, String label, boolean condition) {
+        counts[0]++;
+        if (condition) {
+            LOGGER.info("[Verify.M11] {} — OK", label);
+        } else {
+            LOGGER.info("[Verify.M11] {} — FAIL", label);
+            counts[1]++;
+        }
+    }
 
     private static void m8LayoutMath() {
         LOGGER.info("[Verify.M8] BEGIN");
