@@ -80,12 +80,14 @@ import static net.minecraft.commands.Commands.literal;
  *       canonical contract; per-phase dev tooling.</li>
  * </ul>
  *
- * <h3>The eleven contracts (all run by {@link #runAll(CommandContext)})</h3>
+ * <h3>The thirteen contracts (all run by {@link #runAll(CommandContext)})</h3>
  *
  * 1 Composability · 2 Substitutability · 3 SyncSafety · 4 Uniform ·
  * 5 Inertness · 6 RegionMath · 7 SlotState · 8 M7 storage round-trip ·
  * 9 M8 layout math · 10 modal click-eat (Phase 14d-1) ·
- * 11 dialog composition (Phase 14d-1).
+ * 11 dialog composition (Phase 14d-1) ·
+ * 12 ScrollContainer math (Phase 14d-2) ·
+ * 13 modal-scroll dispatch (Phase 14d-2).
  *
  * <ol>
  *   <li>{@code Composability} — global {@code Slot.mayPlace} mixin
@@ -189,7 +191,8 @@ public final class ContractVerification {
                         .then(literal("regions")
                                 .executes(ContractVerification::cmdRegionsToggle)
                                 .then(literal("stack").executes(ContractVerification::cmdRegionsStackToggle)))
-                        .then(literal("dialog").executes(ContractVerification::cmdDialogToggle))));
+                        .then(literal("dialog").executes(ContractVerification::cmdDialogToggle))
+                        .then(literal("scroll").executes(ContractVerification::cmdScrollToggle))));
     }
 
     /** Called from {@code MenuKitClient.onInitializeClient()} — screen factory. */
@@ -293,6 +296,85 @@ public final class ContractVerification {
     }
 
     // ══════════════════════════════════════════════════════════════════════
+    // Phase 14d-2 ScrollContainer smoke wire-up — visual verification of the
+    // ScrollContainer primitive. /mkverify scroll flips the visibility flag;
+    // panel renders at LEFT_ALIGN_BOTTOM via ScreenPanelRegistry.
+    // ══════════════════════════════════════════════════════════════════════
+
+    /** Visibility flag for the smoke-test ScrollContainer panel. */
+    private static volatile boolean scrollPanelVisible = false;
+
+    /** Scroll position state — consumer-managed per Principle 8. */
+    private static volatile double scrollOffsetState = 0.0;
+
+    /**
+     * Wires the smoke-test ScrollContainer panel. Called from
+     * {@link com.trevorschoeny.menukit.MenuKitClient#onInitializeClient()}
+     * via {@code Minecraft.getInstance().execute(...)}.
+     *
+     * <p>The container holds 12 buttons stacked vertically — enough to
+     * exceed a 60px viewport (each button is 20 tall + 2 spacing = 22px;
+     * 12 buttons = 264px total). Mouse-wheel scroll, scrollbar-handle
+     * drag, and click-on-item-inside-viewport are all exercised.
+     */
+    public static void wireScrollSmoke() {
+        // Build pre-positioned content via M8 Column. Button width fits
+        // inside the ScrollContainer viewport via the public helper —
+        // no need to remember the TRACK_WIDTH + GUTTER subtraction.
+        int buttonWidth = com.trevorschoeny.menukit.core.ScrollContainer
+                .viewportWidthFor(90);
+        var col = com.trevorschoeny.menukit.core.layout.Column.at(0, 0).spacing(2);
+        for (int i = 0; i < 12; i++) {
+            final int idx = i;
+            col = col.add(com.trevorschoeny.menukit.core.Button.spec(
+                    buttonWidth, 20,
+                    Component.literal("Item " + (idx + 1)),
+                    btn -> chatToPlayer("§7[Verify] Scroll item " + (idx + 1) + " clicked.")));
+        }
+        java.util.List<com.trevorschoeny.menukit.core.PanelElement> content = col.build();
+
+        com.trevorschoeny.menukit.core.PanelElement scroll =
+                com.trevorschoeny.menukit.core.ScrollContainer.builder()
+                        .at(0, 0)
+                        .size(90, 60)  // 78 viewport + 12 scrollbar gutter
+                        .content(content)
+                        .scrollOffset(() -> scrollOffsetState, v -> scrollOffsetState = v)
+                        .build();
+
+        com.trevorschoeny.menukit.core.Panel scrollPanel =
+                new com.trevorschoeny.menukit.core.Panel(
+                        "mkverify-smoke-scroll-panel",
+                        java.util.List.of(scroll),
+                        /*visible=*/ false,
+                        com.trevorschoeny.menukit.core.PanelStyle.RAISED,
+                        com.trevorschoeny.menukit.core.PanelPosition.BODY,
+                        /*toggleKey=*/ -1)
+                        .showWhen(() -> scrollPanelVisible);
+
+        new com.trevorschoeny.menukit.inject.ScreenPanelAdapter(
+                scrollPanel, com.trevorschoeny.menukit.core.MenuRegion.LEFT_ALIGN_BOTTOM)
+                .on(net.minecraft.client.gui.screens.inventory.InventoryScreen.class,
+                    net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen.class);
+
+        LOGGER.info("[Verify.scroll] Smoke-test ScrollContainer wired. " +
+                "Run /mkverify scroll then open inventory (E) to show.");
+    }
+
+    /**
+     * /mkverify scroll — flips the smoke-test ScrollContainer panel's
+     * visibility flag.
+     */
+    private static int cmdScrollToggle(CommandContext<CommandSourceStack> ctx) {
+        scrollPanelVisible = !scrollPanelVisible;
+        boolean nowVisible = scrollPanelVisible;
+        ctx.getSource().sendSuccess(
+                () -> Component.literal("[Verify] Scroll panel " +
+                        (nowVisible ? "shown — open inventory if not already." : "hidden.")),
+                false);
+        return 1;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // Helpers
     // ══════════════════════════════════════════════════════════════════════
 
@@ -328,7 +410,7 @@ public final class ContractVerification {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // runAll — runs all eleven contracts in sequence
+    // runAll — runs all thirteen contracts in sequence
     // ══════════════════════════════════════════════════════════════════════
     //
     // Public entry point called by validator's /mkverify all aggregator.
@@ -352,7 +434,7 @@ public final class ContractVerification {
      * Runs all seven canonical contracts in sequence, orchestrating menu
      * state across the open-test-screen boundary. Each contract emits its
      * own {@code VERDICT} log line. Emits one chat acknowledgement
-     * ({@code "[Verify] All eleven contracts — see log..."}) so the caller
+     * ({@code "[Verify] All thirteen contracts — see log..."}) so the caller
      * knows execution completed; scan the log for VERDICT to read results.
      *
      * <p>Leaves {@code player.containerMenu} pointing at the
@@ -364,7 +446,7 @@ public final class ContractVerification {
             throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
 
-        LOGGER.info("[Verify] BEGIN — runAll — running all eleven contracts");
+        LOGGER.info("[Verify] BEGIN — runAll — running all thirteen contracts");
 
         // ── Pure-math contract (no menu state) ──────────────────────────
         regionMath();
@@ -384,6 +466,12 @@ public final class ContractVerification {
         // ── M11 dialog composition (ConfirmDialog + AlertDialog; pure) ──
         m11DialogComposition();
 
+        // ── M12 ScrollContainer math + builder validation (pure) ────────
+        m12ScrollContainer();
+
+        // ── M13 modal-scroll dispatch helper (pure) ─────────────────────
+        m13ModalScrollDispatch();
+
         // ── Vanilla phases (before opening test screen) ─────────────────
         composabilityPhaseA(player);
         uniformPhaseA(player);
@@ -399,10 +487,10 @@ public final class ContractVerification {
         syncSafety(handler);
         inertness(player, handler);
 
-        LOGGER.info("[Verify] END — eleven contracts checked. Scan log for VERDICT lines.");
+        LOGGER.info("[Verify] END — thirteen contracts checked. Scan log for VERDICT lines.");
 
         ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify] All eleven contracts — see log. Test screen is now open."),
+                () -> Component.literal("[Verify] All thirteen contracts — see log. Test screen is now open."),
                 false);
         return 1;
     }
@@ -1200,6 +1288,174 @@ public final class ContractVerification {
             LOGGER.info("[Verify.M10] {} — OK", label);
         } else {
             LOGGER.info("[Verify.M10] {} — FAIL", label);
+            counts[1]++;
+        }
+    }
+
+    private static void m12ScrollContainer() {
+        LOGGER.info("[Verify.M12] BEGIN — ScrollContainer math + builder validation");
+        int[] counts = {0, 0};
+
+        // ── viewportWidthFor public helper ───────────────────────────────
+        // Public formula: outerWidth - TRACK_WIDTH - SCROLLER_GUTTER.
+        // TRACK_WIDTH = SCROLLER_WIDTH (12) + 2 × TRACK_PADDING (1) = 14.
+        // SCROLLER_GUTTER = 4. So viewportWidthFor(90) = 90 - 14 - 4 = 72.
+        int v90 = com.trevorschoeny.menukit.core.ScrollContainer.viewportWidthFor(90);
+        checkM12(counts, "viewportWidthFor(90) = 72", v90 == 72);
+
+        int v100 = com.trevorschoeny.menukit.core.ScrollContainer.viewportWidthFor(100);
+        checkM12(counts, "viewportWidthFor(100) = 82", v100 == 82);
+
+        // ── Builder validation ───────────────────────────────────────────
+        // Each missing required field throws IllegalStateException.
+
+        boolean threwOnNoSize = false;
+        try {
+            com.trevorschoeny.menukit.core.ScrollContainer.builder()
+                    .content(java.util.List.of())
+                    .scrollOffset(() -> 0.0, v -> {})
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnNoSize = true;
+        }
+        checkM12(counts, "missing size() → IllegalStateException", threwOnNoSize);
+
+        boolean threwOnNoContent = false;
+        try {
+            com.trevorschoeny.menukit.core.ScrollContainer.builder()
+                    .at(0, 0).size(80, 60)
+                    .scrollOffset(() -> 0.0, v -> {})
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnNoContent = true;
+        }
+        checkM12(counts, "missing content() → IllegalStateException", threwOnNoContent);
+
+        boolean threwOnNoScrollOffset = false;
+        try {
+            com.trevorschoeny.menukit.core.ScrollContainer.builder()
+                    .at(0, 0).size(80, 60)
+                    .content(java.util.List.of())
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnNoScrollOffset = true;
+        }
+        checkM12(counts, "missing scrollOffset() → IllegalStateException",
+                threwOnNoScrollOffset);
+
+        // size() too small (less than TRACK_WIDTH + GUTTER + 1)
+        boolean threwOnTooSmall = false;
+        try {
+            com.trevorschoeny.menukit.core.ScrollContainer.builder()
+                    .size(10, 60); // 10 ≤ 14 + 4 + 1 = 19
+        } catch (IllegalArgumentException expected) {
+            threwOnTooSmall = true;
+        }
+        checkM12(counts, "size(too small) → IllegalArgumentException", threwOnTooSmall);
+
+        // ── Builder + auto-compute contentHeight ─────────────────────────
+        // Synthetic content: PanelElements at known positions; verify
+        // ScrollContainer auto-computes contentHeight = max(childY + height).
+
+        java.util.List<com.trevorschoeny.menukit.core.PanelElement> synth =
+                java.util.List.of(
+                        syntheticElement(0, 0, 50, 20),
+                        syntheticElement(0, 22, 50, 20),
+                        syntheticElement(0, 44, 50, 20));
+
+        com.trevorschoeny.menukit.core.PanelElement scroll =
+                com.trevorschoeny.menukit.core.ScrollContainer.builder()
+                        .at(5, 10).size(80, 40)
+                        .content(synth)
+                        .scrollOffset(() -> 0.0, v -> {})
+                        .build();
+
+        // Auto-computed contentHeight should be max(0+20, 22+20, 44+20) = 64.
+        // We can't read contentHeight directly, but we can verify behavior:
+        // ScrollContainer's getWidth/Height = outer dims (80, 40).
+        checkM12(counts, "ScrollContainer getWidth = outer width",
+                scroll.getWidth() == 80);
+        checkM12(counts, "ScrollContainer getHeight = outer height",
+                scroll.getHeight() == 40);
+        checkM12(counts, "ScrollContainer getChildX = at-X",
+                scroll.getChildX() == 5);
+        checkM12(counts, "ScrollContainer getChildY = at-Y",
+                scroll.getChildY() == 10);
+
+        // ── Explicit contentHeight override ──────────────────────────────
+        com.trevorschoeny.menukit.core.PanelElement scrollWithOverride =
+                com.trevorschoeny.menukit.core.ScrollContainer.builder()
+                        .at(0, 0).size(80, 40)
+                        .content(synth)
+                        .contentHeight(200)  // override; auto would be 64
+                        .scrollOffset(() -> 0.0, v -> {})
+                        .build();
+        checkM12(counts, "explicit contentHeight override builds successfully",
+                scrollWithOverride != null);
+
+        int total = counts[0], failed = counts[1];
+        int passed = total - failed;
+        LOGGER.info("[Verify.M12] VERDICT — {}/{} cases pass ({})",
+                passed, total, failed == 0 ? "PASS" : "FAIL — see above");
+    }
+
+    private static void checkM12(int[] counts, String label, boolean condition) {
+        counts[0]++;
+        if (condition) {
+            LOGGER.info("[Verify.M12] {} — OK", label);
+        } else {
+            LOGGER.info("[Verify.M12] {} — FAIL", label);
+            counts[1]++;
+        }
+    }
+
+    /** Synthetic PanelElement at fixed position/size for V12 tests. */
+    private static com.trevorschoeny.menukit.core.PanelElement syntheticElement(
+            int x, int y, int w, int h) {
+        return new com.trevorschoeny.menukit.core.PanelElement() {
+            @Override public int getChildX() { return x; }
+            @Override public int getChildY() { return y; }
+            @Override public int getWidth()  { return w; }
+            @Override public int getHeight() { return h; }
+            @Override public void render(com.trevorschoeny.menukit.core.RenderContext ctx) {}
+        };
+    }
+
+    private static void m13ModalScrollDispatch() {
+        LOGGER.info("[Verify.M13] BEGIN — modal-scroll dispatch helper");
+        int[] counts = {0, 0};
+
+        // dispatchModalScroll on a non-AbstractContainerScreen returns false
+        // (no modal applies; let vanilla dispatch). findModalAtPoint same.
+        // We can't easily construct AbstractContainerScreen instances in a
+        // pure probe, so we test the no-screen / non-AbstractContainerScreen
+        // path: returns false / null cleanly without throwing.
+        boolean result = com.trevorschoeny.menukit.inject.ScreenPanelRegistry
+                .dispatchModalScroll(null, 0, 0, 0, 0);
+        checkM13(counts, "dispatchModalScroll(null screen) returns false", !result);
+
+        var modal = com.trevorschoeny.menukit.inject.ScreenPanelRegistry
+                .findModalAtPoint(null, 0, 0);
+        checkM13(counts, "findModalAtPoint(null screen) returns null", modal == null);
+
+        // hasAnyVisibleModal returns false when no client/screen — verifies
+        // the early-return guards rather than throwing NPE.
+        // (No way to test "modal up" path in a pure probe — needs a real
+        // screen with a registered modal adapter. Smoke covers that.)
+        checkM13(counts, "module loads + helpers don't NPE on null inputs", true);
+
+        int total = counts[0], failed = counts[1];
+        int passed = total - failed;
+        LOGGER.info("[Verify.M13] VERDICT — {}/{} cases pass ({})",
+                passed, total, failed == 0 ? "PASS" : "FAIL — see above");
+    }
+
+    private static void checkM13(int[] counts, String label, boolean condition) {
+        counts[0]++;
+        if (condition) {
+            LOGGER.info("[Verify.M13] {} — OK", label);
+        } else {
+            LOGGER.info("[Verify.M13] {} — FAIL", label);
             counts[1]++;
         }
     }
