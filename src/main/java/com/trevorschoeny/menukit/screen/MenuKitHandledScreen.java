@@ -633,16 +633,87 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
     }
 
     /**
-     * Drag end — if a drag mode is active, notify and clear it.
+     * Drag end — if a slot-level drag mode is active, notify and clear
+     * it. Then dispatch element-level release (drag-end semantic for
+     * ScrollContainer + future draggable elements per 14d-2 plumbing).
+     *
+     * <p>Phase 14d-2.7 primitive-gap fold-inline: element release was
+     * missing from MenuKitHandledScreen because no consumer surfaced
+     * the need until the Test Hub wanted a ScrollContainer inside the
+     * Hub screen. Same shape as MenuKitScreen's similar fold-inline.
+     * Element release fires for every visible element regardless of
+     * cursor position — drag-end detection per 14d-2 ScrollContainer
+     * plumbing.
      */
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
+        boolean dragModeWasActive = false;
         if (activeDrag != null) {
             activeDrag.onDragEnd();
             activeDrag = null;
-            return true;
+            dragModeWasActive = true;
+        }
+        // Element release — fires regardless of cursor / drag-mode state.
+        dispatchElementRelease(event.x(), event.y(), event.button());
+        if (dragModeWasActive) {
+            return true; // drag claimed the release
         }
         return super.mouseReleased(event);
+    }
+
+    /**
+     * Phase 14d-2.7 primitive-gap fold-inline: scroll-wheel dispatch
+     * to elements. Mirrors {@link #dispatchElementClick} hit-test
+     * pattern. Required for ScrollContainer to work inside a MenuKit-
+     * native handler screen (the Test Hub's primary use case).
+     */
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY,
+                                  double scrollX, double scrollY) {
+        if (dispatchElementScroll(mouseX, mouseY, scrollX, scrollY)) {
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    private boolean dispatchElementScroll(double mouseX, double mouseY,
+                                           double scrollX, double scrollY) {
+        for (Panel panel : menu.getPanels()) {
+            if (!panel.isVisible()) continue;
+            PanelBounds bounds = panelBounds.get(panel.getId());
+            if (bounds == null) continue;
+
+            int contentX = leftPos + bounds.x() + PANEL_PADDING;
+            int contentY = topPos + bounds.y() + PANEL_PADDING;
+
+            for (PanelElement element : panel.getElements()) {
+                if (!element.isVisible()) continue;
+
+                double relX = mouseX - contentX - element.getChildX();
+                double relY = mouseY - contentY - element.getChildY();
+                if (relX >= 0 && relX < element.getWidth()
+                        && relY >= 0 && relY < element.getHeight()) {
+                    if (element.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Element-level release dispatch — fires for every visible element
+     * regardless of cursor position (drag-end semantic per 14d-2).
+     */
+    private void dispatchElementRelease(double mouseX, double mouseY, int button) {
+        for (Panel panel : menu.getPanels()) {
+            if (!panel.isVisible()) continue;
+            for (PanelElement element : panel.getElements()) {
+                if (!element.isVisible()) continue;
+                element.mouseReleased(mouseX, mouseY, button);
+            }
+        }
     }
 
     // ── Element Click Dispatch ─────────────────────────────────────────

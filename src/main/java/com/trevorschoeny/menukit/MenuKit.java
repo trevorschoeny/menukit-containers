@@ -88,13 +88,14 @@ public class MenuKit implements ModInitializer {
 
     /** Client-safe initialization. Invoked from
      *  {@link MenuKitClient#onInitializeClient()}. Registers the
-     *  verification test-screen factory. */
+     *  verification test-screen factory.
+     *
+     *  <p>Phase 14d-2.7: RegionProbes registration migrated to validator
+     *  (consumer-side test scaffolding per TESTING_CONVENTIONS.md). */
     public static void initClient() {
         LOGGER.info("[MenuKit] Client initialized");
         com.trevorschoeny.menukit.state.SlotStateHooks.registerClient();
         com.trevorschoeny.menukit.verification.ContractVerification.initClient();
-        // M5 §9.2 dev probes — invisible unless /mkverify regions is toggled on.
-        com.trevorschoeny.menukit.verification.RegionProbes.registerClient();
     }
 
     // ══════════════════════════════════════════════════════════════════════

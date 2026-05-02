@@ -30,11 +30,7 @@ import net.minecraft.network.codec.StreamCodec;
 
 import java.util.Optional;
 
-import com.mojang.brigadier.context.CommandContext;
-import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.client.gui.screens.MenuScreens;
-import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -50,8 +46,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static net.minecraft.commands.Commands.literal;
 
 /**
  * Contract-verification orchestrator. Registers a test MenuType, a test
@@ -75,7 +69,7 @@ import static net.minecraft.commands.Commands.literal;
  *       class exposes {@link #runAll(CommandContext)} as the public entry
  *       point the aggregator calls. Standalone probe execution without the
  *       scenarios is available via that method (e.g. from other tooling).</li>
- *   <li>{@code /mkverify elements} — opens a clean {@link ElementDemoHandler}
+ *   <li>(removed) {@code /mkverify elements} — opens a clean ElementDemoHandler
  *       screen for visual verification of element rendering. Not a
  *       canonical contract; per-phase dev tooling.</li>
  * </ul>
@@ -137,7 +131,6 @@ public final class ContractVerification {
     // ── MenuType + screen registration ──────────────────────────────────
 
     private static MenuType<MenuKitScreenHandler> testMenuType;
-    private static MenuType<MenuKitScreenHandler> elementDemoMenuType;
 
     // ── Per-slot state test channel (M1 contract 7) ─────────────────────
     // Registered in initServer so the channel exists before /mkverify runs.
@@ -162,7 +155,14 @@ public final class ContractVerification {
     public static final StorageAttachment<Player, NonNullList<ItemStack>> TEST_CONTENT =
             StorageAttachment.playerAttached("menukit-verify", "m7_test_content", 3);
 
-    /** Called from {@code MenuKit.init()} — server-safe MenuType + commands. */
+    /**
+     * Called from {@code MenuKit.init()} — server-safe MenuType
+     * registration. Phase 14d-2.7: chat command registration removed
+     * entirely per TESTING_CONVENTIONS.md (single test entry point is
+     * the validator's inventory "Test" button; library exposes
+     * {@link #runAll(ServerPlayer)} as a public method any consumer
+     * can call).
+     */
     public static void initServer() {
         testMenuType = new MenuType<>(
                 (syncId, inv) -> TestContractHandler.create(syncId, inv, testMenuType),
@@ -170,282 +170,21 @@ public final class ContractVerification {
         Registry.register(BuiltInRegistries.MENU,
                 Identifier.fromNamespaceAndPath("menukit", "contract_verify"),
                 testMenuType);
-
-        elementDemoMenuType = new MenuType<>(
-                (syncId, inv) -> ElementDemoHandler.create(syncId, inv, elementDemoMenuType),
-                net.minecraft.world.flag.FeatureFlagSet.of());
-        Registry.register(BuiltInRegistries.MENU,
-                Identifier.fromNamespaceAndPath("menukit", "element_demo"),
-                elementDemoMenuType);
-
-        // /mkverify all is registered by the validator mod's aggregator
-        // command (ValidatorCommand.register), which composes the library
-        // contracts (via runAll below) with the Phase 12.5 validator
-        // scenarios. MenuKit does not self-register "all" — that would
-        // collide with the validator's registration under the same Brigadier
-        // literal, and the combined-surface aggregator is the ergonomic
-        // shape Trevor actually uses in practice.
-        CommandRegistrationCallback.EVENT.register((dispatcher, access, env) ->
-                dispatcher.register(literal("mkverify")
-                        .then(literal("elements").executes(ContractVerification::cmdElements))
-                        .then(literal("regions")
-                                .executes(ContractVerification::cmdRegionsToggle)
-                                .then(literal("stack").executes(ContractVerification::cmdRegionsStackToggle)))
-                        .then(literal("dialog").executes(ContractVerification::cmdDialogToggle))
-                        .then(literal("scroll").executes(ContractVerification::cmdScrollToggle))
-                        .then(literal("opacity").executes(ContractVerification::cmdOpacityToggle))));
     }
 
     /** Called from {@code MenuKitClient.onInitializeClient()} — screen factory. */
     public static void initClient() {
         MenuScreens.register(testMenuType, TestContractScreen::new);
-        MenuScreens.register(elementDemoMenuType, ElementDemoScreen::new);
     }
+
+    // Phase 14d-2.7 — visual smoke wireups (dialog, scroll, opacity)
+    // migrated to validator/.../scenarios/smoke/MenuKitSmokeWireup.java
+    // per the testing convention's library/validator split. Library
+    // exposes only pure-logic contracts; validator owns visual smoke.
 
     // ══════════════════════════════════════════════════════════════════════
-    // Phase 14d-1 dialog smoke wire-up — visual verification of the modal
-    // click-eat primitive on the MenuContext path. /mkverify dialog flips
-    // the visibility flag; the adapter dispatches on InventoryScreen open
-    // via ScreenPanelRegistry.
+    // Removed in 14d-2.7
     // ══════════════════════════════════════════════════════════════════════
-
-    /** Visibility flag for the smoke-test dialog. Flipped by /mkverify dialog. */
-    private static volatile boolean dialogVisible = false;
-
-    /**
-     * Wires the smoke-test ConfirmDialog adapter. Called from
-     * {@link com.trevorschoeny.menukit.MenuKitClient#onInitializeClient()}
-     * via {@code Minecraft.getInstance().execute(...)} so the construction
-     * (which calls {@code TextLabel.spec(...)} → font.width) runs on the
-     * render thread after font initialization completes. Constructs once;
-     * the adapter is process-lifetime.
-     */
-    public static void wireDialogSmoke() {
-        com.trevorschoeny.menukit.core.Panel dialog =
-                com.trevorschoeny.menukit.core.dialog.ConfirmDialog.builder()
-                        .title(Component.literal("Smoke test — modal dialog"))
-                        .body(Component.literal("Click outside, Cancel, or Confirm."))
-                        .onConfirm(() -> {
-                            dialogVisible = false;
-                            chatToPlayer("§a[Verify] Confirm clicked — dialog dismissed.");
-                        })
-                        .onCancel(() -> {
-                            dialogVisible = false;
-                            chatToPlayer("§e[Verify] Cancel clicked — dialog dismissed.");
-                        })
-                        .id("mkverify-smoke-dialog")
-                        .build()
-                        .showWhen(() -> dialogVisible);
-
-        new com.trevorschoeny.menukit.inject.ScreenPanelAdapter(
-                dialog, com.trevorschoeny.menukit.core.MenuRegion.CENTER)
-                .on(net.minecraft.client.gui.screens.inventory.InventoryScreen.class,
-                    net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen.class);
-
-        // Phase 14d-1 modal-dim smoke companion — a region-based test panel
-        // registered for the inventory screens, always visible. Used to
-        // verify the two-pass render order in ScreenPanelRegistry: when
-        // modal up, this panel should render first (pass 1) and then be
-        // covered by the dim overlay (pass 2). Region-based registration
-        // ensures it goes through ScreenPanelRegistry's menuMatches loop
-        // (lambda-based adapters from consumer mods bypass that path).
-        java.util.List<com.trevorschoeny.menukit.core.PanelElement> testElements =
-                java.util.List.of(
-                        new com.trevorschoeny.menukit.core.Button(
-                                0, 0, 60, 20,
-                                Component.literal("Test"),
-                                btn -> chatToPlayer("§7[Verify] Test panel button clicked.")));
-        com.trevorschoeny.menukit.core.Panel testPanel =
-                new com.trevorschoeny.menukit.core.Panel(
-                        "mkverify-smoke-test-panel",
-                        testElements,
-                        /*visible=*/ true,
-                        com.trevorschoeny.menukit.core.PanelStyle.RAISED,
-                        com.trevorschoeny.menukit.core.PanelPosition.BODY,
-                        /*toggleKey=*/ -1);
-        new com.trevorschoeny.menukit.inject.ScreenPanelAdapter(
-                testPanel, com.trevorschoeny.menukit.core.MenuRegion.LEFT_ALIGN_TOP)
-                .on(net.minecraft.client.gui.screens.inventory.InventoryScreen.class,
-                    net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen.class);
-
-        LOGGER.info("[Verify.dialog] Smoke-test ConfirmDialog wired (targets: " +
-                "InventoryScreen + CreativeModeInventoryScreen). " +
-                "Run /mkverify dialog then open inventory (E) to show. " +
-                "Plus test panel at LEFT_ALIGN_TOP for dim-coverage check.");
-    }
-
-    /** Send a chat message to the local player (client-side log surface). */
-    private static void chatToPlayer(String text) {
-        var mc = net.minecraft.client.Minecraft.getInstance();
-        if (mc != null && mc.player != null) {
-            mc.player.displayClientMessage(Component.literal(text), false);
-        }
-    }
-
-    /**
-     * /mkverify dialog — flips the smoke-test dialog's visibility flag.
-     * Player runs this with their inventory open to see the dialog appear.
-     */
-    private static int cmdDialogToggle(CommandContext<CommandSourceStack> ctx) {
-        dialogVisible = !dialogVisible;
-        boolean nowVisible = dialogVisible;
-        ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify] Dialog " +
-                        (nowVisible ? "shown — open inventory if not already." : "hidden.")),
-                false);
-        return 1;
-    }
-
-    // ══════════════════════════════════════════════════════════════════════
-    // Phase 14d-2 ScrollContainer smoke wire-up — visual verification of the
-    // ScrollContainer primitive. /mkverify scroll flips the visibility flag;
-    // panel renders at LEFT_ALIGN_BOTTOM via ScreenPanelRegistry.
-    // ══════════════════════════════════════════════════════════════════════
-
-    /** Visibility flag for the smoke-test ScrollContainer panel. */
-    private static volatile boolean scrollPanelVisible = false;
-
-    /** Scroll position state — consumer-managed per Principle 8. */
-    private static volatile double scrollOffsetState = 0.0;
-
-    /**
-     * Wires the smoke-test ScrollContainer panel. Called from
-     * {@link com.trevorschoeny.menukit.MenuKitClient#onInitializeClient()}
-     * via {@code Minecraft.getInstance().execute(...)}.
-     *
-     * <p>The container holds 12 buttons stacked vertically — enough to
-     * exceed a 60px viewport (each button is 20 tall + 2 spacing = 22px;
-     * 12 buttons = 264px total). Mouse-wheel scroll, scrollbar-handle
-     * drag, and click-on-item-inside-viewport are all exercised.
-     */
-    public static void wireScrollSmoke() {
-        // Build pre-positioned content via M8 Column. Button width fits
-        // inside the ScrollContainer viewport via the public helper —
-        // no need to remember the TRACK_WIDTH + GUTTER subtraction.
-        int buttonWidth = com.trevorschoeny.menukit.core.ScrollContainer
-                .viewportWidthFor(90);
-        var col = com.trevorschoeny.menukit.core.layout.Column.at(0, 0).spacing(2);
-        for (int i = 0; i < 12; i++) {
-            final int idx = i;
-            col = col.add(com.trevorschoeny.menukit.core.Button.spec(
-                    buttonWidth, 20,
-                    Component.literal("Item " + (idx + 1)),
-                    btn -> chatToPlayer("§7[Verify] Scroll item " + (idx + 1) + " clicked.")));
-        }
-        java.util.List<com.trevorschoeny.menukit.core.PanelElement> content = col.build();
-
-        com.trevorschoeny.menukit.core.PanelElement scroll =
-                com.trevorschoeny.menukit.core.ScrollContainer.builder()
-                        .at(0, 0)
-                        .size(90, 60)  // 78 viewport + 12 scrollbar gutter
-                        .content(content)
-                        .scrollOffset(() -> scrollOffsetState, v -> scrollOffsetState = v)
-                        .build();
-
-        com.trevorschoeny.menukit.core.Panel scrollPanel =
-                new com.trevorschoeny.menukit.core.Panel(
-                        "mkverify-smoke-scroll-panel",
-                        java.util.List.of(scroll),
-                        /*visible=*/ false,
-                        com.trevorschoeny.menukit.core.PanelStyle.RAISED,
-                        com.trevorschoeny.menukit.core.PanelPosition.BODY,
-                        /*toggleKey=*/ -1)
-                        .showWhen(() -> scrollPanelVisible);
-
-        new com.trevorschoeny.menukit.inject.ScreenPanelAdapter(
-                scrollPanel, com.trevorschoeny.menukit.core.MenuRegion.LEFT_ALIGN_BOTTOM)
-                .on(net.minecraft.client.gui.screens.inventory.InventoryScreen.class,
-                    net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen.class);
-
-        LOGGER.info("[Verify.scroll] Smoke-test ScrollContainer wired. " +
-                "Run /mkverify scroll then open inventory (E) to show.");
-    }
-
-    /**
-     * /mkverify scroll — flips the smoke-test ScrollContainer panel's
-     * visibility flag.
-     */
-    private static int cmdScrollToggle(CommandContext<CommandSourceStack> ctx) {
-        scrollPanelVisible = !scrollPanelVisible;
-        boolean nowVisible = scrollPanelVisible;
-        ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify] Scroll panel " +
-                        (nowVisible ? "shown — open inventory if not already." : "hidden.")),
-                false);
-        return 1;
-    }
-
-    // ══════════════════════════════════════════════════════════════════════
-    // Phase 14d-2.5 M9 opacity smoke wire-up — visual verification of the
-    // click-through prohibition principle. /mkverify opacity flips the
-    // visibility flag; panel renders at LEFT_ALIGN_TOP (intentionally
-    // overlapping the player-inventory slots area) so the smoke verifies
-    // that vanilla slots underneath the panel do NOT receive clicks.
-    // ══════════════════════════════════════════════════════════════════════
-
-    /** Visibility flag for the smoke-test M9 opacity panel. */
-    private static volatile boolean opacityPanelVisible = false;
-
-    /**
-     * Wires the smoke-test M9 opacity panel. Called from
-     * {@link com.trevorschoeny.menukit.MenuKitClient#onInitializeClient()}
-     * via {@code Minecraft.getInstance().execute(...)}.
-     *
-     * <p>Default-opaque, no-style background. The panel is invisible
-     * visually but should still eat clicks within its bounds (the
-     * "click blocker" pattern from M9 §4.1). When toggled visible, click
-     * inside the bounds reports via chat — slot-pickup behind the panel
-     * should NOT fire (verifying click-through prohibition).
-     *
-     * <p>Sized 80×30 at LEFT_ALIGN_TOP — within the visible inventory
-     * frame so it lands over the player-inventory slot grid.
-     */
-    public static void wireOpacitySmoke() {
-        java.util.List<com.trevorschoeny.menukit.core.PanelElement> elements =
-                java.util.List.of(
-                        new com.trevorschoeny.menukit.core.Button(
-                                0, 0, 80, 30,
-                                Component.literal("Click me"),
-                                btn -> chatToPlayer("§a[Verify.opacity] Button clicked — element dispatch works.")));
-
-        com.trevorschoeny.menukit.core.Panel opacityPanel =
-                new com.trevorschoeny.menukit.core.Panel(
-                        "mkverify-opacity-panel",
-                        elements,
-                        /*visible=*/ false,
-                        com.trevorschoeny.menukit.core.PanelStyle.RAISED,
-                        com.trevorschoeny.menukit.core.PanelPosition.BODY,
-                        /*toggleKey=*/ -1)
-                        .showWhen(() -> opacityPanelVisible);
-                // Note: Panel.opaque defaults true post-M9 — no explicit
-                // .opaque(true) needed. The panel covers slots underneath
-                // and should eat clicks within its bounds.
-
-        new com.trevorschoeny.menukit.inject.ScreenPanelAdapter(
-                opacityPanel, com.trevorschoeny.menukit.core.MenuRegion.LEFT_ALIGN_TOP)
-                .on(net.minecraft.client.gui.screens.inventory.InventoryScreen.class,
-                    net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen.class);
-
-        LOGGER.info("[Verify.opacity] Smoke-test M9 opacity panel wired. " +
-                "Run /mkverify opacity then open inventory (E) — clicks " +
-                "inside the panel's bounds should NOT pick up items behind it.");
-    }
-
-    /**
-     * /mkverify opacity — flips the smoke-test M9 opacity panel's
-     * visibility flag. Player verifies that clicks inside the panel's
-     * bounds (especially OUTSIDE the button) do NOT pick up items from
-     * the inventory slots underneath.
-     */
-    private static int cmdOpacityToggle(CommandContext<CommandSourceStack> ctx) {
-        opacityPanelVisible = !opacityPanelVisible;
-        boolean nowVisible = opacityPanelVisible;
-        ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify] Opacity panel " +
-                        (nowVisible ? "shown — clicks inside bounds should NOT pick up slots behind." : "hidden.")),
-                false);
-        return 1;
-    }
 
     // ══════════════════════════════════════════════════════════════════════
     // Helpers
@@ -464,17 +203,10 @@ public final class ContractVerification {
         });
     }
 
-    /** Opens the element-demo screen for the player. */
-    private static void openElementDemoScreen(ServerPlayer player) {
-        player.openMenu(new MenuProvider() {
-            @Override public Component getDisplayName() {
-                return Component.literal("MenuKit Element Demo");
-            }
-            @Override public AbstractContainerMenu createMenu(int syncId, Inventory inv, Player p) {
-                return ElementDemoHandler.create(syncId, inv, elementDemoMenuType);
-            }
-        });
-    }
+    // Phase 14d-2.7 — openElementDemoScreen + ElementDemoHandler/Screen
+    // removed. Per-phase scratch element-demo workspace was unreachable
+    // post-14d-2.6 (sub-command removed); V1.1 Palette Matrix +
+    // V1.2 Composed cover the same evidence territory.
 
     /** Short description of an ItemStack for log lines. */
     private static String desc(ItemStack stack) {
@@ -504,21 +236,22 @@ public final class ContractVerification {
     // that all run after open.
 
     /**
-     * Runs all seven canonical contracts in sequence, orchestrating menu
-     * state across the open-test-screen boundary. Each contract emits its
-     * own {@code VERDICT} log line. Emits one chat acknowledgement
-     * ({@code "[Verify] All thirteen contracts — see log..."}) so the caller
-     * knows execution completed; scan the log for VERDICT to read results.
+     * Runs the full library contract sweep. Each probe emits its own
+     * {@code VERDICT} log line; emits one chat ack so the caller knows
+     * the sweep completed.
+     *
+     * <p>Phase 14d-2.7: takes {@link ServerPlayer} directly (chat
+     * commands removed; the validator's inventory "Test" button is the
+     * canonical entry point and dispatches to this method via
+     * {@code RunAllAndOpenHubC2SPayload}'s server handler).
      *
      * <p>Leaves {@code player.containerMenu} pointing at the
-     * {@link TestContractHandler} (the test screen opens partway through).
-     * Subsequent callers that read {@link Player#inventoryMenu} directly
-     * (as the Phase 12.5 validator scenarios do) are unaffected.
+     * {@link TestContractHandler} (the test screen opens partway
+     * through). Validator's aggregator scenarios then read
+     * {@link Player#inventoryMenu} directly so they're unaffected by
+     * that state change.
      */
-    public static int runAll(CommandContext<CommandSourceStack> ctx)
-            throws CommandSyntaxException {
-        ServerPlayer player = ctx.getSource().getPlayerOrException();
-
+    public static int runAll(ServerPlayer player) {
         LOGGER.info("[Verify] BEGIN — runAll — running all thirteen contracts");
 
         // ── Pure-math contract (no menu state) ──────────────────────────
@@ -568,63 +301,16 @@ public final class ContractVerification {
 
         LOGGER.info("[Verify] END — thirteen contracts checked. Scan log for VERDICT lines.");
 
-        ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify] All thirteen contracts — see log. Test screen is now open."),
+        player.displayClientMessage(
+                Component.literal("[Verify] All contracts — see log. Test screen is now open."),
                 false);
         return 1;
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // /mkverify elements (visual-verification surface, not a canonical contract)
-    // ══════════════════════════════════════════════════════════════════════
-    //
-    // Opens a clean screen with just a demo panel, no slots, no player
-    // inventory rendering. Used for visual verification of element rendering
-    // during phase work. Per-phase test elements live in ElementDemoHandler;
-    // edit there to add/remove test elements.
-
-    private static int cmdElements(CommandContext<CommandSourceStack> ctx)
-            throws CommandSyntaxException {
-        ServerPlayer player = ctx.getSource().getPlayerOrException();
-        openElementDemoScreen(player);
-        ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify] Element demo screen is now open."), false);
-        return 1;
-    }
-
-    // ══════════════════════════════════════════════════════════════════════
-    // /mkverify regions — M5 §9.2 integration-level visual verification
-    // ══════════════════════════════════════════════════════════════════════
-    //
-    // Toggles client-side region probes on/off. When on, 17 colored 18×18
-    // squares render at the 8 inventory regions + 9 HUD regions, plus two
-    // additional squares in RIGHT_ALIGN_TOP for stacking inspection.
-    //
-    // /mkverify regions         — master toggle
-    // /mkverify regions stack   — flip the middle stacking probe's visibility
-    //                             (verifies per-frame reflow of subsequent
-    //                             panels when a mid-stack panel hides)
-    //
-    // Command runs on the server thread but the probes are client-side state;
-    // the dev client is single-player so the server-thread → client-thread
-    // read/write of the volatile flags is consistent enough for verification.
-
-    private static int cmdRegionsToggle(CommandContext<CommandSourceStack> ctx) {
-        boolean on = com.trevorschoeny.menukit.verification.RegionProbes.toggleMaster();
-        ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify.Regions] probes " + (on ? "ON" : "OFF")),
-                false);
-        return 1;
-    }
-
-    private static int cmdRegionsStackToggle(CommandContext<CommandSourceStack> ctx) {
-        boolean visible = com.trevorschoeny.menukit.verification.RegionProbes.toggleStackMiddle();
-        ctx.getSource().sendSuccess(
-                () -> Component.literal("[Verify.Regions] stack middle probe "
-                        + (visible ? "VISIBLE" : "HIDDEN")),
-                false);
-        return 1;
-    }
+    // Phase 14d-2.7 — /mkverify elements + /mkverify regions removed.
+    // ElementDemoHandler/Screen deleted; V1 (Palette Matrix + Composed)
+    // covers the same evidence. RegionProbes migrated to validator,
+    // toggled via Hub entries.
 
     // ══════════════════════════════════════════════════════════════════════
     // 1. Composability
