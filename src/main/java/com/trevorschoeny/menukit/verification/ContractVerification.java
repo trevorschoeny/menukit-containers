@@ -290,6 +290,9 @@ public final class ContractVerification {
         // ── M17 Slider builder validation (pure) ────────────────────────
         m17SliderBuilder();
 
+        // ── M18 Dropdown builder validation (pure) ──────────────────────
+        m18DropdownBuilder();
+
         // ── Vanilla phases (before opening test screen) ─────────────────
         composabilityPhaseA(player);
         uniformPhaseA(player);
@@ -1750,6 +1753,209 @@ public final class ContractVerification {
             LOGGER.info("[Verify.M17] {} — OK", label);
         } else {
             LOGGER.info("[Verify.M17] {} — FAIL", label);
+            counts[1]++;
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // M18 — Dropdown builder validation (Phase 14d-5)
+    // ════════════════════════════════════════════════════════════════════
+    //
+    // SCOPE NOTE: same shape as M16 / M17 — server-thread-safe builder
+    // validation only. Visual composition (popover render, edge-flip
+    // placement, hover/selection highlights, internal scroll, lens
+    // round-trip, hitTest dispatch routing, click-outside-dismiss) is
+    // verified via the DropdownSmokeScreen on a real screen.
+
+    private static void m18DropdownBuilder() {
+        LOGGER.info("[Verify.M18] BEGIN — Dropdown builder validation");
+        int[] counts = {0, 0};
+
+        // Helpers — non-null lens components and items so we can isolate
+        // other failures.
+        java.util.List<String> items = java.util.List.of("a", "b", "c");
+        java.util.function.Function<String, net.minecraft.network.chat.Component> labelFn =
+                s -> net.minecraft.network.chat.Component.literal(s);
+        java.util.function.Supplier<String> sup = () -> "a";
+        java.util.function.Consumer<String> con = v -> {};
+
+        // ── Builder fluency / non-null returns ──────────────────────────
+        var builder = com.trevorschoeny.menukit.core.Dropdown.<String>builder();
+        checkM18(counts, "builder() returns non-null", builder != null);
+
+        // ── Missing .triggerSize() → IllegalStateException ──────────────
+        boolean threwOnMissingSize = false;
+        try {
+            com.trevorschoeny.menukit.core.Dropdown.<String>builder()
+                    .items(items)
+                    .label(labelFn)
+                    .selection(sup, con)
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnMissingSize = true;
+        } catch (Exception other) {}
+        checkM18(counts, "missing .triggerSize() → IllegalStateException at build()",
+                threwOnMissingSize);
+
+        // ── triggerSize() with non-positive width/height → IllegalStateException
+        boolean threwOnZeroWidth = false;
+        try {
+            com.trevorschoeny.menukit.core.Dropdown.<String>builder()
+                    .triggerSize(0, 20)
+                    .items(items)
+                    .label(labelFn)
+                    .selection(sup, con)
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnZeroWidth = true;
+        } catch (Exception other) {}
+        checkM18(counts, "triggerSize(0, 20) → IllegalStateException at build()",
+                threwOnZeroWidth);
+
+        boolean threwOnZeroHeight = false;
+        try {
+            com.trevorschoeny.menukit.core.Dropdown.<String>builder()
+                    .triggerSize(120, 0)
+                    .items(items)
+                    .label(labelFn)
+                    .selection(sup, con)
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnZeroHeight = true;
+        } catch (Exception other) {}
+        checkM18(counts, "triggerSize(120, 0) → IllegalStateException at build()",
+                threwOnZeroHeight);
+
+        // ── Missing .items() → IllegalStateException ────────────────────
+        boolean threwOnMissingItems = false;
+        try {
+            com.trevorschoeny.menukit.core.Dropdown.<String>builder()
+                    .triggerSize(120, 20)
+                    .label(labelFn)
+                    .selection(sup, con)
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnMissingItems = true;
+        } catch (Exception other) {}
+        checkM18(counts, "missing .items() → IllegalStateException at build()",
+                threwOnMissingItems);
+
+        // ── Empty items list → IllegalStateException (per M18 contract) ─
+        boolean threwOnEmptyItems = false;
+        try {
+            com.trevorschoeny.menukit.core.Dropdown.<String>builder()
+                    .triggerSize(120, 20)
+                    .items(java.util.List.of())
+                    .label(labelFn)
+                    .selection(sup, con)
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnEmptyItems = true;
+        } catch (Exception other) {}
+        checkM18(counts, "items(emptyList) → IllegalStateException at build()",
+                threwOnEmptyItems);
+
+        // ── Missing .label() → IllegalStateException ────────────────────
+        boolean threwOnMissingLabel = false;
+        try {
+            com.trevorschoeny.menukit.core.Dropdown.<String>builder()
+                    .triggerSize(120, 20)
+                    .items(items)
+                    .selection(sup, con)
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnMissingLabel = true;
+        } catch (Exception other) {}
+        checkM18(counts, "missing .label() → IllegalStateException at build()",
+                threwOnMissingLabel);
+
+        // ── Missing .selection() → IllegalStateException ────────────────
+        boolean threwOnMissingSelection = false;
+        try {
+            com.trevorschoeny.menukit.core.Dropdown.<String>builder()
+                    .triggerSize(120, 20)
+                    .items(items)
+                    .label(labelFn)
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnMissingSelection = true;
+        } catch (Exception other) {}
+        checkM18(counts, "missing .selection() → IllegalStateException at build()",
+                threwOnMissingSelection);
+
+        // ── Null guards ─────────────────────────────────────────────────
+        boolean threwOnNullItems = false;
+        try {
+            com.trevorschoeny.menukit.core.Dropdown.<String>builder().items(null);
+        } catch (NullPointerException expected) {
+            threwOnNullItems = true;
+        }
+        checkM18(counts, "items(null) → NullPointerException", threwOnNullItems);
+
+        boolean threwOnNullLabel = false;
+        try {
+            com.trevorschoeny.menukit.core.Dropdown.<String>builder().label(null);
+        } catch (NullPointerException expected) {
+            threwOnNullLabel = true;
+        }
+        checkM18(counts, "label(null) → NullPointerException", threwOnNullLabel);
+
+        boolean threwOnNullSupplier = false;
+        try {
+            com.trevorschoeny.menukit.core.Dropdown.<String>builder().selection(null, con);
+        } catch (NullPointerException expected) {
+            threwOnNullSupplier = true;
+        }
+        checkM18(counts, "selection(null, c) → NullPointerException", threwOnNullSupplier);
+
+        boolean threwOnNullConsumer = false;
+        try {
+            com.trevorschoeny.menukit.core.Dropdown.<String>builder().selection(sup, null);
+        } catch (NullPointerException expected) {
+            threwOnNullConsumer = true;
+        }
+        checkM18(counts, "selection(s, null) → NullPointerException", threwOnNullConsumer);
+
+        // ── maxVisibleItems(non-positive) → IllegalArgumentException ────
+        boolean threwOnNonPositiveMax = false;
+        try {
+            com.trevorschoeny.menukit.core.Dropdown.<String>builder().maxVisibleItems(0);
+        } catch (IllegalArgumentException expected) {
+            threwOnNonPositiveMax = true;
+        }
+        checkM18(counts, "maxVisibleItems(0) → IllegalArgumentException", threwOnNonPositiveMax);
+
+        // ── Builder fluency — each setter returns the builder ───────────
+        var fluent = com.trevorschoeny.menukit.core.Dropdown.<String>builder();
+        boolean fluentReturns = (fluent.at(0, 0) == fluent)
+                && (fluent.triggerSize(120, 20) == fluent)
+                && (fluent.items(items) == fluent)
+                && (fluent.label(labelFn) == fluent)
+                && (fluent.selection(sup, con) == fluent)
+                && (fluent.maxVisibleItems(5) == fluent);
+        checkM18(counts, "builder setters return same builder (chainable)", fluentReturns);
+
+        // ── Successful build returns non-null Dropdown ──────────────────
+        var built = com.trevorschoeny.menukit.core.Dropdown.<String>builder()
+                .triggerSize(120, 20)
+                .items(items)
+                .label(labelFn)
+                .selection(sup, con)
+                .build();
+        checkM18(counts, "valid build() returns non-null Dropdown", built != null);
+
+        int total = counts[0], failed = counts[1];
+        int passed = total - failed;
+        LOGGER.info("[Verify.M18] VERDICT — {}/{} cases pass ({})",
+                passed, total, failed == 0 ? "PASS" : "FAIL — see above");
+    }
+
+    private static void checkM18(int[] counts, String label, boolean condition) {
+        counts[0]++;
+        if (condition) {
+            LOGGER.info("[Verify.M18] {} — OK", label);
+        } else {
+            LOGGER.info("[Verify.M18] {} — FAIL", label);
             counts[1]++;
         }
     }

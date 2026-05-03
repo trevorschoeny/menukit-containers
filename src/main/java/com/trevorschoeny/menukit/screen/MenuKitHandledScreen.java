@@ -699,6 +699,24 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
 
     private boolean dispatchElementScroll(double mouseX, double mouseY,
                                            double scrollX, double scrollY) {
+        // Phase 14d-5 — two-pass dispatch matching dispatchElementClick.
+        //   Pass 1: active-overlay exclusive claims (Dropdown popover when open).
+        //   Pass 2: normal hit-test dispatch.
+
+        for (Panel panel : menu.getPanels()) {
+            if (!panel.isVisible()) continue;
+            for (PanelElement element : panel.getElements()) {
+                if (!element.isVisible()) continue;
+                int[] overlay = element.getActiveOverlayBounds();
+                if (overlay != null
+                        && mouseX >= overlay[0] && mouseX < overlay[0] + overlay[2]
+                        && mouseY >= overlay[1] && mouseY < overlay[1] + overlay[3]) {
+                    element.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+                    return true;     // exclusive
+                }
+            }
+        }
+
         for (Panel panel : menu.getPanels()) {
             if (!panel.isVisible()) continue;
             PanelBounds bounds = panelBounds.get(panel.getId());
@@ -710,10 +728,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
             for (PanelElement element : panel.getElements()) {
                 if (!element.isVisible()) continue;
 
-                double relX = mouseX - contentX - element.getChildX();
-                double relY = mouseY - contentY - element.getChildY();
-                if (relX >= 0 && relX < element.getWidth()
-                        && relY >= 0 && relY < element.getHeight()) {
+                if (element.hitTest(mouseX, mouseY, contentX, contentY)) {
                     if (element.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) {
                         return true;
                     }
@@ -745,8 +760,36 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
      * Dispatches a click to panel elements. Returns true if any element
      * consumed the click. Checks panel visibility and element visibility
      * before routing — hidden panels' elements never receive clicks.
+     *
+     * <p>Phase 14d-5 — two-pass dispatch:
+     * <ol>
+     *   <li><b>Pass 1: active-overlay claims.</b> Any element with an
+     *       {@link PanelElement#getActiveOverlayBounds active overlay}
+     *       (e.g., Dropdown's popover when open) gets exclusive dispatch
+     *       over its overlay region — the click is dropped or consumed
+     *       by that element regardless of {@code mouseClicked}'s return,
+     *       so behind elements stay innately inert.</li>
+     *   <li><b>Pass 2: normal hit-test.</b> If no active overlay claims,
+     *       fall through to standard hit-test dispatch.</li>
+     * </ol>
      */
     private boolean dispatchElementClick(double mouseX, double mouseY, int button) {
+        // Pass 1: active-overlay exclusive claims
+        for (Panel panel : menu.getPanels()) {
+            if (!panel.isVisible()) continue;
+            for (PanelElement element : panel.getElements()) {
+                if (!element.isVisible()) continue;
+                int[] overlay = element.getActiveOverlayBounds();
+                if (overlay != null
+                        && mouseX >= overlay[0] && mouseX < overlay[0] + overlay[2]
+                        && mouseY >= overlay[1] && mouseY < overlay[1] + overlay[3]) {
+                    element.mouseClicked(mouseX, mouseY, button);
+                    return true;     // exclusive
+                }
+            }
+        }
+
+        // Pass 2: normal hit-test
         for (Panel panel : menu.getPanels()) {
             if (!panel.isVisible()) continue;
             PanelBounds bounds = panelBounds.get(panel.getId());
@@ -758,11 +801,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
             for (PanelElement element : panel.getElements()) {
                 if (!element.isVisible()) continue;
 
-                // Hit test: is the mouse within this element's bounds?
-                double relX = mouseX - contentX - element.getChildX();
-                double relY = mouseY - contentY - element.getChildY();
-                if (relX >= 0 && relX < element.getWidth()
-                        && relY >= 0 && relY < element.getHeight()) {
+                if (element.hitTest(mouseX, mouseY, contentX, contentY)) {
                     if (element.mouseClicked(mouseX, mouseY, button)) {
                         return true;
                     }
