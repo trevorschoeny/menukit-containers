@@ -107,6 +107,27 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         // Cleared and rebuilt on each init (handles screen resize re-init).
         keyRegistry.clear();
         registerPanelToggleKeys();
+
+        // Phase 14d-3 — fire onAttach on each panel element so widget-
+        // wrapping elements (TextField etc.) can register vanilla
+        // widgets via addRenderableWidget.
+        for (Panel panel : menu.getPanels()) {
+            for (PanelElement element : panel.getElements()) {
+                element.onAttach(this);
+            }
+        }
+    }
+
+    @Override
+    public void removed() {
+        // Phase 14d-3 — fire onDetach so widget-wrapping elements can
+        // unregister via screen.removeWidget.
+        for (Panel panel : menu.getPanels()) {
+            for (PanelElement element : panel.getElements()) {
+                element.onDetach(this);
+            }
+        }
+        super.removed();
     }
 
     // ── Layout Computation ─────────────────────────────────────────────

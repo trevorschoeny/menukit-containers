@@ -284,6 +284,9 @@ public final class ContractVerification {
         // ── M15 lambda lifecycle — .activeOn / .deactivate (pure) ───────
         m15LambdaLifecycle();
 
+        // ── M16 TextField builder validation (pure) ─────────────────────
+        m16TextFieldBuilder();
+
         // ── Vanilla phases (before opening test screen) ─────────────────
         composabilityPhaseA(player);
         uniformPhaseA(player);
@@ -1464,6 +1467,162 @@ public final class ContractVerification {
             LOGGER.info("[Verify.M15] {} — OK", label);
         } else {
             LOGGER.info("[Verify.M15] {} — FAIL", label);
+            counts[1]++;
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // M16 — TextField builder validation (Phase 14d-3)
+    // ════════════════════════════════════════════════════════════════════
+    //
+    // SCOPE NOTE: this probe runs from server thread (button-dispatched
+    // payload handler). The TextField builder's .build() path constructs
+    // an EditBox which requires Minecraft.getInstance().font — a render-
+    // thread resource not safely accessible from server thread. M16 is
+    // therefore scoped to what's testable on server thread:
+    //   - required-field validation (throws IllegalStateException)
+    //   - argument validation (throws IllegalArgumentException for bad
+    //     inputs)
+    //   - null guards (NullPointerException)
+    //   - builder fluency (chainable returns)
+    // Visual composition (focus, IME, validation, onChange/onSubmit
+    // callbacks) is verified via /mkverify smoke on a real screen.
+
+    private static void m16TextFieldBuilder() {
+        LOGGER.info("[Verify.M16] BEGIN — TextField builder validation");
+        int[] counts = {0, 0};
+
+        // ── Builder fluency / non-null returns ──────────────────────────
+        var builder = com.trevorschoeny.menukit.core.TextField.builder();
+        checkM16(counts, "builder() returns non-null", builder != null);
+
+        // ── Missing required size → IllegalStateException ───────────────
+        boolean threwOnMissingSize = false;
+        try {
+            com.trevorschoeny.menukit.core.TextField.builder().build();
+        } catch (IllegalStateException expected) {
+            threwOnMissingSize = true;
+        } catch (Exception other) {
+            // If any non-IllegalStateException slips through (e.g.,
+            // a font-related NPE because we tried to construct without
+            // size first), that's also a fail since the size check
+            // should fire FIRST in build().
+        }
+        checkM16(counts, "missing .size() → IllegalStateException at build()",
+                threwOnMissingSize);
+
+        // ── size() with non-positive width/height → IllegalStateException
+        boolean threwOnZeroWidth = false;
+        try {
+            com.trevorschoeny.menukit.core.TextField.builder()
+                    .size(0, 20)
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnZeroWidth = true;
+        } catch (Exception other) {}
+        checkM16(counts, "size(0, 20) → IllegalStateException at build()",
+                threwOnZeroWidth);
+
+        boolean threwOnZeroHeight = false;
+        try {
+            com.trevorschoeny.menukit.core.TextField.builder()
+                    .size(120, 0)
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnZeroHeight = true;
+        } catch (Exception other) {}
+        checkM16(counts, "size(120, 0) → IllegalStateException at build()",
+                threwOnZeroHeight);
+
+        // ── maxLength validation ────────────────────────────────────────
+        boolean threwOnZeroMaxLength = false;
+        try {
+            com.trevorschoeny.menukit.core.TextField.builder().maxLength(0);
+        } catch (IllegalArgumentException expected) {
+            threwOnZeroMaxLength = true;
+        }
+        checkM16(counts, "maxLength(0) → IllegalArgumentException",
+                threwOnZeroMaxLength);
+
+        boolean threwOnNegativeMaxLength = false;
+        try {
+            com.trevorschoeny.menukit.core.TextField.builder().maxLength(-5);
+        } catch (IllegalArgumentException expected) {
+            threwOnNegativeMaxLength = true;
+        }
+        checkM16(counts, "maxLength(-5) → IllegalArgumentException",
+                threwOnNegativeMaxLength);
+
+        // ── Null guards ─────────────────────────────────────────────────
+        boolean threwOnNullLabel = false;
+        try {
+            com.trevorschoeny.menukit.core.TextField.builder().label(null);
+        } catch (NullPointerException expected) {
+            threwOnNullLabel = true;
+        }
+        checkM16(counts, "label(null) → NullPointerException", threwOnNullLabel);
+
+        boolean threwOnNullInitialValue = false;
+        try {
+            com.trevorschoeny.menukit.core.TextField.builder().initialValue(null);
+        } catch (NullPointerException expected) {
+            threwOnNullInitialValue = true;
+        }
+        checkM16(counts, "initialValue(null) → NullPointerException", threwOnNullInitialValue);
+
+        boolean threwOnNullHint = false;
+        try {
+            com.trevorschoeny.menukit.core.TextField.builder().hint(null);
+        } catch (NullPointerException expected) {
+            threwOnNullHint = true;
+        }
+        checkM16(counts, "hint(null) → NullPointerException", threwOnNullHint);
+
+        boolean threwOnNullFilter = false;
+        try {
+            com.trevorschoeny.menukit.core.TextField.builder().filter(null);
+        } catch (NullPointerException expected) {
+            threwOnNullFilter = true;
+        }
+        checkM16(counts, "filter(null) → NullPointerException", threwOnNullFilter);
+
+        boolean threwOnNullOnChange = false;
+        try {
+            com.trevorschoeny.menukit.core.TextField.builder().onChange(null);
+        } catch (NullPointerException expected) {
+            threwOnNullOnChange = true;
+        }
+        checkM16(counts, "onChange(null) → NullPointerException", threwOnNullOnChange);
+
+        boolean threwOnNullOnSubmit = false;
+        try {
+            com.trevorschoeny.menukit.core.TextField.builder().onSubmit(null);
+        } catch (NullPointerException expected) {
+            threwOnNullOnSubmit = true;
+        }
+        checkM16(counts, "onSubmit(null) → NullPointerException", threwOnNullOnSubmit);
+
+        // ── Builder fluency — each setter returns the builder ───────────
+        var fluent = com.trevorschoeny.menukit.core.TextField.builder();
+        boolean fluentReturns = (fluent.at(0, 0) == fluent)
+                && (fluent.size(120, 20) == fluent)
+                && (fluent.maxLength(64) == fluent)
+                && (fluent.bordered(true) == fluent)
+                && (fluent.editable(true) == fluent);
+        checkM16(counts, "builder setters return same builder (chainable)", fluentReturns);
+
+        int total = counts[0], failed = counts[1];
+        int passed = total - failed;
+        LOGGER.info("[Verify.M16] VERDICT — {}/{} cases pass ({})",
+                passed, total, failed == 0 ? "PASS" : "FAIL — see above");
+    }
+
+    private static void checkM16(int[] counts, String label, boolean condition) {
+        counts[0]++;
+        if (condition) {
+            LOGGER.info("[Verify.M16] {} — OK", label);
+        } else {
+            LOGGER.info("[Verify.M16] {} — FAIL", label);
             counts[1]++;
         }
     }
