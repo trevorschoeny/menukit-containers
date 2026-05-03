@@ -287,6 +287,9 @@ public final class ContractVerification {
         // ── M16 TextField builder validation (pure) ─────────────────────
         m16TextFieldBuilder();
 
+        // ── M17 Slider builder validation (pure) ────────────────────────
+        m17SliderBuilder();
+
         // ── Vanilla phases (before opening test screen) ─────────────────
         composabilityPhaseA(player);
         uniformPhaseA(player);
@@ -1623,6 +1626,130 @@ public final class ContractVerification {
             LOGGER.info("[Verify.M16] {} — OK", label);
         } else {
             LOGGER.info("[Verify.M16] {} — FAIL", label);
+            counts[1]++;
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // M17 — Slider builder validation (Phase 14d-4)
+    // ════════════════════════════════════════════════════════════════════
+    //
+    // SCOPE NOTE: same shape as M16 — server-thread-safe builder validation
+    // only. Visual composition (drag, keyboard navigation, narration, in-
+    // track label updates, lens round-trip) is verified via the
+    // SliderSmokeScreen on a real screen.
+
+    private static void m17SliderBuilder() {
+        LOGGER.info("[Verify.M17] BEGIN — Slider builder validation");
+        int[] counts = {0, 0};
+
+        // Helpers — non-null lens components so we can isolate other failures
+        java.util.function.DoubleSupplier sup = () -> 0.5;
+        java.util.function.DoubleConsumer con = v -> {};
+        java.util.function.DoubleFunction<net.minecraft.network.chat.Component> labelFn =
+                v -> net.minecraft.network.chat.Component.empty();
+
+        // ── Builder fluency / non-null returns ──────────────────────────
+        var builder = com.trevorschoeny.menukit.core.Slider.builder();
+        checkM17(counts, "builder() returns non-null", builder != null);
+
+        // ── Missing .size() → IllegalStateException ─────────────────────
+        boolean threwOnMissingSize = false;
+        try {
+            com.trevorschoeny.menukit.core.Slider.builder()
+                    .value(sup, con)
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnMissingSize = true;
+        } catch (Exception other) {
+            // Any non-IllegalStateException slipping through is also a fail
+            // — size validation should fire FIRST in build().
+        }
+        checkM17(counts, "missing .size() → IllegalStateException at build()",
+                threwOnMissingSize);
+
+        // ── size() with non-positive width/height → IllegalStateException
+        boolean threwOnZeroWidth = false;
+        try {
+            com.trevorschoeny.menukit.core.Slider.builder()
+                    .size(0, 20)
+                    .value(sup, con)
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnZeroWidth = true;
+        } catch (Exception other) {}
+        checkM17(counts, "size(0, 20) → IllegalStateException at build()",
+                threwOnZeroWidth);
+
+        boolean threwOnZeroHeight = false;
+        try {
+            com.trevorschoeny.menukit.core.Slider.builder()
+                    .size(120, 0)
+                    .value(sup, con)
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnZeroHeight = true;
+        } catch (Exception other) {}
+        checkM17(counts, "size(120, 0) → IllegalStateException at build()",
+                threwOnZeroHeight);
+
+        // ── Missing .value() → IllegalStateException ────────────────────
+        boolean threwOnMissingValue = false;
+        try {
+            com.trevorschoeny.menukit.core.Slider.builder()
+                    .size(120, 20)
+                    .build();
+        } catch (IllegalStateException expected) {
+            threwOnMissingValue = true;
+        } catch (Exception other) {}
+        checkM17(counts, "missing .value() → IllegalStateException at build()",
+                threwOnMissingValue);
+
+        // ── Null guards ─────────────────────────────────────────────────
+        boolean threwOnNullSupplier = false;
+        try {
+            com.trevorschoeny.menukit.core.Slider.builder().value(null, con);
+        } catch (NullPointerException expected) {
+            threwOnNullSupplier = true;
+        }
+        checkM17(counts, "value(null, c) → NullPointerException", threwOnNullSupplier);
+
+        boolean threwOnNullConsumer = false;
+        try {
+            com.trevorschoeny.menukit.core.Slider.builder().value(sup, null);
+        } catch (NullPointerException expected) {
+            threwOnNullConsumer = true;
+        }
+        checkM17(counts, "value(s, null) → NullPointerException", threwOnNullConsumer);
+
+        boolean threwOnNullLabel = false;
+        try {
+            com.trevorschoeny.menukit.core.Slider.builder().label(null);
+        } catch (NullPointerException expected) {
+            threwOnNullLabel = true;
+        }
+        checkM17(counts, "label(null) → NullPointerException", threwOnNullLabel);
+
+        // ── Builder fluency — each setter returns the builder ───────────
+        var fluent = com.trevorschoeny.menukit.core.Slider.builder();
+        boolean fluentReturns = (fluent.at(0, 0) == fluent)
+                && (fluent.size(120, 20) == fluent)
+                && (fluent.value(sup, con) == fluent)
+                && (fluent.label(labelFn) == fluent);
+        checkM17(counts, "builder setters return same builder (chainable)", fluentReturns);
+
+        int total = counts[0], failed = counts[1];
+        int passed = total - failed;
+        LOGGER.info("[Verify.M17] VERDICT — {}/{} cases pass ({})",
+                passed, total, failed == 0 ? "PASS" : "FAIL — see above");
+    }
+
+    private static void checkM17(int[] counts, String label, boolean condition) {
+        counts[0]++;
+        if (condition) {
+            LOGGER.info("[Verify.M17] {} — OK", label);
+        } else {
+            LOGGER.info("[Verify.M17] {} — FAIL", label);
             counts[1]++;
         }
     }
