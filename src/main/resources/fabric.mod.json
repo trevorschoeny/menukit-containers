@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "menukit-containers",
+  "version": "1.0.0",
+  "name": "MenuKit: Containers",
+  "icon": "icon.png",
+  "description": "MenuKit: Containers adds slots to MenuKit — custom container menus (MenuKitScreenHandler), per-slot state (M1), slot-group regions, custom payloads, contract verification. Required for mods that build custom container menus. Depends on the MenuKit UI library.",
+  "authors": ["trevorschoeny"],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.trevorschoeny.menukit.MenuKitContainers"],
+    "client": ["com.trevorschoeny.menukit.MenuKitContainersClient"]
+  },
+  "mixins": ["menukit-containers.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "fabric-api": "*",
+    "minecraft": "~1.21",
+    "menukit": "*"
+  }
+}

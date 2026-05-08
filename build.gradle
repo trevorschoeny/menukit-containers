@@ -1,0 +1,63 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// MenuKit: Containers — the slot extension for MenuKit. Adds custom container
+// menus (MenuKitScreenHandler), per-slot state (M1), slot-group regions,
+// custom payloads, server-coupled mixins, and the contract verification
+// harness. Universal (`environment: "*"`) — both client and server
+// participate in slot state and verification.
+//
+// The story per §0042: MenuKit is the UI library; MenuKit: Containers adds
+// slots to MenuKit. Consumer mods that build custom container menus depend
+// on this artifact; consumer mods that only need HUD/widgets/layouts depend
+// on `:menukit` alone.
+//
+// Produces menukit-containers-1.0.0.jar — depends on :menukit (one-way per
+// §0042).
+// ═══════════════════════════════════════════════════════════════════════════
+
+plugins {
+    id 'fabric-loom' version '1.14-SNAPSHOT'
+    id 'java'
+}
+
+version = property('mod_version')
+group   = property('maven_group')
+
+base.archivesName = 'menukit-containers'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+repositories {
+    maven { url 'https://maven.fabricmc.net/' }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${property('minecraft_version')}"
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${property('loader_version')}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${property('fabric_version')}"
+
+    // §0042 one-way dependency: MenuKit: Containers depends on MenuKit.
+    // MenuKit does NOT depend on this artifact (enforced at gradle level).
+    // namedElements configuration matches what consumer mods (e.g.,
+    // validator) use to depend on a sibling Fabric module.
+    implementation project(path: ':menukit', configuration: 'namedElements')
+}
+
+loom {
+    runs {
+        client { ideConfigGenerated = false }
+        server { ideConfigGenerated = false }
+    }
+}
+
+jar {
+    from('LICENSE') { rename { "${it}_${project.name}" } }
+}
+
+// Modrinth publishing intentionally not configured here. Per Lead's brief:
+// "No github work in 16a... post-16a." Same applies to the menukit-containers
+// Modrinth project (does not exist yet). Add a `modrinth { ... }` block
+// alongside the plugin import here when the project ID is provisioned.

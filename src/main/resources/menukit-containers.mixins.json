@@ -1,0 +1,19 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.trevorschoeny.menukit.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "VerifyMayPlaceMixin",
+    "VerifyGetItemMixin",
+    "PlayerOpenMenuMixin",
+    "PlayerListRespawnMixin",
+    "M7BlockDropMixin"
+  ],
+  "client": [
+    "SlotGroupPanelRenderMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
