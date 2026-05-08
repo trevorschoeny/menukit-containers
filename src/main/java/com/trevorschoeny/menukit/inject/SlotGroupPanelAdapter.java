@@ -4,10 +4,10 @@ import com.trevorschoeny.menukit.core.Panel;
 import com.trevorschoeny.menukit.core.PanelElement;
 import com.trevorschoeny.menukit.core.PanelRendering;
 import com.trevorschoeny.menukit.core.PanelStyle;
-import com.trevorschoeny.menukit.core.RegionMath;
 import com.trevorschoeny.menukit.core.RenderContext;
 import com.trevorschoeny.menukit.core.SlotGroupCategory;
 import com.trevorschoeny.menukit.core.SlotGroupRegion;
+import com.trevorschoeny.menukit.core.SlotGroupRegionMath;
 
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -40,7 +40,7 @@ import java.util.Optional;
  * <p>No {@code .onAny()} — SlotGroupContext targeting is always explicit
  * category enumeration; "any slot group" isn't a meaningful consumer mental
  * model (see M8 §5.6). Construction without a {@code .on(...)} call leaves
- * the adapter in {@link ScreenPanelRegistry}'s pending set; the boot
+ * the adapter in {@link SlotGroupPanelRegistry}'s pending set; the boot
  * checkpoint fails with {@link IllegalStateException} naming the panel ID.
  */
 public final class SlotGroupPanelAdapter {
@@ -72,7 +72,7 @@ public final class SlotGroupPanelAdapter {
         this.panel = panel;
         this.region = region;
         this.padding = padding;
-        ScreenPanelRegistry.trackPendingSlotGroup(this);
+        SlotGroupPanelRegistry.trackPending(this);
     }
 
     // ── Targeting API ───────────────────────────────────────────────────
@@ -104,9 +104,9 @@ public final class SlotGroupPanelAdapter {
         }
         this.targets = List.of(categories);
         for (SlotGroupCategory category : this.targets) {
-            RegionRegistry.registerSlotGroup(panel, category, region, padding);
+            SlotGroupRegionRegistry.registerSlotGroup(panel, category, region, padding);
         }
-        ScreenPanelRegistry.markSlotGroupTargetingDeclared(this);
+        SlotGroupPanelRegistry.markTargetingDeclared(this);
         return this;
     }
 
@@ -138,11 +138,11 @@ public final class SlotGroupPanelAdapter {
         if (!panel.isVisible()) return Optional.empty();
         int pw = panel.getWidth() + 2 * padding;
         int ph = panel.getHeight() + 2 * padding;
-        int prefix = RegionRegistry.axialPrefix(panel, category, region);
+        int prefix = SlotGroupRegionRegistry.axialPrefix(panel, category, region);
         Optional<ScreenOrigin> result =
-                RegionMath.resolveSlotGroup(region, bounds, pw, ph, prefix);
+                SlotGroupRegionMath.resolveSlotGroup(region, bounds, pw, ph, prefix);
         if (result.isEmpty()) {
-            RegionRegistry.warnSlotGroupOverflowOnce(panel, category, region,
+            SlotGroupRegionRegistry.warnSlotGroupOverflowOnce(panel, category, region,
                     pw, ph, prefix, bounds);
         }
         return result;
@@ -153,7 +153,7 @@ public final class SlotGroupPanelAdapter {
     /**
      * Renders the panel against the given slot-group bounds in
      * {@code category}. Called from
-     * {@link ScreenPanelRegistry}'s dispatch — once per matching (adapter,
+     * {@link SlotGroupPanelRegistry}'s dispatch — once per matching (adapter,
      * category) pair per frame.
      */
     public void render(GuiGraphics graphics, SlotGroupBounds bounds,
