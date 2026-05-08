@@ -16,7 +16,7 @@
 
 plugins {
     id 'fabric-loom' version '1.14-SNAPSHOT'
-    id 'java'
+    id 'java-library'
 }
 
 version = property('mod_version')
@@ -41,9 +41,12 @@ dependencies {
 
     // §0042 one-way dependency: MenuKit: Containers depends on MenuKit.
     // MenuKit does NOT depend on this artifact (enforced at gradle level).
-    // namedElements configuration matches what consumer mods (e.g.,
-    // validator) use to depend on a sibling Fabric module.
-    implementation project(path: ':menukit', configuration: 'namedElements')
+    // Uses `api` (not `implementation`) so consumers depending on
+    // :menukit-containers get :menukit transitively at compile time —
+    // validator and future consumer mods need access to both surfaces
+    // through a single project dependency. Requires the `java-library`
+    // plugin (above) to expose the `api` configuration.
+    api project(path: ':menukit', configuration: 'namedElements')
 }
 
 loom {
