@@ -162,6 +162,29 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
         return null;
     }
 
+    /**
+     * Finds the {@link SlotGroupLike} that a slot belongs to, fast-pathing
+     * MenuKit-owned slots and delegating to MK's recognition for observed
+     * vanilla slots.
+     *
+     * <p>Per §0043 (Complete-on-Side Feature Ownership), this is the MKC-side
+     * facade for combined owned + observed lookup. Consumer mods with a
+     * {@link MenuKitScreenHandler} in hand call this for the fast-path;
+     * consumer mods working only against vanilla handlers call MK's static
+     * {@link HandlerRecognizerRegistry#findGroup(AbstractContainerMenu, Slot)}
+     * directly.
+     *
+     * @param slot the slot to look up
+     * @return the owning group (owned fast-path or observed recognition), or
+     *         empty if no group contains the slot
+     */
+    public Optional<SlotGroupLike> findGroupForSlot(Slot slot) {
+        if (slot instanceof MenuKitSlot mkSlot) {
+            return Optional.of(mkSlot.getGroup());
+        }
+        return HandlerRecognizerRegistry.findGroup(this, slot);
+    }
+
     // ── Visibility ──────────────────────────────────────────────────────
 
     /**

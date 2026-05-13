@@ -546,8 +546,13 @@ public final class ContractVerification {
         }
 
         // findGroup on slot 0 — the simple single-slot lookup pattern.
+        // Per §0043: dispatch through MKC's facade for owned handlers; fall
+        // through to MK's vanilla observation for non-owned. Both are complete
+        // on their respective sides.
         Slot probe = menu.slots.get(0);
-        var result = HandlerRecognizerRegistry.findGroup(menu, probe);
+        var result = (menu instanceof com.trevorschoeny.menukit.screen.MenuKitScreenHandler mkH)
+                ? mkH.findGroupForSlot(probe)
+                : HandlerRecognizerRegistry.findGroup(menu, probe);
         if (result.isPresent()) {
             SlotGroupLike group = result.get();
             String implKind = group instanceof SlotGroup ? "native SlotGroup"

@@ -10,9 +10,7 @@
     "PlayerListRespawnMixin",
     "M7BlockDropMixin"
   ],
-  "client": [
-    "SlotGroupPanelRenderMixin"
-  ],
+  "client": [],
   "injectors": {
     "defaultRequire": 1
   }
