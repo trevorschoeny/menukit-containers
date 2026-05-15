@@ -169,21 +169,6 @@ public final class ContractVerification {
                 testMenuType);
     }
 
-    /**
-     * Phase 16h: this method previously registered a {@code TestContractScreen}
-     * client factory so the test handler could open as a visible inventory.
-     * That screen was a vestigial intermediate UI — never useful to the
-     * end-user, and on the "Test MKC" flow it flashed for a frame between
-     * the inventory and V5. Verification handler is now server-side only
-     * (see {@link #installTestHandler}); no client factory needed.
-     *
-     * <p>Kept as a no-op stub so existing client-init callers don't have
-     * to track the deletion. Safe to remove once callers update.
-     */
-    public static void initClient() {
-        // intentionally empty
-    }
-
     // Phase 14d-2.7 — visual smoke wireups (dialog, scroll, opacity)
     // migrated to validator/.../scenarios/smoke/MenuKitSmokeWireup.java
     // per the testing convention's library/validator split. Library

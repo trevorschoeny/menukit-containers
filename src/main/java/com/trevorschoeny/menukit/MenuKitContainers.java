@@ -77,11 +77,9 @@ public class MenuKitContainers implements ModInitializer {
 
     /** Client-side initialization. Invoked from
      *  {@link MenuKitContainersClient#onInitializeClient()}. Registers M1's
-     *  client-side networking handlers + the verification harness's
-     *  client-side test-screen factory. */
+     *  client-side networking handlers. */
     public static void initClient() {
         LOGGER.info("[MenuKit-Containers] Client initialized");
         com.trevorschoeny.menukit.state.SlotStateHooks.registerClient();
-        com.trevorschoeny.menukit.verification.ContractVerification.initClient();
     }
 }

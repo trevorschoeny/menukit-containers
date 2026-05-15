@@ -1,7 +1,6 @@
 package com.trevorschoeny.menukit.screen;
 
 import com.trevorschoeny.menukit.core.*;
-import com.trevorschoeny.menukit.input.CursorContinuity;
 import com.trevorschoeny.menukit.mixin.SlotPositionAccessor;
 import com.trevorschoeny.menukit.core.PanelRendering;
 
@@ -114,28 +113,6 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         // init() runs (which uses them for leftPos/topPos centering).
         // The recenter() correction lands in init() after super.init().
         computeLayout();
-    }
-
-    /**
-     * Phase 16h — opt this screen into cursor-position preservation
-     * across transitions. Thin chainable wrapper over
-     * {@link CursorContinuity#enableFor}; the canonical mechanism lives
-     * in MK's utility class so the same opt-in path works for any
-     * {@code Screen} (MK standalone screens, MKC handler screens,
-     * vanilla subclasses, third-party screens). See
-     * {@link CursorContinuity} for lifecycle semantics.
-     *
-     * <p>Default off per library-not-platform discipline (§0019).
-     * Consumers chain after {@code super(...)} in their subclass
-     * constructor to opt in. {@code false} is a no-op (Fabric per-screen
-     * listeners aren't cleanly unregisterable — see CursorContinuity's
-     * one-way semantics note).
-     *
-     * @return this screen, for chaining.
-     */
-    protected MenuKitHandledScreen preserveCursorContinuity(boolean preserve) {
-        if (preserve) CursorContinuity.enableFor(this);
-        return this;
     }
 
     @Override
@@ -260,63 +237,21 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
      * is overridden to include them.
      */
     private void computeLayout() {
-        // Phase 1: Compute each panel's size (even hidden ones — we
-        // need sizes available in case they become visible mid-frame).
-        Map<String, int[]> sizes = new LinkedHashMap<>();
-        for (Panel panel : menu.getPanels()) {
-            sizes.put(panel.getId(), computePanelSize(panel));
-        }
-
-        // Phase 2: Resolve panel positions via the shared layout utility.
-        // PanelLayout is context-neutral — it handles BODY-stack and
-        // relative-to-anchor constraints for both inventory menus and
-        // standalone screens. Output is layout-local: BODY panels at x=0
-        // stacking from TITLE_HEIGHT down; relative panels offset from
-        // their anchors and may have negative-x or negative-y coords.
-        // We DON'T mutate this output — the centering math lives in
-        // {@link #recenter} as a leftPos/topPos correction (mirrors the
-        // MenuKitScreen pattern).
-        panelBounds = PanelLayout.resolve(
-                menu.getPanels(), sizes, BODY_GAP, RELATIVE_GAP, TITLE_HEIGHT);
-
-        // Phase 3: Compute total layout extent across ALL visible panels
-        // (BODY + relatives), capture origin for the post-super.init()
-        // centering correction, and derive imageWidth/imageHeight.
-        //
-        // Pre-16h: imageWidth/Height were BODY-only and centering assumed
-        // layout started at (0,0). Layouts with leftOf-anchored panels
-        // produced negative-x bounds that vanilla's centering couldn't
-        // account for, so V5's three-panel row rendered ~30px off-center.
-        //
-        // Post-16h: full-extent imageWidth/Height + leftPos/topPos
-        // correction in recenter() centers the layout's geometric center
-        // on the screen, symmetric on both axes.
-        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE;
-        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE;
-        boolean anyVisible = false;
-        for (Panel panel : menu.getPanels()) {
-            if (!panel.isVisible()) continue;
-            PanelBounds bounds = panelBounds.get(panel.getId());
-            if (bounds == null) continue;
-            anyVisible = true;
-            minX = Math.min(minX, bounds.x());
-            minY = Math.min(minY, bounds.y());
-            maxX = Math.max(maxX, bounds.x() + bounds.width());
-            maxY = Math.max(maxY, bounds.y() + bounds.height());
-        }
-        if (!anyVisible) {
-            // Degenerate case (no visible panels) — pick safe defaults
-            // so vanilla's centering math doesn't underflow.
-            minX = 0; minY = 0; maxX = 176; maxY = 100;
-        }
-
-        this.layoutOriginX = minX;
-        this.layoutOriginY = minY;
-
-        int totalWidth  = maxX - minX;
-        int totalHeight = maxY - minY;
-        imageWidth  = Math.max(totalWidth,  176);  // minimum vanilla width
-        imageHeight = Math.max(totalHeight, 100);  // minimum vanilla height
+        // Phase 16j R1 — delegate to shared PanelTreeLayout primitive.
+        // Min image dims (176×100) are vanilla's container-screen
+        // minimums; PanelTreeLayout clamps totalWidth/Height to those
+        // so vanilla's centering math doesn't underflow even when the
+        // layout itself is smaller. layoutOriginX/Y feed the post-
+        // super.init recenter() correction (see that method's javadoc).
+        var layout = PanelTreeLayout.resolve(
+                menu.getPanels(), this::computePanelSize,
+                BODY_GAP, RELATIVE_GAP, TITLE_HEIGHT,
+                /*minImageWidth=*/ 176, /*minImageHeight=*/ 100);
+        panelBounds = layout.bounds();
+        this.layoutOriginX = layout.layoutOriginX();
+        this.layoutOriginY = layout.layoutOriginY();
+        imageWidth  = layout.totalWidth();
+        imageHeight = layout.totalHeight();
 
         // Position the "Inventory" label relative to the player panel.
         // Vanilla renders inventoryLabel at screen-coords (leftPos +
@@ -477,11 +412,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
             int contentX = leftPos + bounds.x() + PANEL_PADDING;
             int contentY = topPos + bounds.y() + PANEL_PADDING;
             RenderContext ctx = new RenderContext(graphics, contentX, contentY, mouseX, mouseY);
-
-            for (PanelElement element : panel.getElements()) {
-                if (!element.isVisible()) continue;
-                element.render(ctx);
-            }
+            PanelDispatch.renderElements(panel, ctx);
         }
 
     }
