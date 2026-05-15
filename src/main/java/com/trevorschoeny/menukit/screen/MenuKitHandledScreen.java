@@ -320,19 +320,36 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         imageHeight = Math.max(totalHeight, 100);  // minimum vanilla height
 
         // Position the "Inventory" label relative to the player panel.
-        // playerBounds carries the layout-local Y; renderLabels uses
-        // inventoryLabelY relative to topPos, so this lands at the panel's
-        // top edge regardless of the leftPos/topPos correction (which
-        // shifts the entire frame uniformly).
+        // Vanilla renders inventoryLabel at screen-coords (leftPos +
+        // inventoryLabelX, topPos + inventoryLabelY). After recenter()
+        // applies the -layoutOriginX/Y correction, the screen position
+        // of any layout-local point (lx, ly) is (leftPos + lx, topPos +
+        // ly). So to land the label at "8px right of player panel left
+        // edge" and "11px above player panel top edge" — the standard
+        // vanilla offsets — set the label coords to the layout-local
+        // coords of those positions:
+        //
+        //   inventoryLabelX = playerBounds.x() + 8
+        //   inventoryLabelY = playerBounds.y() - 11
+        //
+        // Phase 16h bug fix: previously this formula incorrectly
+        // subtracted layoutOriginY from inventoryLabelY (double-applied
+        // the topPos correction since recenter() already accounts for
+        // it via the topPos shift). That bug pushed the label upward by
+        // |layoutOriginY| pixels — for V5 with layoutOriginY=14, the
+        // label landed 14px too high, overlapping the BODY panel above
+        // the player panel.
+        //
+        // Phase 16h follow-up: with PanelLayout now center-aligning BODY
+        // panels around x=0, playerBounds.x() is no longer 0 — it's
+        // -playerWidth/2. So inventoryLabelX must reflect that to keep
+        // the label aligned with the player panel's left edge (vanilla's
+        // hardcoded 8 would point past the panel). Both axes use the
+        // same playerBounds-relative formula now.
         PanelBounds playerBounds = panelBounds.get("player");
         if (playerBounds != null) {
-            // 11px above the panel: 9px font + 2px gap. After recenter()
-            // shifts topPos by -layoutOriginY, the visual position of
-            // the label is (topPos + inventoryLabelY) = (vanilla_topPos -
-            // layoutOriginY) + (playerBounds.y() - 11). For a layout with
-            // BODY starting at TITLE_HEIGHT and player BODY-stacked
-            // below, this lands the label right above the player panel.
-            this.inventoryLabelY = playerBounds.y() - layoutOriginY - 11;
+            this.inventoryLabelX = playerBounds.x() + 8;
+            this.inventoryLabelY = playerBounds.y() - 11;
         }
     }
 
