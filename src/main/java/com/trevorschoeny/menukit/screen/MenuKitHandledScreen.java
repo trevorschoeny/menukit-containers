@@ -1,6 +1,7 @@
 package com.trevorschoeny.menukit.screen;
 
 import com.trevorschoeny.menukit.core.*;
+import com.trevorschoeny.menukit.input.CursorContinuity;
 import com.trevorschoeny.menukit.mixin.SlotPositionAccessor;
 import com.trevorschoeny.menukit.core.PanelRendering;
 
@@ -59,8 +60,28 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
     // ── Per-Instance Layout State ──────────────────────────────────────
     // Recomputed each frame from the panel tree. No global statics.
 
-    /** Panel ID → computed screen-relative bounds. Rebuilt each frame. */
+    /** Panel ID → computed layout-local bounds. Rebuilt each frame. */
     private Map<String, PanelBounds> panelBounds = new LinkedHashMap<>();
+
+    // ── Phase 16h layout origin for centering correction ───────────────
+    // The leftmost / topmost layout-local coordinate across all visible
+    // panels. Captured during computeLayout, consumed by the
+    // post-super.init() leftPos/topPos correction in {@link #recenter}
+    // — which adjusts the screen origin so the layout's geometric center
+    // lands at screen center, even when relative panels (leftOf/above
+    // anchors) produce negative layout-local coords.
+    //
+    // Mirrors MenuKitScreen's centering formula:
+    //   leftPos = (width - imageWidth) / 2 - layoutOriginX
+    //   topPos  = (height - imageHeight) / 2 - layoutOriginY
+    //
+    // Pre-16h MKC used vanilla AbstractContainerScreen's centering, which
+    // assumes layout starts at (0,0) — broke for V5's leftOf chain. The
+    // 16h fix is symmetric on both axes, matches MK's existing pattern,
+    // and doesn't mutate PanelLayout's output (the prior bounds-shift
+    // workaround did, which coupled layout-output to centering math).
+    private int layoutOriginX = 0;
+    private int layoutOriginY = 0;
 
     // ── Hover Tracking ─────────────────────────────────────────────────
     // Tracks the previously hovered MenuKitSlot to fire enter/exit events.
@@ -92,7 +113,30 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         super(handler, inventory, title);
         // Compute initial layout to set imageWidth/imageHeight before
         // init() runs (which uses them for leftPos/topPos centering).
+        // The recenter() correction lands in init() after super.init().
         computeLayout();
+    }
+
+    /**
+     * Phase 16h — opt this screen into cursor-position preservation
+     * across transitions. Thin chainable wrapper over
+     * {@link CursorContinuity#enableFor}; the canonical mechanism lives
+     * in MK's utility class so the same opt-in path works for any
+     * {@code Screen} (MK standalone screens, MKC handler screens,
+     * vanilla subclasses, third-party screens). See
+     * {@link CursorContinuity} for lifecycle semantics.
+     *
+     * <p>Default off per library-not-platform discipline (§0019).
+     * Consumers chain after {@code super(...)} in their subclass
+     * constructor to opt in. {@code false} is a no-op (Fabric per-screen
+     * listeners aren't cleanly unregisterable — see CursorContinuity's
+     * one-way semantics note).
+     *
+     * @return this screen, for chaining.
+     */
+    protected MenuKitHandledScreen preserveCursorContinuity(boolean preserve) {
+        if (preserve) CursorContinuity.enableFor(this);
+        return this;
     }
 
     @Override
@@ -102,6 +146,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         computeLayout();
         positionSlots();
         super.init(); // sets leftPos = (width - imageWidth) / 2, etc.
+        recenter();   // Phase 16h — apply -layoutOriginX/Y correction
 
         // Build the key dispatch table from the panel tree.
         // Cleared and rebuilt on each init (handles screen resize re-init).
@@ -226,76 +271,91 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         // Phase 2: Resolve panel positions via the shared layout utility.
         // PanelLayout is context-neutral — it handles BODY-stack and
         // relative-to-anchor constraints for both inventory menus and
-        // standalone screens.
+        // standalone screens. Output is layout-local: BODY panels at x=0
+        // stacking from TITLE_HEIGHT down; relative panels offset from
+        // their anchors and may have negative-x or negative-y coords.
+        // We DON'T mutate this output — the centering math lives in
+        // {@link #recenter} as a leftPos/topPos correction (mirrors the
+        // MenuKitScreen pattern).
         panelBounds = PanelLayout.resolve(
                 menu.getPanels(), sizes, BODY_GAP, RELATIVE_GAP, TITLE_HEIGHT);
 
-        // Phase 16h — shift bounds so the leftmost visible panel sits at
-        // x=0 within the layout, then derive imageWidth from the full
-        // post-shift extent (not just the BODY column). This centers
-        // multi-panel layouts properly via AbstractContainerScreen's
-        // {@code leftPos = (width - imageWidth) / 2} formula:
+        // Phase 3: Compute total layout extent across ALL visible panels
+        // (BODY + relatives), capture origin for the post-super.init()
+        // centering correction, and derive imageWidth/imageHeight.
         //
-        // Pre-16h: a layout with leftOf-anchored relative panels had
-        // negative-x bounds, and imageWidth was clamped to the BODY-only
-        // width. Result: leftPos centered on the BODY column's left edge,
-        // not the geometric center of all panels — V5's three-panel row
-        // rendered ~30px off-center.
+        // Pre-16h: imageWidth/Height were BODY-only and centering assumed
+        // layout started at (0,0). Layouts with leftOf-anchored panels
+        // produced negative-x bounds that vanilla's centering couldn't
+        // account for, so V5's three-panel row rendered ~30px off-center.
         //
-        // Post-16h: shifting bounds so minX=0 + widening imageWidth to
-        // cover the rightmost panel makes the layout's geometric center
-        // line up with the screen center on the next render frame, since
-        // panel x-coords + leftPos correctly span the full imageWidth.
-        int minX = Integer.MAX_VALUE;
+        // Post-16h: full-extent imageWidth/Height + leftPos/topPos
+        // correction in recenter() centers the layout's geometric center
+        // on the screen, symmetric on both axes.
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE;
+        boolean anyVisible = false;
         for (Panel panel : menu.getPanels()) {
             if (!panel.isVisible()) continue;
             PanelBounds bounds = panelBounds.get(panel.getId());
             if (bounds == null) continue;
-            if (bounds.x() < minX) minX = bounds.x();
+            anyVisible = true;
+            minX = Math.min(minX, bounds.x());
+            minY = Math.min(minY, bounds.y());
+            maxX = Math.max(maxX, bounds.x() + bounds.width());
+            maxY = Math.max(maxY, bounds.y() + bounds.height());
         }
-        if (minX != Integer.MAX_VALUE && minX != 0) {
-            // Apply -minX shift to all bounds so leftmost panel sits at 0.
-            // Build a new map (PanelBounds is immutable; LinkedHashMap
-            // preserves declaration order so downstream iteration is stable).
-            final int shift = -minX;
-            Map<String, PanelBounds> shifted = new LinkedHashMap<>();
-            for (Map.Entry<String, PanelBounds> e : panelBounds.entrySet()) {
-                PanelBounds b = e.getValue();
-                shifted.put(e.getKey(), new PanelBounds(
-                        b.x() + shift, b.y(), b.width(), b.height()));
-            }
-            panelBounds = shifted;
+        if (!anyVisible) {
+            // Degenerate case (no visible panels) — pick safe defaults
+            // so vanilla's centering math doesn't underflow.
+            minX = 0; minY = 0; maxX = 176; maxY = 100;
         }
 
-        // Phase 3: Derive inventory-specific layout (imageWidth/imageHeight
-        // for AbstractContainerScreen centering; inventoryLabelY positioning).
-        // Widen imageWidth to cover ALL visible panels (post-shift), not
-        // just the BODY column — fixes the multi-panel-row centering
-        // deferral from 16f.
-        int totalRight = 0;
-        int bodyBottomY = TITLE_HEIGHT;
-        for (Panel panel : menu.getPanels()) {
-            if (!panel.isVisible()) continue;
-            PanelBounds bounds = panelBounds.get(panel.getId());
-            if (bounds == null) continue;
-            totalRight = Math.max(totalRight, bounds.x() + bounds.width());
-            // bodyBottomY tracks the deepest BODY panel; relatives can
-            // extend below but the "inventory label" anchors to player
-            // panel specifically (below), so we keep BODY-only for
-            // imageHeight to preserve existing visual chrome behavior.
-            if (panel.getPosition().mode() == PanelPosition.Mode.BODY) {
-                bodyBottomY = Math.max(bodyBottomY, bounds.y() + bounds.height());
-            }
-        }
-        imageWidth = Math.max(totalRight, 176);   // minimum vanilla width
-        imageHeight = Math.max(bodyBottomY, 100); // includes TITLE_HEIGHT
+        this.layoutOriginX = minX;
+        this.layoutOriginY = minY;
 
-        // Position the "Inventory" label relative to the player panel
+        int totalWidth  = maxX - minX;
+        int totalHeight = maxY - minY;
+        imageWidth  = Math.max(totalWidth,  176);  // minimum vanilla width
+        imageHeight = Math.max(totalHeight, 100);  // minimum vanilla height
+
+        // Position the "Inventory" label relative to the player panel.
+        // playerBounds carries the layout-local Y; renderLabels uses
+        // inventoryLabelY relative to topPos, so this lands at the panel's
+        // top edge regardless of the leftPos/topPos correction (which
+        // shifts the entire frame uniformly).
         PanelBounds playerBounds = panelBounds.get("player");
         if (playerBounds != null) {
-            // 11px above the panel: 9px font + 2px gap
-            this.inventoryLabelY = playerBounds.y() - 11;
+            // 11px above the panel: 9px font + 2px gap. After recenter()
+            // shifts topPos by -layoutOriginY, the visual position of
+            // the label is (topPos + inventoryLabelY) = (vanilla_topPos -
+            // layoutOriginY) + (playerBounds.y() - 11). For a layout with
+            // BODY starting at TITLE_HEIGHT and player BODY-stacked
+            // below, this lands the label right above the player panel.
+            this.inventoryLabelY = playerBounds.y() - layoutOriginY - 11;
         }
+    }
+
+    /**
+     * Applies the centering correction to {@code leftPos}/{@code topPos}
+     * so the layout's geometric center lands at screen center even when
+     * relative panels produce negative layout-local coords.
+     *
+     * <p>Formula matches MenuKitScreen.computeLayout:
+     * <pre>
+     *   leftPos = (width - imageWidth)  / 2 - layoutOriginX
+     *   topPos  = (height - imageHeight) / 2 - layoutOriginY
+     * </pre>
+     *
+     * <p>Vanilla AbstractContainerScreen.init sets the unadjusted form;
+     * we apply the {@code -layoutOriginX/Y} term after vanilla's init
+     * and re-apply per-frame in renderBg (since computeLayout may change
+     * imageWidth/Height + layoutOrigin if panel visibility toggles
+     * mid-game).
+     */
+    private void recenter() {
+        this.leftPos = (this.width  - this.imageWidth)  / 2 - this.layoutOriginX;
+        this.topPos  = (this.height - this.imageHeight) / 2 - this.layoutOriginY;
     }
 
     /**
@@ -366,6 +426,8 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         // Recompute layout each frame — cheap, handles visibility toggles
         computeLayout();
         positionSlots();
+        recenter(); // Phase 16h — re-apply centering after layout extent
+                    // may have changed (visibility toggle, panel resize)
 
         // ── Panel backgrounds (screen space) ───────────────────────────
         for (Panel panel : menu.getPanels()) {
