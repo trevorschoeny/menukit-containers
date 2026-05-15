@@ -30,14 +30,11 @@ import net.minecraft.network.codec.StreamCodec;
 
 import java.util.Optional;
 
-import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.MenuProvider;
-import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
@@ -172,9 +169,19 @@ public final class ContractVerification {
                 testMenuType);
     }
 
-    /** Called from {@code MenuKitClient.onInitializeClient()} — screen factory. */
+    /**
+     * Phase 16h: this method previously registered a {@code TestContractScreen}
+     * client factory so the test handler could open as a visible inventory.
+     * That screen was a vestigial intermediate UI — never useful to the
+     * end-user, and on the "Test MKC" flow it flashed for a frame between
+     * the inventory and V5. Verification handler is now server-side only
+     * (see {@link #installTestHandler}); no client factory needed.
+     *
+     * <p>Kept as a no-op stub so existing client-init callers don't have
+     * to track the deletion. Safe to remove once callers update.
+     */
     public static void initClient() {
-        MenuScreens.register(testMenuType, TestContractScreen::new);
+        // intentionally empty
     }
 
     // Phase 14d-2.7 — visual smoke wireups (dialog, scroll, opacity)
@@ -190,17 +197,27 @@ public final class ContractVerification {
     // Helpers
     // ══════════════════════════════════════════════════════════════════════
 
-    /** Opens the test screen for the player. {@code player.containerMenu}
-     *  becomes the {@link TestContractHandler} synchronously. */
-    private static void openTestScreen(ServerPlayer player) {
-        player.openMenu(new MenuProvider() {
-            @Override public Component getDisplayName() {
-                return Component.literal("MenuKit Contract Verification");
-            }
-            @Override public AbstractContainerMenu createMenu(int syncId, Inventory inv, Player p) {
-                return TestContractHandler.create(syncId, inv, testMenuType);
-            }
-        });
+    /**
+     * Installs a {@link TestContractHandler} as {@code player.containerMenu}
+     * for the duration of Phase B contracts. Server-side only — no client
+     * screen is opened, no {@code ClientboundOpenScreenPacket} is sent.
+     *
+     * <p>Phase B contracts read {@code handler.slots} directly server-side;
+     * they never need a visible client screen, and the previous flow's
+     * "open TestContractScreen, run contracts, then open V5" sequence
+     * caused a one-frame flash on the "Test MKC" button path (the
+     * intermediate screen would render before V5's open S2C arrived).
+     *
+     * <p>The {@code syncId} is fixed at {@code 0} because no packets carry
+     * it — vanilla cycles 1..100 for live menus, so 0 is a safe headless
+     * marker that won't collide with anything vanilla generates. The
+     * caller is expected to follow with {@code player.openMenu(...)} for
+     * the real visible screen (which will get its own live syncId).
+     */
+    private static void installTestHandler(ServerPlayer player) {
+        MenuKitScreenHandler handler = TestContractHandler.create(
+                0, player.getInventory(), testMenuType);
+        player.containerMenu = handler;
     }
 
     // Phase 14d-2.7 — openElementDemoScreen + ElementDemoHandler/Screen
@@ -227,10 +244,10 @@ public final class ContractVerification {
     // open, so we reliably start on inventoryMenu.
     //
     // Composability and Uniform need vanilla evidence, so their Phase A
-    // runs BEFORE openTestScreen — that's the only window when
+    // runs BEFORE installTestHandler — that's the only window when
     // player.inventoryMenu is observable through the command path. After
-    // openTestScreen, player.containerMenu points at the test handler and
-    // Phase B runs against it.
+    // installTestHandler, player.containerMenu points at the test handler
+    // and Phase B runs against it.
     //
     // Substitutability, SyncSafety, Inertness are single-phase MK probes
     // that all run after open.
@@ -246,10 +263,10 @@ public final class ContractVerification {
      * {@code RunAllAndOpenHubC2SPayload}'s server handler).
      *
      * <p>Leaves {@code player.containerMenu} pointing at the
-     * {@link TestContractHandler} (the test screen opens partway
-     * through). Validator's aggregator scenarios then read
-     * {@link Player#inventoryMenu} directly so they're unaffected by
-     * that state change.
+     * {@link TestContractHandler} (installed server-side partway
+     * through, no visible client screen). Validator's aggregator
+     * scenarios then read {@link Player#inventoryMenu} directly so
+     * they're unaffected by that state change.
      */
     public static int runAll(ServerPlayer player) {
         LOGGER.info("[Verify] BEGIN — runAll — running all thirteen contracts");
@@ -264,8 +281,8 @@ public final class ContractVerification {
         composabilityPhaseA(player);
         uniformPhaseA(player);
 
-        // ── Switch to test handler ──────────────────────────────────────
-        openTestScreen(player);
+        // ── Switch to test handler (server-side only) ───────────────────
+        installTestHandler(player);
         MenuKitScreenHandler handler = (MenuKitScreenHandler) player.containerMenu;
 
         // ── MK phases ───────────────────────────────────────────────────
@@ -278,7 +295,7 @@ public final class ContractVerification {
         LOGGER.info("[Verify] END — thirteen contracts checked. Scan log for VERDICT lines.");
 
         player.displayClientMessage(
-                Component.literal("[Verify] All contracts — see log. Test screen is now open."),
+                Component.literal("[Verify] All contracts — see log."),
                 false);
         return 1;
     }
