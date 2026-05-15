@@ -23,6 +23,18 @@ public class StorageContainerAdapter implements Container {
         this.storage = storage;
     }
 
+    /**
+     * Returns the backing {@link Storage}. Exposed so internal MKC paths
+     * (notably the M1 {@code ContainerKeyResolver}) can introspect the
+     * storage's nature — e.g., check whether it's a {@link KeyedStorage}
+     * — without going through the vanilla {@link Container} interface.
+     * Consumer code should generally NOT reach for this; the vanilla
+     * {@link Container} surface is the right one for almost all uses.
+     */
+    public Storage getStorage() {
+        return storage;
+    }
+
     @Override public int getContainerSize() { return storage.size(); }
 
     @Override

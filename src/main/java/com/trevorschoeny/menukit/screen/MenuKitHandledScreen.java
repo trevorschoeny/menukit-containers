@@ -145,6 +145,15 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
      * <p>Element bounds contribute so that panels with only elements (no slot
      * groups) render at a meaningful size — not just the 2×padding default
      * that the slot-only computation would produce.
+     *
+     * <p><b>Phase 16h pinned-dim fix:</b> if the panel declares a pinned
+     * width via {@link Panel#size(int,int)} / {@link Panel#pinnedWidth(int)},
+     * that pinned content extent overrides the slot+element max for that
+     * axis (consumer set a hard budget). Same for pinned height. This
+     * mirrors the MK-side {@code MenuKitScreen.computePanelSize} fix from
+     * 16g and is what makes Panel auto-wrap + auto-scroll fire on MKC
+     * panels too — without it, MKC panels with pinned dims would still
+     * be sized by the slot+element math, ignoring the consumer's pin.
      */
     private int[] computePanelSize(Panel panel) {
         int maxCols = 0;
@@ -177,8 +186,19 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
             elementContentHeight = Math.max(elementContentHeight, element.getChildY() + element.getHeight());
         }
 
-        int width  = Math.max(slotContentWidth,  elementContentWidth)  + 2 * PANEL_PADDING;
-        int height = Math.max(slotContentHeight, elementContentHeight) + 2 * PANEL_PADDING;
+        // Phase 16h — honor pinned dims when set; fall back to slot+element
+        // max otherwise. Consumer's explicit pin wins over the auto-sized
+        // computation (matches MK-side behavior + the existing M5 contract).
+        int autoContentWidth  = Math.max(slotContentWidth,  elementContentWidth);
+        int autoContentHeight = Math.max(slotContentHeight, elementContentHeight);
+
+        int pinnedW = panel.getPinnedWidth();
+        int pinnedH = panel.getPinnedHeight();
+        int contentWidth  = (pinnedW >= 0) ? pinnedW : autoContentWidth;
+        int contentHeight = (pinnedH >= 0) ? pinnedH : autoContentHeight;
+
+        int width  = contentWidth  + 2 * PANEL_PADDING;
+        int height = contentHeight + 2 * PANEL_PADDING;
         return new int[]{width, height};
     }
 
@@ -210,19 +230,64 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         panelBounds = PanelLayout.resolve(
                 menu.getPanels(), sizes, BODY_GAP, RELATIVE_GAP, TITLE_HEIGHT);
 
+        // Phase 16h — shift bounds so the leftmost visible panel sits at
+        // x=0 within the layout, then derive imageWidth from the full
+        // post-shift extent (not just the BODY column). This centers
+        // multi-panel layouts properly via AbstractContainerScreen's
+        // {@code leftPos = (width - imageWidth) / 2} formula:
+        //
+        // Pre-16h: a layout with leftOf-anchored relative panels had
+        // negative-x bounds, and imageWidth was clamped to the BODY-only
+        // width. Result: leftPos centered on the BODY column's left edge,
+        // not the geometric center of all panels — V5's three-panel row
+        // rendered ~30px off-center.
+        //
+        // Post-16h: shifting bounds so minX=0 + widening imageWidth to
+        // cover the rightmost panel makes the layout's geometric center
+        // line up with the screen center on the next render frame, since
+        // panel x-coords + leftPos correctly span the full imageWidth.
+        int minX = Integer.MAX_VALUE;
+        for (Panel panel : menu.getPanels()) {
+            if (!panel.isVisible()) continue;
+            PanelBounds bounds = panelBounds.get(panel.getId());
+            if (bounds == null) continue;
+            if (bounds.x() < minX) minX = bounds.x();
+        }
+        if (minX != Integer.MAX_VALUE && minX != 0) {
+            // Apply -minX shift to all bounds so leftmost panel sits at 0.
+            // Build a new map (PanelBounds is immutable; LinkedHashMap
+            // preserves declaration order so downstream iteration is stable).
+            final int shift = -minX;
+            Map<String, PanelBounds> shifted = new LinkedHashMap<>();
+            for (Map.Entry<String, PanelBounds> e : panelBounds.entrySet()) {
+                PanelBounds b = e.getValue();
+                shifted.put(e.getKey(), new PanelBounds(
+                        b.x() + shift, b.y(), b.width(), b.height()));
+            }
+            panelBounds = shifted;
+        }
+
         // Phase 3: Derive inventory-specific layout (imageWidth/imageHeight
         // for AbstractContainerScreen centering; inventoryLabelY positioning).
-        int bodyWidth = 0;
+        // Widen imageWidth to cover ALL visible panels (post-shift), not
+        // just the BODY column — fixes the multi-panel-row centering
+        // deferral from 16f.
+        int totalRight = 0;
         int bodyBottomY = TITLE_HEIGHT;
         for (Panel panel : menu.getPanels()) {
             if (!panel.isVisible()) continue;
-            if (panel.getPosition().mode() != PanelPosition.Mode.BODY) continue;
             PanelBounds bounds = panelBounds.get(panel.getId());
             if (bounds == null) continue;
-            bodyWidth = Math.max(bodyWidth, bounds.width());
-            bodyBottomY = Math.max(bodyBottomY, bounds.y() + bounds.height());
+            totalRight = Math.max(totalRight, bounds.x() + bounds.width());
+            // bodyBottomY tracks the deepest BODY panel; relatives can
+            // extend below but the "inventory label" anchors to player
+            // panel specifically (below), so we keep BODY-only for
+            // imageHeight to preserve existing visual chrome behavior.
+            if (panel.getPosition().mode() == PanelPosition.Mode.BODY) {
+                bodyBottomY = Math.max(bodyBottomY, bounds.y() + bounds.height());
+            }
         }
-        imageWidth = Math.max(bodyWidth, 176);   // minimum vanilla width
+        imageWidth = Math.max(totalRight, 176);   // minimum vanilla width
         imageHeight = Math.max(bodyBottomY, 100); // includes TITLE_HEIGHT
 
         // Position the "Inventory" label relative to the player panel

@@ -1,6 +1,8 @@
 package com.trevorschoeny.menukit.state;
 
+import com.trevorschoeny.menukit.core.KeyedStorage;
 import com.trevorschoeny.menukit.core.PersistentContainerKey;
+import com.trevorschoeny.menukit.core.StorageContainerAdapter;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
@@ -28,6 +30,18 @@ final class ContainerKeyResolver {
 
     static Optional<PersistentContainerKey> resolve(Container container) {
         if (container == null) return Optional.empty();
+
+        // Phase 16h — MKC custom-panel storage that knows its own key.
+        // Checked before the vanilla cases so consumers using a
+        // KeyedStorage-backed StorageContainerAdapter get their declared
+        // key honored even when the storage is sitting in a slot the
+        // resolver would otherwise route to a vanilla case (this case is
+        // narrow today but keeps the contract explicit: KeyedStorage wins
+        // if present).
+        if (container instanceof StorageContainerAdapter adapter
+                && adapter.getStorage() instanceof KeyedStorage keyed) {
+            return Optional.of(keyed.storageKey());
+        }
 
         // Player's main inventory (survival inventory, hotbar, armor, offhand).
         if (container instanceof Inventory inv) {
