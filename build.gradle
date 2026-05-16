@@ -17,6 +17,7 @@
 plugins {
     id 'fabric-loom' version '1.14-SNAPSHOT'
     id 'java-library'
+    id 'com.modrinth.minotaur' version '2.+'
 }
 
 version = property('mod_version')
@@ -65,7 +66,20 @@ jar {
     from('LICENSE') { rename { "${it}_${project.name}" } }
 }
 
-// Modrinth publishing intentionally not configured here. Per Lead's brief:
-// "No github work in 16a... post-16a." Same applies to the menukit-containers
-// Modrinth project (does not exist yet). Add a `modrinth { ... }` block
-// alongside the plugin import here when the project ID is provisioned.
+// ── Modrinth Publishing ────────────────────────────────────────────────
+// MKC Modrinth project created Phase 17 (2026-05-15); project ID xQUBXV8I.
+// Declares MenuKit as a required dependency per §0042 (MKC depends on MK).
+modrinth {
+    token = System.getenv("MODRINTH_TOKEN")
+    projectId = "xQUBXV8I"
+    versionNumber = property('mod_version')
+    versionName = "MenuKit: Containers ${property('mod_version')}"
+    versionType = "release"
+    uploadFile = remapJar
+    gameVersions = [property('minecraft_version')]
+    loaders = ["fabric"]
+    dependencies {
+        required.project "fabric-api"
+        required.project "menukit"
+    }
+}
