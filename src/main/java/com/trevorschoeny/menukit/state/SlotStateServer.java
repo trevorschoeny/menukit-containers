@@ -17,6 +17,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import org.jspecify.annotations.Nullable;
 
 import java.util.UUID;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Server-side persistence facade. Resolves a {@link PersistentContainerKey}
@@ -27,6 +28,7 @@ import java.util.UUID;
  * Modded variants stub to no-op (reads return null, writes are silent).
  * F1 + F2 exercise the PlayerInventory + BlockEntity paths.
  */
+@ApiStatus.Internal
 public final class SlotStateServer {
 
     private SlotStateServer() {}

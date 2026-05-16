@@ -5,6 +5,7 @@ import com.trevorschoeny.menukit.state.SlotStateHooks;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.players.PlayerList;
 import net.minecraft.world.entity.Entity;
+import org.jetbrains.annotations.ApiStatus;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -16,6 +17,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * {@code ServerPlayer}; without this hook the player's inventory locks (F1)
  * would show empty until the next menu open.
  */
+@ApiStatus.Internal
 @Mixin(PlayerList.class)
 public abstract class PlayerListRespawnMixin {
 

@@ -3,6 +3,7 @@ package com.trevorschoeny.menukit.state;
 import net.fabricmc.fabric.api.attachment.v1.AttachmentRegistry;
 import net.fabricmc.fabric.api.attachment.v1.AttachmentType;
 import net.minecraft.resources.Identifier;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Library-owned Fabric attachments for M1 per-slot state. Four attachment
@@ -24,6 +25,7 @@ import net.minecraft.resources.Identifier;
  * own {@code CODEC}; no custom initializer is registered (the library's
  * server facade lazy-creates bags on first write).
  */
+@ApiStatus.Internal
 public final class SlotStateAttachments {
 
     private static final String MOD_ID = "menukit";

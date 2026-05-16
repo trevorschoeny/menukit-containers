@@ -5,6 +5,7 @@ import com.trevorschoeny.menukit.verification.ContractVerification;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import org.jetbrains.annotations.ApiStatus;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -31,6 +32,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * <p>Part of the contract-verification harness. Lives in the repo so each
  * phase can re-run verification cheaply after refactoring.
  */
+@ApiStatus.Internal
 @Mixin(Slot.class)
 public class VerifyMayPlaceMixin {
 

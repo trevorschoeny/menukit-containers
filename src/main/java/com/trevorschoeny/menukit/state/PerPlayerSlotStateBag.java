@@ -4,6 +4,7 @@ import com.mojang.serialization.Codec;
 import net.minecraft.nbt.CompoundTag;
 
 import java.util.UUID;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Per-player-per-owner state bag — wraps a {@link CompoundTag} whose keys are
@@ -15,6 +16,7 @@ import java.util.UUID;
  * storage-shape tradeoff): dropping the UUID layer promotes shared channels
  * without a data rewrite.
  */
+@ApiStatus.Internal
 public final class PerPlayerSlotStateBag {
 
     /** Codec that round-trips the bag to/from a CompoundTag. */

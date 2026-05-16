@@ -13,6 +13,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
 import java.util.Optional;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Resolves a {@link Container} to a {@link PersistentContainerKey}. Used by
@@ -24,6 +25,7 @@ import java.util.Optional;
  * and the library falls back to session-scoped state only (matches pre-M1
  * behavior for those containers).
  */
+@ApiStatus.Internal
 final class ContainerKeyResolver {
 
     private ContainerKeyResolver() {}

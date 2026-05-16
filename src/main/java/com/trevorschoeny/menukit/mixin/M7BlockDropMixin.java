@@ -6,6 +6,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import org.jetbrains.annotations.ApiStatus;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -41,6 +42,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * rather than {@code blockScoped(...)} — only blockScoped attachments
  * enroll in the registry this mixin dispatches against.
  */
+@ApiStatus.Internal
 @Mixin(BlockEntity.class)
 public abstract class M7BlockDropMixin {
 

@@ -9,6 +9,7 @@ import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Client → Server write request. Carries the channel id, the menu-relative
@@ -17,6 +18,7 @@ import net.minecraft.resources.Identifier;
  * {@code player.containerMenu.slots.get(menuSlotIndex)} and extracts the
  * container-relative index for storage.
  */
+@ApiStatus.Internal
 public record SlotStateUpdateC2SPayload(Identifier channelId, int menuSlotIndex, Tag encodedValue)
         implements CustomPacketPayload {
 

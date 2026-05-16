@@ -10,6 +10,7 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.Items;
 import org.lwjgl.glfw.GLFW;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * MenuKit-native test handler for contract verification. Three panels, each
@@ -33,6 +34,7 @@ import org.lwjgl.glfw.GLFW;
  * to produce empirical evidence that MenuKit's five canonical guarantees
  * hold. Kept in the repo so each phase can re-run verification cheaply.
  */
+@ApiStatus.Internal
 public final class TestContractHandler {
 
     private TestContractHandler() {}

@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.WeakHashMap;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Client-side session cache for per-slot state. Populated by snapshot + update
@@ -26,6 +27,7 @@ import java.util.WeakHashMap;
  * <p>Values are the decoded consumer-typed objects (not raw {@link Tag}s) so
  * reads don't pay the decode cost per frame.
  */
+@ApiStatus.Internal
 public final class SlotStateClientCache {
 
     // WeakHashMap outer so container refs GC with menu close; synchronized

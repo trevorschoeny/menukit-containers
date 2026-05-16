@@ -8,6 +8,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 
 import java.util.List;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Server → Client bulk delivery of per-slot state, sent in two contexts:
@@ -24,6 +25,7 @@ import java.util.List;
  * addressing). Entries with unregistered channel IDs are preserved as opaque
  * {@code Tag}s in the client cache — unknown channels don't crash.
  */
+@ApiStatus.Internal
 public record SlotStateSnapshotS2CPayload(int menuId, List<Entry> entries)
         implements CustomPacketPayload {
 

@@ -21,6 +21,7 @@ import net.minecraft.world.inventory.Slot;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Wiring for M1 network payloads + player-join snapshot delivery.
@@ -28,6 +29,7 @@ import java.util.Optional;
  * per-call flows are static helpers so mixins and event callbacks can invoke
  * them without instance management.
  */
+@ApiStatus.Internal
 public final class SlotStateHooks {
 
     private SlotStateHooks() {}

@@ -43,6 +43,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Contract-verification orchestrator. Registers a test MenuType, a test
@@ -105,6 +106,7 @@ import org.slf4j.LoggerFactory;
  * their bodies on {@link #isActive()} — armed only within the probe bodies
  * that need the mixin's behavior. Outside verification, they're no-ops.
  */
+@ApiStatus.Internal
 public final class ContractVerification {
 
     private ContractVerification() {}

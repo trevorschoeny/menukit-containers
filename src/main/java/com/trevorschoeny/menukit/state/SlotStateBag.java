@@ -6,6 +6,7 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.resources.Identifier;
 
 import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Per-owner slot state bag — holds channel state for all registered channels
@@ -31,6 +32,7 @@ import org.jspecify.annotations.Nullable;
  * backing {@link CompoundTag} via the attachment's codec; library-side sync
  * uses a dedicated packet path (no {@code syncWith} auto-sync).
  */
+@ApiStatus.Internal
 public final class SlotStateBag {
 
     /** Codec that round-trips the bag to/from a CompoundTag (attachment persistence). */

@@ -14,12 +14,14 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Internal registry for M1 channels + container resolvers. Not public API —
  * consumers reach it indirectly via
  * {@link com.trevorschoeny.menukit.core.MKSlotState}.
  */
+@ApiStatus.Internal
 public final class SlotStateRegistry {
 
     private SlotStateRegistry() {}

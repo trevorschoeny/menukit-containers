@@ -8,6 +8,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Server → Client mutation broadcast. Carries the channel id, the
@@ -21,6 +22,7 @@ import net.minecraft.server.level.ServerPlayer;
  * shared-state will expand this to broadcast across all observers of a
  * container.
  */
+@ApiStatus.Internal
 public record SlotStateUpdateS2CPayload(Identifier channelId, int containerSlotIndex, Tag encodedValue)
         implements CustomPacketPayload {
 

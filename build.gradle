@@ -47,6 +47,11 @@ dependencies {
     // through a single project dependency. Requires the `java-library`
     // plugin (above) to expose the `api` configuration.
     api project(path: ':menukit', configuration: 'namedElements')
+
+    // @ApiStatus.Internal markers. Compile-only so consumers don't transitively
+    // depend on jetbrains-annotations at runtime; the annotation is a doc/IDE
+    // signal, never required at execution time.
+    compileOnly 'org.jetbrains:annotations:24.1.0'
 }
 
 loom {

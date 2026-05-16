@@ -4,6 +4,7 @@ import com.trevorschoeny.menukit.state.SlotStateHooks;
 
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.MenuProvider;
+import org.jetbrains.annotations.ApiStatus;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -21,6 +22,7 @@ import java.util.OptionalInt;
  * player-join handler (see {@code SlotStateHooks.registerServer}) — this
  * mixin covers every other container (chests, furnaces, donkeys, etc.).
  */
+@ApiStatus.Internal
 @Mixin(ServerPlayer.class)
 public abstract class PlayerOpenMenuMixin {
 
