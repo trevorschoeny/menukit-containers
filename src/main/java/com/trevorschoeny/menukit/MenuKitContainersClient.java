@@ -1,6 +1,7 @@
 package com.trevorschoeny.menukit;
 
 import net.fabricmc.api.ClientModInitializer;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Client-side entry point for the MenuKit: Containers artifact.
@@ -21,6 +22,7 @@ import net.fabricmc.api.ClientModInitializer;
  * {@code SlotGroupPanelRegistry.init()} moved to {@code MenuKitClient} —
  * those are observation idioms, complete on MK's side.
  */
+@ApiStatus.Internal
 public class MenuKitContainersClient implements ClientModInitializer {
 
     @Override

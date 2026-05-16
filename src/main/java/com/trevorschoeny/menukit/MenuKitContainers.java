@@ -3,6 +3,7 @@ package com.trevorschoeny.menukit;
 import net.fabricmc.api.ModInitializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Mod entry point for the {@code menukit-containers} artifact —
@@ -46,6 +47,7 @@ import org.slf4j.LoggerFactory;
  *       {@code com.trevorschoeny.menukit.verification.ContractVerification}</li>
  * </ul>
  */
+@ApiStatus.Internal
 public class MenuKitContainers implements ModInitializer {
 
     /** Logger for the MenuKit: Containers artifact — distinct from MenuKit's
