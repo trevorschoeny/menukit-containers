@@ -44,7 +44,13 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
     private static final Logger LOGGER = LoggerFactory.getLogger("MenuKit");
 
     // ── Layout Constants ───────────────────────────────────────────────
-    /** Padding inside each panel (pixels from panel edge to slot backgrounds). */
+    /**
+     * Padding inside each styled panel (pixels from panel edge to slot
+     * backgrounds / elements). Phase 18r — actual padding applied is
+     * style-conditional via {@link Panel#interiorPadding()}: this value for
+     * styled panels (RAISED / DARK / INSET), {@code 0} for
+     * {@link PanelStyle#NONE}. Constant retained for documentation only.
+     */
     private static final int PANEL_PADDING = 7;
     /** Size of one slot cell (18x18: 16px item + 1px border each side). */
     private static final int SLOT_SIZE = 18;
@@ -218,8 +224,12 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         int contentWidth  = (pinnedW >= 0) ? pinnedW : autoContentWidth;
         int contentHeight = (pinnedH >= 0) ? pinnedH : autoContentHeight;
 
-        int width  = contentWidth  + 2 * PANEL_PADDING;
-        int height = contentHeight + 2 * PANEL_PADDING;
+        // Phase 18r — padding is style-conditional via Panel.interiorPadding()
+        // (0 for PanelStyle.NONE, PANEL_PADDING otherwise) so NONE panels
+        // report element edge = panel edge.
+        int padding = panel.interiorPadding();
+        int width  = contentWidth  + 2 * padding;
+        int height = contentHeight + 2 * padding;
         return new int[]{width, height};
     }
 
@@ -340,11 +350,14 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
                     Slot slot = menu.slots.get(s);
                     if (bounds != null && panel.isVisible()) {
                         // +1 offset: slot.x/y point to the 16x16 item area,
-                        // which starts 1px inside the 18x18 slot background
+                        // which starts 1px inside the 18x18 slot background.
+                        // Phase 18r — padding is style-conditional per
+                        // Panel.interiorPadding().
+                        int padding = panel.interiorPadding();
                         ((SlotPositionAccessor) slot).menuKit$setX(
-                                bounds.x() + PANEL_PADDING + col * SLOT_SIZE + 1);
+                                bounds.x() + padding + col * SLOT_SIZE + 1);
                         ((SlotPositionAccessor) slot).menuKit$setY(
-                                bounds.y() + PANEL_PADDING + groupOffsetY
+                                bounds.y() + padding + groupOffsetY
                                         + row * SLOT_SIZE + extraY + 1);
                     } else {
                         // Hidden — move off screen so vanilla ignores them
@@ -409,8 +422,9 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
             PanelBounds bounds = panelBounds.get(panel.getId());
             if (bounds == null) continue;
 
-            int contentX = leftPos + bounds.x() + PANEL_PADDING;
-            int contentY = topPos + bounds.y() + PANEL_PADDING;
+            int padding = panel.interiorPadding();
+            int contentX = leftPos + bounds.x() + padding;
+            int contentY = topPos + bounds.y() + padding;
             RenderContext ctx = new RenderContext(graphics, contentX, contentY, mouseX, mouseY);
             PanelDispatch.renderElements(panel, ctx);
 
@@ -805,8 +819,9 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
             PanelBounds bounds = panelBounds.get(panel.getId());
             if (bounds == null) continue;
 
-            int contentX = leftPos + bounds.x() + PANEL_PADDING;
-            int contentY = topPos + bounds.y() + PANEL_PADDING;
+            int padding = panel.interiorPadding();
+            int contentX = leftPos + bounds.x() + padding;
+            int contentY = topPos + bounds.y() + padding;
 
             for (PanelElement element : panel.getElements()) {
                 if (!element.isVisible()) continue;
@@ -878,8 +893,9 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
             PanelBounds bounds = panelBounds.get(panel.getId());
             if (bounds == null) continue;
 
-            int contentX = leftPos + bounds.x() + PANEL_PADDING;
-            int contentY = topPos + bounds.y() + PANEL_PADDING;
+            int padding = panel.interiorPadding();
+            int contentX = leftPos + bounds.x() + padding;
+            int contentY = topPos + bounds.y() + padding;
 
             for (PanelElement element : panel.getElements()) {
                 if (!element.isVisible()) continue;
