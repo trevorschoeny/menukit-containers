@@ -413,6 +413,15 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
             int contentY = topPos + bounds.y() + PANEL_PADDING;
             RenderContext ctx = new RenderContext(graphics, contentX, contentY, mouseX, mouseY);
             PanelDispatch.renderElements(panel, ctx);
+
+            // Panel-level tooltip — fires over the panel's outer bounds.
+            // Queued AFTER element render (last-call-wins for
+            // setTooltipForNextFrame); panel tooltip takes precedence over
+            // child tooltips when both are configured + cursor overlaps.
+            panel.maybeQueueTooltip(graphics,
+                    leftPos + bounds.x(), topPos + bounds.y(),
+                    bounds.width(), bounds.height(),
+                    mouseX, mouseY, ctx.hasMouseInput());
         }
 
     }
