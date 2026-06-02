@@ -4,6 +4,7 @@
   "package": "com.trevorschoeny.menukit.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "AbstractContainerMenuInvoker",
     "VerifyMayPlaceMixin",
     "VerifyGetItemMixin",
     "PlayerOpenMenuMixin",

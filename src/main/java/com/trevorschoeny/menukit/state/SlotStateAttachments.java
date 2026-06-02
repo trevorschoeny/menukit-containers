@@ -59,6 +59,20 @@ public final class SlotStateAttachments {
                             MOD_ID, "slot_state_entity"));
 
     /**
+     * On {@code Player}, for player-scoped {@code Modded} graft keys (§0045 —
+     * IP Pockets / Equipment Slots). Holds a resolver-id-namespaced map of
+     * bags so distinct grafts (and distinct mods) on the same player don't
+     * collide on slot index. Distinct from {@link #PLAYER_INVENTORY} so
+     * grafted-slot metadata never overwrites real-inventory metadata.
+     */
+    public static final AttachmentType<NamespacedSlotStateBag> MODDED_PLAYER =
+            AttachmentRegistry.<NamespacedSlotStateBag>builder()
+                    .persistent(NamespacedSlotStateBag.CODEC)
+                    .initializer(NamespacedSlotStateBag::new)
+                    .buildAndRegister(Identifier.fromNamespaceAndPath(
+                            MOD_ID, "slot_state_modded_player"));
+
+    /**
      * Triggers class loading so the static field initializers above run.
      * Callable from both server- and client-init contexts.
      */

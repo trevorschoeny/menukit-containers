@@ -1,9 +1,11 @@
 package com.trevorschoeny.menukit.state;
 
 import com.mojang.serialization.Codec;
+import com.trevorschoeny.menukit.core.KeyedStorages;
 import com.trevorschoeny.menukit.core.PersistentContainerKey;
 import com.trevorschoeny.menukit.core.SlotStateChannel;
 
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.Identifier;
@@ -130,12 +132,51 @@ public final class SlotStateServer {
             return null;
         }
 
-        if (key instanceof PersistentContainerKey.Modded) {
-            // v1: stub. Modded resolver + attachment-binding paths aren't
-            // wired through yet. Consumers that register a modded resolver
-            // get the key constructed correctly; persistence for that key
-            // falls through here until the binding path lands.
-            return null;
+        if (key instanceof PersistentContainerKey.Modded modded) {
+            // §0045: player-scoped grafted slots (IP Pockets / Equipment Slots).
+            // Keys produced by KeyedStorages.player(...) encode the owning
+            // player in the payload; resolve to a resolver-id-namespaced bag on
+            // that player. Consumer-rolled Modded keys without the library scope
+            // marker still fall through to null (the general modded-resolver
+            // path remains future work — see §0045 review trigger).
+            CompoundTag payload = modded.payload();
+            String scope = payload.getStringOr(KeyedStorages.SCOPE_KEY, "");
+            String ownerStr = payload.getStringOr(KeyedStorages.OWNER_KEY, "");
+            if (!KeyedStorages.SCOPE_PLAYER.equals(scope)) return null;
+            if (ownerStr.isEmpty()) return null;
+            UUID ownerId;
+            try {
+                ownerId = UUID.fromString(ownerStr);
+            } catch (IllegalArgumentException e) {
+                return null;
+            }
+            // The viewer IS the owner for player-scoped grafts (you view your
+            // own pockets). Prefer it directly when it matches — at connection
+            // JOIN (the inventory-menu snapshot path) the player isn't in the
+            // server player-list yet, so findOnlinePlayer returns null even
+            // though we already hold the player object.
+            ServerPlayer target;
+            if (viewer instanceof ServerPlayer sp && sp.getUUID().equals(ownerId)) {
+                target = sp;
+            } else {
+                target = findOnlinePlayer(server, ownerId);
+            }
+            if (target == null) return null;
+            NamespacedSlotStateBag bags =
+                    target.getAttachedOrCreate(SlotStateAttachments.MODDED_PLAYER);
+            if (forWrite) {
+                // Match the M7 content pattern (which persists+loads correctly):
+                // replace the attached value with a FRESH copy and re-register
+                // it via setAttached. Fabric only tracks attachments updated to
+                // a new value — bare in-place mutation of the existing instance
+                // (or setAttached of the same reference) is not seen as a change
+                // and fails to round-trip on load
+                // (docs.fabricmc.net/develop/data-attachments). The subsequent
+                // write lands on this now-attached fresh copy.
+                bags = new NamespacedSlotStateBag(bags.backing().copy());
+                target.setAttached(SlotStateAttachments.MODDED_PLAYER, bags);
+            }
+            return bags.getOrCreate(modded.resolverId());
         }
 
         return null;
