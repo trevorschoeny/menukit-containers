@@ -97,16 +97,35 @@ public final class SlotStateServer {
             if (lvl instanceof ServerLevel sl) server = sl.getServer();
         }
 
+        // Persistence note for all player/BE branches below: writes go through a
+        // FRESH value + setAttached, not in-place mutation of the existing
+        // attachment instance — Fabric only tracks attachments updated to a new
+        // value, so bare in-place mutation saves to disk but fails to round-trip
+        // on load (docs.fabricmc.net/develop/data-attachments). And player-scoped
+        // keys resolve the owner via resolvePlayer (prefers the held viewer),
+        // because at connection JOIN the player isn't in the server player-list
+        // yet and a UUID lookup returns null. Both first surfaced in §0045.
+
         if (key instanceof PersistentContainerKey.PlayerInventory pi) {
-            ServerPlayer target = findOnlinePlayer(server, pi.playerId());
+            ServerPlayer target = resolvePlayer(server, viewer, pi.playerId());
             if (target == null) return null;
-            return target.getAttachedOrCreate(SlotStateAttachments.PLAYER_INVENTORY);
+            SlotStateBag bag = target.getAttachedOrCreate(SlotStateAttachments.PLAYER_INVENTORY);
+            if (forWrite) {
+                bag = new SlotStateBag(bag.backing().copy());
+                target.setAttached(SlotStateAttachments.PLAYER_INVENTORY, bag);
+            }
+            return bag;
         }
 
         if (key instanceof PersistentContainerKey.EnderChest ec) {
-            ServerPlayer target = findOnlinePlayer(server, ec.playerId());
+            ServerPlayer target = resolvePlayer(server, viewer, ec.playerId());
             if (target == null) return null;
-            return target.getAttachedOrCreate(SlotStateAttachments.ENDER_CHEST);
+            SlotStateBag bag = target.getAttachedOrCreate(SlotStateAttachments.ENDER_CHEST);
+            if (forWrite) {
+                bag = new SlotStateBag(bag.backing().copy());
+                target.setAttached(SlotStateAttachments.ENDER_CHEST, bag);
+            }
+            return bag;
         }
 
         if (key instanceof PersistentContainerKey.BlockEntityKey bek) {
@@ -119,8 +138,12 @@ public final class SlotStateServer {
             if (viewerId == null) return null;
             PerPlayerSlotStateBag perPlayer =
                     be.getAttachedOrCreate(SlotStateAttachments.BLOCK_ENTITY);
-            // Mark the BE dirty so the attachment gets saved with the chunk.
-            be.setChanged();
+            if (forWrite) {
+                perPlayer = new PerPlayerSlotStateBag(perPlayer.backing().copy());
+                be.setAttached(SlotStateAttachments.BLOCK_ENTITY, perPlayer);
+                // Mark the BE dirty so the attachment gets saved with the chunk.
+                be.setChanged();
+            }
             return perPlayer.getOrCreate(viewerId);
         }
 
@@ -150,17 +173,7 @@ public final class SlotStateServer {
             } catch (IllegalArgumentException e) {
                 return null;
             }
-            // The viewer IS the owner for player-scoped grafts (you view your
-            // own pockets). Prefer it directly when it matches — at connection
-            // JOIN (the inventory-menu snapshot path) the player isn't in the
-            // server player-list yet, so findOnlinePlayer returns null even
-            // though we already hold the player object.
-            ServerPlayer target;
-            if (viewer instanceof ServerPlayer sp && sp.getUUID().equals(ownerId)) {
-                target = sp;
-            } else {
-                target = findOnlinePlayer(server, ownerId);
-            }
+            ServerPlayer target = resolvePlayer(server, viewer, ownerId);
             if (target == null) return null;
             NamespacedSlotStateBag bags =
                     target.getAttachedOrCreate(SlotStateAttachments.MODDED_PLAYER);
@@ -180,6 +193,18 @@ public final class SlotStateServer {
         }
 
         return null;
+    }
+
+    /**
+     * Resolves the owning player for a player-scoped key. Prefers the viewer we
+     * already hold when its UUID matches — at connection JOIN (the player-join
+     * snapshot read) the player isn't in the server player-list yet, so a bare
+     * UUID lookup returns null and the read silently fails (§0045).
+     */
+    private static @Nullable ServerPlayer resolvePlayer(@Nullable MinecraftServer server,
+                                                        @Nullable Player viewer, UUID ownerId) {
+        if (viewer instanceof ServerPlayer sp && sp.getUUID().equals(ownerId)) return sp;
+        return findOnlinePlayer(server, ownerId);
     }
 
     private static @Nullable ServerPlayer findOnlinePlayer(@Nullable MinecraftServer server, UUID uuid) {
