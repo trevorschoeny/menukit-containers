@@ -115,9 +115,10 @@ public final class MenuKitGraftInput {
         for (Slot slot : menu.slots) {
             if (!(slot instanceof MenuKitSlot mk) || mk.isInert()) continue;
 
-            // Vanilla hover frame for an 18px slot cell: x-1 .. x+17.
-            int x0 = mk.x - 1, y0 = mk.y - 1;
-            int x1 = mk.x + 17, y1 = mk.y + 17;
+            // Vanilla hover frame for an 18px slot cell: x-1 .. x+17, around the
+            // slot's (mutable, §0047) presentation position.
+            int x0 = mk.graftX() - 1, y0 = mk.graftY() - 1;
+            int x1 = mk.graftX() + 17, y1 = mk.graftY() + 17;
 
             if (relX >= x0 && relX < x1 && relY >= y0 && relY < y1) {
                 return Resolution.hit(mk); // grafted slot wins outright

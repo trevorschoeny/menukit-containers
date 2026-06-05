@@ -5,6 +5,7 @@ import com.trevorschoeny.menukit.mixin.AbstractContainerMenuInvoker;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 
@@ -89,6 +90,16 @@ public final class MenuKitGraft {
     /** Vanilla slot pitch in pixels (16px slot + 2px frame). */
     public static final int SLOT_PITCH = 18;
 
+    /**
+     * Off-screen sentinel for a grafted slot's vanilla {@code Slot.x/y} (§0047).
+     * Grafted slots are helper-rendered, so vanilla must not draw them at a fixed
+     * coordinate — that would double-render the moment a slot's presentation
+     * position moves. Parking the vanilla coords far off-screen makes vanilla's
+     * render + hit a harmless no-op; the graft helpers own presentation via
+     * {@code MenuKitSlot.graftX()/graftY()}.
+     */
+    private static final int OFFSCREEN = -10000;
+
     private MenuKitGraft() {}
 
     /**
@@ -97,7 +108,8 @@ public final class MenuKitGraft {
      * consumers that need to walk the grafted slots directly). The consumer
      * wires the client render adapter against {@code panel} / {@code group}.
      */
-    public record Grafted(Panel panel, SlotGroup group, int flatStart, int flatEnd) {}
+    public record Grafted(Panel panel, SlotGroup group, int flatStart, int flatEnd,
+                          List<MenuKitSlot> slots) {}
 
     /**
      * Begins a graft onto {@code menu} owned by {@code player}. Call from the
@@ -208,21 +220,32 @@ public final class MenuKitGraft {
                     || reveal.getAsBoolean());         // client side: gate on hover
 
             // 3. Build + append the grafted slots.
+            //
+            // §0047: grafted slots are helper-rendered (MenuKitGraftRender /
+            // MenuKitGraftInput own their presentation), and their position is
+            // mutable presentation, not frozen structure. The vanilla Slot.x/y
+            // are parked OFF-SCREEN so vanilla never draws or hit-tests them at a
+            // fixed spot (which would double-render once a slot moves); the real,
+            // runtime-movable position lives in the slot's graftX/graftY — seeded
+            // here from the layout, changeable later via setGraftPosition.
             StorageContainerAdapter adapter = new StorageContainerAdapter(storage);
             AbstractContainerMenuInvoker inv = (AbstractContainerMenuInvoker) menu;
 
             int flatStart = menu.slots.size();
+            List<MenuKitSlot> mkSlots = new ArrayList<>();
             for (int local = 0; local < storage.size(); local++) {
                 int x = originX + (local % columns) * SLOT_PITCH;
                 int y = originY + (local / columns) * SLOT_PITCH;
                 MenuKitSlot slot = new MenuKitSlot(
-                        adapter, local, x, y, group, panel, groupId, local);
+                        adapter, local, OFFSCREEN, OFFSCREEN, group, panel, groupId, local);
+                slot.setGraftPosition(x, y);     // real (mutable) presentation position
                 inv.menukit$addSlot(slot);
+                mkSlots.add(slot);
             }
             int flatEnd = menu.slots.size();
             group.setFlatIndexRange(flatStart, flatEnd);
 
-            return new Grafted(panel, group, flatStart, flatEnd);
+            return new Grafted(panel, group, flatStart, flatEnd, List.copyOf(mkSlots));
         }
     }
 }

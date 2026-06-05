@@ -42,6 +42,14 @@ public class MenuKitSlot extends Slot {
     // ── Owning panel (final — visibility query target for inertness) ────
     private final Panel panel;
 
+    // ── Presentation position (§0047 — mutable; identity stays frozen) ──
+    // The graft render + input helpers read these instead of the final vanilla
+    // Slot.x/y, so a grafted panel can move at runtime. They default to the
+    // constructed coords; for vanilla-rendered (non-graft) MenuKitSlots they
+    // stay equal to Slot.x/y and are dormant.
+    private int graftX;
+    private int graftY;
+
     /**
      * @param container      vanilla Container adapter (from handler construction)
      * @param containerIndex index within the container
@@ -56,6 +64,8 @@ public class MenuKitSlot extends Slot {
                        SlotGroup group, Panel panel, String groupId,
                        int localIndex) {
         super(container, containerIndex, x, y);
+        this.graftX = x;
+        this.graftY = y;
         this.group = group;
         this.panel = panel;
         this.panelId = panel.getId();
@@ -76,6 +86,30 @@ public class MenuKitSlot extends Slot {
 
     /** The SlotGroup that owns this slot's behavior. */
     public SlotGroup getGroup() { return group; }
+
+    // ── Presentation position (§0047) ───────────────────────────────────
+
+    /**
+     * Current presentation x — where the graft render + input helpers draw and
+     * hit-test this slot. Equals the constructed x until {@link #setGraftPosition}.
+     */
+    public int graftX() { return graftX; }
+
+    /** Current presentation y. @see #graftX() */
+    public int graftY() { return graftY; }
+
+    /**
+     * Moves this slot's presentation position at runtime (§0047 — position is
+     * mutable presentation; the slot's vanilla {@code Slot.x/y} identity and its
+     * sync are untouched). Client-side: the graft render + input helpers follow
+     * this immediately. Call per frame to drive a layout that depends on runtime
+     * state — e.g. a row that re-centers as its count changes. The server neither
+     * renders nor needs it.
+     */
+    public void setGraftPosition(int x, int y) {
+        this.graftX = x;
+        this.graftY = y;
+    }
 
     // ── Inertness ───────────────────────────────────────────────────────
 

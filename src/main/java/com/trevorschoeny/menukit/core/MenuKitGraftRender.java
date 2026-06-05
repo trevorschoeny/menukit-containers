@@ -64,8 +64,8 @@ public final class MenuKitGraftRender {
             if (!(slot instanceof MenuKitSlot mk)) continue;
             if (mk.isInert()) continue; // hidden hover-reveal group → draw nothing
 
-            int sx = leftPos + mk.x;
-            int sy = topPos + mk.y;
+            int sx = leftPos + mk.graftX();
+            int sy = topPos + mk.graftY();
             int size = SlotRendering.DEFAULT_SIZE;
 
             // Frame first (covers vanilla's under-frame item render), then the
