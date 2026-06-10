@@ -70,6 +70,9 @@ public class MenuKitContainers implements ModInitializer {
         // here (attachment registration must run on both sides; networking
         // payload-type registration is also symmetric).
         com.trevorschoeny.menukit.state.SlotStateAttachments.register();
+        // M1 block-portable bridge component (§0048) — must register on both
+        // sides for data-component registry consistency.
+        com.trevorschoeny.menukit.state.SlotStateComponents.register();
         com.trevorschoeny.menukit.state.SlotStateHooks.registerCommon();
         com.trevorschoeny.menukit.state.SlotStateHooks.registerServer();
         // Verification harness — registers /mkverify command suite + test

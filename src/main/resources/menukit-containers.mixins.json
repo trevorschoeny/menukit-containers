@@ -9,7 +9,8 @@
     "VerifyGetItemMixin",
     "PlayerOpenMenuMixin",
     "PlayerListRespawnMixin",
-    "M7BlockDropMixin"
+    "M7BlockDropMixin",
+    "ShulkerBoxPortableStateMixin"
   ],
   "client": [],
   "injectors": {
