@@ -10,7 +10,8 @@ import net.minecraft.world.inventory.Slot;
 /**
  * Typed per-slot state channel — the consumer-facing handle for reading and
  * writing slot state. Created via
- * {@link MKSlotState#register(Identifier, Codec, StreamCodec, Object)}.
+ * {@link MKSlotState#register(Identifier, Codec, StreamCodec, Object)} (PRIVATE)
+ * or {@link MKSlotState#register(Identifier, Codec, StreamCodec, Object, Visibility)}.
  *
  * <p>Dual-codec design (per THESIS.md principle 6): {@link #codec} is NBT-bound
  * for persistence (encoded to {@code Tag} via {@code NbtOps.INSTANCE}),
@@ -23,7 +24,38 @@ public record SlotStateChannel<T>(
         Identifier id,
         Codec<T> codec,
         StreamCodec<RegistryFriendlyByteBuf, T> streamCodec,
-        T defaultValue) {
+        T defaultValue,
+        Visibility visibility) {
+
+    /**
+     * Channel visibility (§0049).
+     *
+     * <ul>
+     *   <li><b>PRIVATE</b> (default) — each viewer has their own value, keyed by
+     *       UUID. The shipped per-player model (§0034).</li>
+     *   <li><b>SHARED</b> — one player-agnostic value per slot, synced to and
+     *       writable by every viewer. For cross-player features like Inventory
+     *       Plus's Container Locks (one player locks slot 5 → every player sees
+     *       it locked).</li>
+     * </ul>
+     *
+     * <p>SHARED is only meaningful on containers that are both multi-player and
+     * fixed-slot (placed shulker / chest / barrel). It is degenerate on the
+     * ender chest (inherently per-player) and inapplicable to bundles (no fixed
+     * slots) — see §0049 bounds.
+     */
+    public enum Visibility { PRIVATE, SHARED }
+
+    /**
+     * Backward-compatible constructor — produces a PRIVATE channel. Keeps every
+     * existing {@code new SlotStateChannel<>(id, codec, streamCodec, default)}
+     * call site (and the 4-arg {@link MKSlotState#register}) byte-for-byte
+     * unchanged (§0049: private is the default).
+     */
+    public SlotStateChannel(Identifier id, Codec<T> codec,
+            StreamCodec<RegistryFriendlyByteBuf, T> streamCodec, T defaultValue) {
+        this(id, codec, streamCodec, defaultValue, Visibility.PRIVATE);
+    }
 
     // ── Slot-based reads ────────────────────────────────────────────────
 
@@ -41,8 +73,9 @@ public record SlotStateChannel<T>(
 
     /**
      * Reads this channel's value at {@code slot} with explicit player context.
-     * Required for server-side reads on BE/entity-backed containers (v1 is
-     * per-player private; the library needs to know whose state to read).
+     * Required for server-side reads on BE/entity-backed containers (the
+     * per-player-private model needs to know whose state to read; SHARED
+     * channels ignore the player but the argument is still accepted).
      */
     public T get(Player player, Slot slot) {
         return MKSlotState.read(this, slot, player);
@@ -68,7 +101,8 @@ public record SlotStateChannel<T>(
      * menu session.
      *
      * @param player for per-player-private containers (BE, entity). May be
-     *               {@code null} for player-scoped keys where the UUID is in the key itself.
+     *               {@code null} for player-scoped keys where the UUID is in the
+     *               key itself, or for SHARED channels (player-agnostic).
      */
     public T get(Player player, PersistentContainerKey key, int containerSlotIndex) {
         return MKSlotState.readPersistent(this, player, key, containerSlotIndex);

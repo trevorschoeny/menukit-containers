@@ -44,18 +44,33 @@ public final class MKSlotState {
      * subsequent calls with the same id return the already-registered channel
      * and log a warning. See M1 §4.6 for rationale.
      */
-    @SuppressWarnings("unchecked")
     public static <T> SlotStateChannel<T> register(
             Identifier id, Codec<T> codec,
             StreamCodec<RegistryFriendlyByteBuf, T> streamCodec, T defaultValue) {
+        return register(id, codec, streamCodec, defaultValue, SlotStateChannel.Visibility.PRIVATE);
+    }
+
+    /**
+     * Registers a channel with explicit visibility (§0049). PRIVATE is the
+     * shipped per-player model; SHARED gives one player-agnostic value per slot,
+     * synced to and writable by every viewer — for cross-player features like
+     * Inventory Plus's Container Locks. SHARED is only meaningful on multi-player,
+     * fixed-slot containers (placed shulker/chest/barrel); see
+     * {@link SlotStateChannel.Visibility}.
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> SlotStateChannel<T> register(
+            Identifier id, Codec<T> codec,
+            StreamCodec<RegistryFriendlyByteBuf, T> streamCodec, T defaultValue,
+            SlotStateChannel.Visibility visibility) {
         SlotStateChannel<T> existing = SlotStateRegistry.getChannelTyped(id);
         if (existing != null) {
             LOGGER.warn("[SlotState] channel {} already registered — returning existing instance", id);
             return existing;
         }
-        SlotStateChannel<T> channel = new SlotStateChannel<>(id, codec, streamCodec, defaultValue);
+        SlotStateChannel<T> channel = new SlotStateChannel<>(id, codec, streamCodec, defaultValue, visibility);
         SlotStateRegistry.registerChannel(channel);
-        LOGGER.info("[SlotState] registered channel {}", id);
+        LOGGER.info("[SlotState] registered channel {} ({})", id, visibility);
         return channel;
     }
 
@@ -109,10 +124,16 @@ public final class MKSlotState {
         Tag encoded = SlotStateServer.encode(channel, value);
         boolean ok = SlotStateServer.writeTag(keyOpt.get(), viewer, channel.id(), containerSlotIndex, encoded);
         if (!ok) return;
-        // Broadcast back to the writing player so their cache stays in sync.
         if (viewer instanceof net.minecraft.server.level.ServerPlayer sp) {
-            com.trevorschoeny.menukit.network.SlotStateUpdateS2CPayload.sendTo(
-                    sp, channel.id(), containerSlotIndex, encoded);
+            if (channel.visibility() == SlotStateChannel.Visibility.SHARED) {
+                // §0049: a shared write reaches every current viewer of the container.
+                com.trevorschoeny.menukit.state.SlotStateHooks.broadcastToViewers(
+                        sp, slot.container, channel.id(), containerSlotIndex, encoded, true);
+            } else {
+                // Private write: echo back to the writing player so their cache stays in sync.
+                com.trevorschoeny.menukit.network.SlotStateUpdateS2CPayload.sendTo(
+                        sp, channel.id(), containerSlotIndex, encoded);
+            }
         }
     }
 

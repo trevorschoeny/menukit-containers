@@ -14,7 +14,9 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.Container;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 
@@ -140,7 +142,41 @@ public final class SlotStateHooks {
         int containerSlotIndex = slot.getContainerSlot();
         SlotStateServer.writeTag(keyOpt.get(), player, payload.channelId(),
                 containerSlotIndex, payload.encodedValue());
-        // v1: no echo broadcast. Client updated optimistically before sending.
+        // §0049: SHARED channels broadcast to every OTHER viewer (the writer
+        // already applied the value optimistically). PRIVATE stays no-echo.
+        SlotStateChannel<?> ch = SlotStateRegistry.getChannel(payload.channelId());
+        if (ch != null && ch.visibility() == SlotStateChannel.Visibility.SHARED) {
+            broadcastToViewers(player, slot.container, payload.channelId(),
+                    containerSlotIndex, payload.encodedValue(), false);
+        }
+    }
+
+    // ── Shared broadcast (§0049) ────────────────────────────────────────
+
+    /**
+     * Sends a slot-state update to every player currently viewing
+     * {@code container}. Used for SHARED channels so a write by one viewer
+     * reaches all the others live. {@code includeOrigin} controls whether
+     * {@code origin} (the writer) also receives it — false when the writer
+     * already applied the value optimistically (client-initiated), true for
+     * server-initiated writes. Viewers are matched by the shared container
+     * instance — all observers of a placed block entity reference the same
+     * {@code Container}. The server is derived from {@code origin}'s level.
+     */
+    public static void broadcastToViewers(ServerPlayer origin, Container container,
+            Identifier channelId, int containerSlotIndex, Tag encoded, boolean includeOrigin) {
+        if (origin == null || !(origin.level() instanceof ServerLevel level)) return;
+        for (ServerPlayer p : level.getServer().getPlayerList().getPlayers()) {
+            if (!includeOrigin && p == origin) continue;
+            AbstractContainerMenu menu = p.containerMenu;
+            if (menu == null) continue;
+            for (Slot s : menu.slots) {
+                if (s.container == container) {
+                    SlotStateUpdateS2CPayload.sendTo(p, channelId, containerSlotIndex, encoded);
+                    break;
+                }
+            }
+        }
     }
 
     // ── Client receive: snapshot + update ───────────────────────────────

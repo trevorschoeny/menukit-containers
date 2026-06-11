@@ -60,7 +60,7 @@ public final class SlotStateServer {
      */
     public static @Nullable Tag readTag(PersistentContainerKey key, @Nullable Player viewer,
                                          Identifier channelId, int containerSlotIndex) {
-        SlotStateBag bag = resolveBagForRead(key, viewer);
+        SlotStateBag bag = resolveBagForRead(key, viewer, isShared(channelId));
         if (bag == null) return null;
         return bag.read(channelId, containerSlotIndex);
     }
@@ -71,26 +71,32 @@ public final class SlotStateServer {
      */
     public static boolean writeTag(PersistentContainerKey key, @Nullable Player viewer,
                                     Identifier channelId, int containerSlotIndex, Tag value) {
-        SlotStateBag bag = resolveBagForWrite(key, viewer);
+        SlotStateBag bag = resolveBagForWrite(key, viewer, isShared(channelId));
         if (bag == null) return false;
         bag.write(channelId, containerSlotIndex, value);
         return true;
     }
 
+    /** §0049 — true if the channel with this id is registered SHARED. */
+    private static boolean isShared(Identifier channelId) {
+        SlotStateChannel<?> ch = SlotStateRegistry.getChannel(channelId);
+        return ch != null && ch.visibility() == SlotStateChannel.Visibility.SHARED;
+    }
+
     // ── Owner resolution ────────────────────────────────────────────────
 
     private static @Nullable SlotStateBag resolveBagForRead(PersistentContainerKey key,
-                                                             @Nullable Player viewer) {
-        return resolveBag(key, viewer, false);
+                                                             @Nullable Player viewer, boolean shared) {
+        return resolveBag(key, viewer, false, shared);
     }
 
     private static @Nullable SlotStateBag resolveBagForWrite(PersistentContainerKey key,
-                                                              @Nullable Player viewer) {
-        return resolveBag(key, viewer, true);
+                                                              @Nullable Player viewer, boolean shared) {
+        return resolveBag(key, viewer, true, shared);
     }
 
     private static @Nullable SlotStateBag resolveBag(PersistentContainerKey key,
-                                                      @Nullable Player viewer, boolean forWrite) {
+                                                      @Nullable Player viewer, boolean forWrite, boolean shared) {
         MinecraftServer server = null;
         if (viewer instanceof ServerPlayer sp) {
             Level lvl = sp.level();
@@ -134,8 +140,15 @@ public final class SlotStateServer {
             if (level == null) return null;
             BlockEntity be = level.getBlockEntity(bek.pos());
             if (be == null) return null;
-            UUID viewerId = viewer != null ? viewer.getUUID() : null;
-            if (viewerId == null) return null;
+            // PRIVATE needs a known viewer (its UUID keys the bag); SHARED is
+            // player-agnostic (§0049). Resolve the viewer UUID up front for the
+            // private path so a missing viewer short-circuits BEFORE we touch
+            // the attachment — keeping the shipped private behavior unchanged.
+            UUID viewerId = null;
+            if (!shared) {
+                viewerId = viewer != null ? viewer.getUUID() : null;
+                if (viewerId == null) return null;
+            }
             PerPlayerSlotStateBag perPlayer =
                     be.getAttachedOrCreate(SlotStateAttachments.BLOCK_ENTITY);
             if (forWrite) {
@@ -144,7 +157,9 @@ public final class SlotStateServer {
                 // Mark the BE dirty so the attachment gets saved with the chunk.
                 be.setChanged();
             }
-            return perPlayer.getOrCreate(viewerId);
+            // §0049: SHARED resolves the player-agnostic bag (drop the UUID
+            // layer); PRIVATE keeps the per-viewer bag (the shipped model).
+            return shared ? perPlayer.getOrCreateShared() : perPlayer.getOrCreate(viewerId);
         }
 
         if (key instanceof PersistentContainerKey.EntityKey) {
