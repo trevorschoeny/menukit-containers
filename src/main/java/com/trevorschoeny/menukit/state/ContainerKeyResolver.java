@@ -3,9 +3,11 @@ package com.trevorschoeny.menukit.state;
 import com.trevorschoeny.menukit.core.KeyedStorage;
 import com.trevorschoeny.menukit.core.PersistentContainerKey;
 import com.trevorschoeny.menukit.core.StorageContainerAdapter;
+import com.trevorschoeny.menukit.mixin.CompoundContainerAccessor;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.CompoundContainer;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.PlayerEnderChestContainer;
@@ -29,6 +31,44 @@ import org.jetbrains.annotations.ApiStatus;
 final class ContainerKeyResolver {
 
     private ContainerKeyResolver() {}
+
+    /**
+     * Slot-aware resolution (§0050): resolves a single slot of a container to
+     * its persistent owner plus the index <em>local to that owner</em>.
+     *
+     * <p>Single-owner containers are the identity case (local index == global
+     * index). A <em>composite</em> container — vanilla's double chest, where one
+     * {@link CompoundContainer} is backed by two block-entity halves — splits the
+     * global index to the owning half by range (the first half's size is the
+     * split point) and translates to that half's local index, then resolves the
+     * half exactly as any single container. Each half stays a plain
+     * {@link PersistentContainerKey.BlockEntityKey} (it is a real placed chest
+     * with its own position) — no new key variant, and the existing single-owner
+     * resolution below is reused unchanged for each half.
+     *
+     * <p>In practice this only meets a {@code CompoundContainer} on the server:
+     * the client backs the same double-chest menu with a flat
+     * {@code SimpleContainer}, so the composite branch never runs client-side
+     * (client reads flow through the slot-state cache, not resolution).
+     */
+    static Optional<ResolvedSlot> resolve(Container container, int containerSlotIndex) {
+        if (container == null) return Optional.empty();
+
+        if (container instanceof CompoundContainer compound) {
+            CompoundContainerAccessor halves = (CompoundContainerAccessor) (Object) compound;
+            Container first = halves.menukit$getContainer1();
+            Container second = halves.menukit$getContainer2();
+            int firstSize = first.getContainerSize();
+            // Below the split → first half at the same local index; at or above
+            // → second half, local index rebased past the first half's slots.
+            if (containerSlotIndex < firstSize) {
+                return resolve(first).map(key -> new ResolvedSlot(key, containerSlotIndex));
+            }
+            return resolve(second).map(key -> new ResolvedSlot(key, containerSlotIndex - firstSize));
+        }
+
+        return resolve(container).map(key -> new ResolvedSlot(key, containerSlotIndex));
+    }
 
     static Optional<PersistentContainerKey> resolve(Container container) {
         if (container == null) return Optional.empty();

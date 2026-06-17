@@ -4,6 +4,7 @@ import com.mojang.serialization.Codec;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.Slot;
 
@@ -111,5 +112,26 @@ public record SlotStateChannel<T>(
     /** Writes to persistent storage directly. Server-only. */
     public void set(Player player, PersistentContainerKey key, int containerSlotIndex, T value) {
         MKSlotState.writePersistent(this, player, key, containerSlotIndex, value);
+    }
+
+    // ── Menu-free shared read (§0050) — server-only ─────────────────────
+
+    /**
+     * Reads the <b>SHARED</b> value at {@code (container, containerSlotIndex)}
+     * with no {@link Slot}, no open menu, and no viewer — for automation
+     * (hopper / dropper / dispenser) that touches a placed container directly by
+     * index. The library resolves the container internally (the resolver stays
+     * internal) and composes with composite resolution, so a double chest
+     * resolves to its owning half.
+     *
+     * <p>Returns {@link #defaultValue} off-server, for an unresolvable container,
+     * or for a PRIVATE channel — a private value is viewer-scoped and has no
+     * viewer on this path, so this is the shared-read primitive (§0050).
+     * Read-only: writes stay owner/menu-driven (and shared writes broadcast,
+     * §0049). The consumer composes this read into its own enforcement (e.g.
+     * blocking a hopper extract) — the library reports state, it does not enforce.
+     */
+    public T get(Container container, int containerSlotIndex) {
+        return MKSlotState.readShared(this, container, containerSlotIndex);
     }
 }

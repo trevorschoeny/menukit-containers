@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "AbstractContainerMenuInvoker",
+    "CompoundContainerAccessor",
     "VerifyMayPlaceMixin",
     "VerifyGetItemMixin",
     "PlayerOpenMenuMixin",

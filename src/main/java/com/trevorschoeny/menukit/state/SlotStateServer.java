@@ -66,6 +66,21 @@ public final class SlotStateServer {
     }
 
     /**
+     * §0050 — menu-free read overload. {@code explicitServer} supplies the
+     * server when there is no viewer to derive it from (automation reading a
+     * placed container by index, with no menu). The shipped 4-arg form is
+     * unchanged (server derived from the viewer). Read-only by design — there is
+     * no menu-free write path (§0050: writes stay owner/menu-driven).
+     */
+    public static @Nullable Tag readTag(PersistentContainerKey key, @Nullable Player viewer,
+                                         @Nullable MinecraftServer explicitServer,
+                                         Identifier channelId, int containerSlotIndex) {
+        SlotStateBag bag = resolveBag(key, viewer, false, isShared(channelId), explicitServer);
+        if (bag == null) return null;
+        return bag.read(channelId, containerSlotIndex);
+    }
+
+    /**
      * Writes a Tag value for a channel + key + slot. Returns true if persisted
      * successfully, false if the owner couldn't be resolved.
      */
@@ -97,8 +112,17 @@ public final class SlotStateServer {
 
     private static @Nullable SlotStateBag resolveBag(PersistentContainerKey key,
                                                       @Nullable Player viewer, boolean forWrite, boolean shared) {
-        MinecraftServer server = null;
-        if (viewer instanceof ServerPlayer sp) {
+        return resolveBag(key, viewer, forWrite, shared, null);
+    }
+
+    private static @Nullable SlotStateBag resolveBag(PersistentContainerKey key,
+                                                      @Nullable Player viewer, boolean forWrite, boolean shared,
+                                                      @Nullable MinecraftServer explicitServer) {
+        // §0050: prefer an explicit server (menu-free reads carry no viewer to
+        // derive it from); otherwise derive it from the viewer, exactly as the
+        // shipped path does (explicitServer null → byte-for-byte unchanged).
+        MinecraftServer server = explicitServer;
+        if (server == null && viewer instanceof ServerPlayer sp) {
             Level lvl = sp.level();
             if (lvl instanceof ServerLevel sl) server = sl.getServer();
         }

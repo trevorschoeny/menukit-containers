@@ -105,4 +105,15 @@ public final class SlotStateRegistry {
     public static Optional<PersistentContainerKey> resolve(Container container) {
         return ContainerKeyResolver.resolve(container);
     }
+
+    /**
+     * Slot-aware resolution (§0050): resolves a single slot to its persistent
+     * owner plus the index local to that owner. Single-owner containers are the
+     * identity case; a composite container (vanilla double chest) splits per
+     * slot to the owning block-entity half. Storage and the menu-free read key
+     * off the returned local index.
+     */
+    public static Optional<ResolvedSlot> resolve(Container container, int containerSlotIndex) {
+        return ContainerKeyResolver.resolve(container, containerSlotIndex);
+    }
 }

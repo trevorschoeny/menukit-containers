@@ -1,15 +1,23 @@
 package com.trevorschoeny.menukit.core;
 
 import com.mojang.serialization.Codec;
+import com.trevorschoeny.menukit.mixin.CompoundContainerAccessor;
+import com.trevorschoeny.menukit.network.SlotStateSnapshotS2CPayload;
+import com.trevorschoeny.menukit.state.ResolvedSlot;
 import com.trevorschoeny.menukit.state.SlotStateClientCache;
 import com.trevorschoeny.menukit.state.SlotStateRegistry;
 import com.trevorschoeny.menukit.state.SlotStateServer;
 
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.CompoundContainer;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Inventory;
@@ -93,6 +101,26 @@ public final class MKSlotState {
         SlotStateRegistry.registerEntityResolver(clazz, resolver);
     }
 
+    // ── Client capability (§0050) ───────────────────────────────────────
+
+    /**
+     * Reports whether {@code player}'s client can receive slot-state sync — i.e.
+     * has MenuKit-Containers' slot-state S2C channel registered (a vanilla or
+     * otherwise non-MenuKit client returns {@code false}). Backed by Fabric's
+     * channel handshake ({@code ServerPlayNetworking.canSend}) for the slot-state
+     * snapshot channel.
+     *
+     * <p><b>Reports only — never acts.</b> Whether a non-capable client is bound
+     * by, or bypasses, a consumer's per-slot feature (e.g. Inventory Plus's
+     * Container Locks letting non-modded players bypass a lock they cannot see —
+     * Trev's product call) is the <em>consumer's</em> enforcement policy. The
+     * library exposes the capability; it does not skip or bind players itself
+     * (§0019 / §0045 — the library off enforcement behavior).
+     */
+    public static boolean isSlotStateCapable(ServerPlayer player) {
+        return ServerPlayNetworking.canSend(player, SlotStateSnapshotS2CPayload.TYPE);
+    }
+
     // ── Internal read/write (called from SlotStateChannel) ──────────────
 
     static <T> T read(SlotStateChannel<T> channel, Slot slot, @Nullable Player player) {
@@ -100,10 +128,13 @@ public final class MKSlotState {
         if (isClientSide(viewer)) {
             return SlotStateClientCache.read(channel, slot);
         }
-        Optional<PersistentContainerKey> keyOpt = SlotStateRegistry.resolve(slot.container);
-        if (keyOpt.isEmpty()) return channel.defaultValue();
-        int containerSlotIndex = slot.getContainerSlot();
-        Tag tag = SlotStateServer.readTag(keyOpt.get(), viewer, channel.id(), containerSlotIndex);
+        // §0050: slot-aware resolution — a composite container (double chest)
+        // resolves this slot to its owning half's key + the index local to that
+        // half; single-owner containers are the identity case (local == global).
+        Optional<ResolvedSlot> resolved = SlotStateRegistry.resolve(slot.container, slot.getContainerSlot());
+        if (resolved.isEmpty()) return channel.defaultValue();
+        Tag tag = SlotStateServer.readTag(
+                resolved.get().key(), viewer, channel.id(), resolved.get().localSlotIndex());
         if (tag == null) return channel.defaultValue();
         return SlotStateServer.decode(channel, tag);
     }
@@ -118,21 +149,30 @@ public final class MKSlotState {
                     channel, slot.index, SlotStateServer.encode(channel, value));
             return;
         }
-        Optional<PersistentContainerKey> keyOpt = SlotStateRegistry.resolve(slot.container);
-        if (keyOpt.isEmpty()) return;
-        int containerSlotIndex = slot.getContainerSlot();
+        // §0050: store under the owning (half-)key at the owner-local index. The
+        // GLOBAL index still drives sync — the client backs the menu with a flat
+        // container and indexes it globally; the half-split is server-only.
+        int globalIndex = slot.getContainerSlot();
+        Optional<ResolvedSlot> resolved = SlotStateRegistry.resolve(slot.container, globalIndex);
+        if (resolved.isEmpty()) return;
         Tag encoded = SlotStateServer.encode(channel, value);
-        boolean ok = SlotStateServer.writeTag(keyOpt.get(), viewer, channel.id(), containerSlotIndex, encoded);
+        boolean ok = SlotStateServer.writeTag(
+                resolved.get().key(), viewer, channel.id(), resolved.get().localSlotIndex(), encoded);
         if (!ok) return;
         if (viewer instanceof net.minecraft.server.level.ServerPlayer sp) {
             if (channel.visibility() == SlotStateChannel.Visibility.SHARED) {
-                // §0049: a shared write reaches every current viewer of the container.
+                // §0049/§0050: a shared write reaches every current viewer of this
+                // slot — matched by persistent owner key + local index, which spans
+                // co-viewers of a double chest (each holds a distinct
+                // CompoundContainer wrapper over the same two halves).
                 com.trevorschoeny.menukit.state.SlotStateHooks.broadcastToViewers(
-                        sp, slot.container, channel.id(), containerSlotIndex, encoded, true);
+                        sp, resolved.get().key(), resolved.get().localSlotIndex(),
+                        channel.id(), encoded, true);
             } else {
                 // Private write: echo back to the writing player so their cache stays in sync.
+                // Global index — the writer's client indexes its flat container globally.
                 com.trevorschoeny.menukit.network.SlotStateUpdateS2CPayload.sendTo(
-                        sp, channel.id(), containerSlotIndex, encoded);
+                        sp, channel.id(), globalIndex, encoded);
             }
         }
     }
@@ -148,6 +188,55 @@ public final class MKSlotState {
                                      PersistentContainerKey key, int containerSlotIndex, T value) {
         Tag encoded = SlotStateServer.encode(channel, value);
         SlotStateServer.writeTag(key, player, channel.id(), containerSlotIndex, encoded);
+    }
+
+    // ── Menu-free shared read (§0050) ───────────────────────────────────
+
+    /**
+     * Menu-free server-side read of the SHARED value at {@code (container,
+     * containerSlotIndex)} — no {@link Slot}, no open menu, no viewer. Serves
+     * automation (hopper / dropper / dispenser) that touches a placed container
+     * by index. The server is derived from the container's block entity (a
+     * placed container is server-side here). Returns the channel default
+     * off-server, for an unresolvable container, or for a PRIVATE channel — which
+     * has no viewer on this path, so it resolves nothing meaningful; this is the
+     * shared-read primitive (§0050). Composes with composite resolution: a double
+     * chest resolves to its owning half.
+     */
+    static <T> T readShared(SlotStateChannel<T> channel, Container container, int containerSlotIndex) {
+        MinecraftServer server = serverOf(container);
+        if (server == null) return channel.defaultValue();
+        Optional<ResolvedSlot> resolved = SlotStateRegistry.resolve(container, containerSlotIndex);
+        if (resolved.isEmpty()) return channel.defaultValue();
+        Tag tag = SlotStateServer.readTag(
+                resolved.get().key(), null, server, channel.id(), resolved.get().localSlotIndex());
+        if (tag == null) return channel.defaultValue();
+        return SlotStateServer.decode(channel, tag);
+    }
+
+    /**
+     * Derives the server from a placed container for the menu-free read. The
+     * container is a server-side block entity (single chest) or a composite over
+     * block-entity halves (double chest); either way its level yields the server.
+     * Null off-server or for a non-block-entity container.
+     */
+    private static @Nullable MinecraftServer serverOf(Container container) {
+        BlockEntity be = blockEntityOf(container);
+        if (be != null && be.getLevel() instanceof ServerLevel level) {
+            return level.getServer();
+        }
+        return null;
+    }
+
+    /** The backing block entity of a placed container — itself, or a composite's first half. */
+    private static @Nullable BlockEntity blockEntityOf(Container container) {
+        if (container instanceof BlockEntity be) return be;
+        if (container instanceof CompoundContainer compound) {
+            // Both halves share a level; the first half is enough to reach the server.
+            Container first = ((CompoundContainerAccessor) (Object) compound).menukit$getContainer1();
+            if (first instanceof BlockEntity be) return be;
+        }
+        return null;
     }
 
     // ── Side detection ──────────────────────────────────────────────────

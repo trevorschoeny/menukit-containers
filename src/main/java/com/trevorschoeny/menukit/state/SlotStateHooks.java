@@ -16,7 +16,6 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.Container;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 
@@ -115,14 +114,20 @@ public final class SlotStateHooks {
         List<SlotStateSnapshotS2CPayload.Entry> entries = new ArrayList<>();
         for (int i = 0; i < menu.slots.size(); i++) {
             Slot slot = menu.slots.get(i);
-            Optional<PersistentContainerKey> keyOpt = SlotStateRegistry.resolve(slot.container);
-            if (keyOpt.isEmpty()) continue;
-            PersistentContainerKey key = keyOpt.get();
+            // §0050: slot-aware resolution — a composite (double chest) splits
+            // each slot to its owning half's key + local index; single-owner is
+            // the identity case.
+            Optional<ResolvedSlot> resolved =
+                    SlotStateRegistry.resolve(slot.container, slot.getContainerSlot());
+            if (resolved.isEmpty()) continue;
+            PersistentContainerKey key = resolved.get().key();
             if (keyFilter != null && !keyFilter.test(key)) continue;
-            int containerSlotIndex = slot.getContainerSlot();
+            int localSlotIndex = resolved.get().localSlotIndex();
             for (SlotStateChannel<?> channel : SlotStateRegistry.allChannels()) {
-                Tag tag = SlotStateServer.readTag(key, player, channel.id(), containerSlotIndex);
+                Tag tag = SlotStateServer.readTag(key, player, channel.id(), localSlotIndex);
                 if (tag == null) continue;
+                // Entry carries the MENU slot index i — the client maps it to its
+                // own menu slot and caches by the flat-container global index.
                 entries.add(new SlotStateSnapshotS2CPayload.Entry(i, channel.id(), tag));
             }
         }
@@ -137,42 +142,55 @@ public final class SlotStateHooks {
         int idx = payload.menuSlotIndex();
         if (idx < 0 || idx >= menu.slots.size()) return;
         Slot slot = menu.slots.get(idx);
-        Optional<PersistentContainerKey> keyOpt = SlotStateRegistry.resolve(slot.container);
-        if (keyOpt.isEmpty()) return;
-        int containerSlotIndex = slot.getContainerSlot();
-        SlotStateServer.writeTag(keyOpt.get(), player, payload.channelId(),
-                containerSlotIndex, payload.encodedValue());
+        // §0050: slot-aware resolution stores under the owning (half-)key at the
+        // owner-local index. A double chest splits here; single-owner is identity.
+        Optional<ResolvedSlot> resolved =
+                SlotStateRegistry.resolve(slot.container, slot.getContainerSlot());
+        if (resolved.isEmpty()) return;
+        SlotStateServer.writeTag(resolved.get().key(), player, payload.channelId(),
+                resolved.get().localSlotIndex(), payload.encodedValue());
         // §0049: SHARED channels broadcast to every OTHER viewer (the writer
         // already applied the value optimistically). PRIVATE stays no-echo.
         SlotStateChannel<?> ch = SlotStateRegistry.getChannel(payload.channelId());
         if (ch != null && ch.visibility() == SlotStateChannel.Visibility.SHARED) {
-            broadcastToViewers(player, slot.container, payload.channelId(),
-                    containerSlotIndex, payload.encodedValue(), false);
+            broadcastToViewers(player, resolved.get().key(), resolved.get().localSlotIndex(),
+                    payload.channelId(), payload.encodedValue(), false);
         }
     }
 
     // ── Shared broadcast (§0049) ────────────────────────────────────────
 
     /**
-     * Sends a slot-state update to every player currently viewing
-     * {@code container}. Used for SHARED channels so a write by one viewer
-     * reaches all the others live. {@code includeOrigin} controls whether
-     * {@code origin} (the writer) also receives it — false when the writer
-     * already applied the value optimistically (client-initiated), true for
-     * server-initiated writes. Viewers are matched by the shared container
-     * instance — all observers of a placed block entity reference the same
-     * {@code Container}. The server is derived from {@code origin}'s level.
+     * Sends a slot-state update to every player currently viewing the slot
+     * identified by {@code key} + {@code localSlotIndex}. Used for SHARED
+     * channels so a write by one viewer reaches the others live.
+     * {@code includeOrigin} controls whether {@code origin} (the writer) also
+     * receives it — false when the writer already applied the value
+     * optimistically (client-initiated), true for server-initiated writes.
+     *
+     * <p>§0050: viewers are matched by <em>persistent slot identity</em>
+     * (resolved owner key + local index), not by container-instance reference.
+     * This spans co-viewers of a double chest — each holds a distinct
+     * {@code CompoundContainer} wrapper over the same two block-entity halves, so
+     * a reference match would miss them — while staying exact for single
+     * containers (every viewer resolves the same block entity to the same key).
+     * Each matched viewer is sent <em>their own</em> menu's global slot index for
+     * that physical slot. The server is derived from {@code origin}'s level.
      */
-    public static void broadcastToViewers(ServerPlayer origin, Container container,
-            Identifier channelId, int containerSlotIndex, Tag encoded, boolean includeOrigin) {
+    public static void broadcastToViewers(ServerPlayer origin, PersistentContainerKey key,
+            int localSlotIndex, Identifier channelId, Tag encoded, boolean includeOrigin) {
         if (origin == null || !(origin.level() instanceof ServerLevel level)) return;
         for (ServerPlayer p : level.getServer().getPlayerList().getPlayers()) {
             if (!includeOrigin && p == origin) continue;
             AbstractContainerMenu menu = p.containerMenu;
             if (menu == null) continue;
             for (Slot s : menu.slots) {
-                if (s.container == container) {
-                    SlotStateUpdateS2CPayload.sendTo(p, channelId, containerSlotIndex, encoded);
+                Optional<ResolvedSlot> rs =
+                        SlotStateRegistry.resolve(s.container, s.getContainerSlot());
+                if (rs.isPresent() && rs.get().key().equals(key)
+                        && rs.get().localSlotIndex() == localSlotIndex) {
+                    // This viewer's own flat-container global index for the slot.
+                    SlotStateUpdateS2CPayload.sendTo(p, channelId, s.getContainerSlot(), encoded);
                     break;
                 }
             }
