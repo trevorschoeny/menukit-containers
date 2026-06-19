@@ -75,6 +75,15 @@ modrinth {
     versionNumber = property('mod_version')
     versionName = "MenuKit: Containers ${property('mod_version')}"
     versionType = "release"
+    changelog = '''MenuKit: Containers 1.1.0
+
+Slot-grafting and in-inventory containers:
+- Graft real, persistent, server-synced slots onto vanilla menus - with correct click-through handling and runtime repositioning.
+- Per-slot data can now survive a shulker being broken, carried, and replaced.
+- Opt a slot-state channel into cross-player-visible state, or keep it per-player.
+- Reach placed containers: double-chest resolution, menu-free server-side reads, and a client-capability check - enough to build container locks, automation, and mixed modded/vanilla-client features.
+
+Additive update - no breaking changes; existing slot-state channels register unchanged. Requires MenuKit 1.1.0.'''
     uploadFile = remapJar
     gameVersions = [property('minecraft_version')]
     loaders = ["fabric"]

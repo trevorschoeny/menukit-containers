@@ -4,7 +4,7 @@ Slot extension for MenuKit. Custom container menus, per-slot state, slot-group r
 
 ## What it is
 
-MenuKit: Containers (MKC) adds slot machinery to **[MenuKit](https://github.com/trevorschoeny/menukit)**. If you're building a Fabric mod with custom container UIs — storage blocks with new slot layouts, inventory mods that need per-slot state, anything that goes through a `ScreenHandler` — MKC provides:
+MenuKit: Containers (MKC) adds slot machinery to **[MenuKit](https://github.com/trevorschoeny/menukit)**. If you're building a Fabric mod with custom container UIs — storage blocks with new slot layouts, real slots grafted onto vanilla menus, inventory mods that need per-slot state, anything that goes through a `ScreenHandler` — MKC provides:
 
 - **`MenuKitScreenHandler`** — a container-menu handler designed to integrate cleanly with MenuKit's panel system.
 - **`MenuKitHandledScreen`** — the screen-side companion that combines MK panels with vanilla slots in one frame.
@@ -25,7 +25,7 @@ repositories {
 }
 
 dependencies {
-    modImplementation 'maven.modrinth:menukit-containers:1.0.0'
+    modImplementation 'maven.modrinth:menukit-containers:1.1.0'
     // MenuKit is pulled in transitively via api — no need to declare it separately
 }
 ```
@@ -70,6 +70,10 @@ player.openMenu(new SimpleMenuProvider((syncId, inv, p) ->
 
 - **Custom container menus** — `MenuKitScreenHandler` + `MenuKitHandledScreen` for clean integration with MK's panel system.
 - **Per-slot state (M1)** — `MKSlotState` attaches arbitrary state to individual slots; server-authoritative, auto-synced to the client (`SlotStateBag`, `SlotStateClientCache`).
+- **Slot-grafting onto vanilla menus** — add real, persistent, server-synced slots to existing vanilla screens (the player inventory, placed containers) without owning the screen. Grafted slots handle click-through correctly and can reposition at runtime; you write the menu mixin, MKC ships the kit.
+- **Block-portable slot state** — per-slot state can survive a shulker being broken, carried, and replaced, via a generic library-owned bridge. You register a channel; the travel is automatic.
+- **Shared or private slot state** — register a channel as per-player-private (default) or shared (one cross-player-visible value per slot, synced live to every viewer).
+- **Placed-container reach** — double-chest resolution, menu-free server-side reads (for automation like hoppers), and a client-capability query. The library resolves containers, exposes state, and reports capability; your mod owns the enforcement policy.
 - **Slot-group regions** — group slots into named regions; anchor MK panels to those groups.
 - **Storage primitives** — `Storage`, `KeyedStorage`, `PlayerStorage`, `EphemeralStorage`, `StorageAttachment` cover most container patterns.
 - **Custom payloads** — `SlotStateUpdateC2SPayload`, `SlotStateSnapshotS2CPayload`, `SlotStateUpdateS2CPayload` for the slot-state protocol; pattern is reusable for your own typed payloads.
