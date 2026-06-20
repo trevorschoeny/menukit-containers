@@ -11,7 +11,8 @@
     "PlayerOpenMenuMixin",
     "PlayerListRespawnMixin",
     "M7BlockDropMixin",
-    "ShulkerBoxPortableStateMixin"
+    "ShulkerBoxPortableStateMixin",
+    "CreativeSetSlotGraftMixin"
   ],
   "client": [],
   "injectors": {

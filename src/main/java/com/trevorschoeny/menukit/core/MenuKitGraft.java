@@ -59,12 +59,23 @@ import java.util.function.BooleanSupplier;
  * {@link PersistentContainerKey} — M1's {@code SlotStateChannel} API then works
  * against the grafted slots (§0045).
  *
+ * <h3>Creative/survival parity (§0051)</h3>
+ *
+ * Grafted slots round-trip in <b>both</b> game modes with no consumer code.
+ * Survival edits reach the slot through vanilla's container-click path; a
+ * creative edit that vanilla's {@code handleSetCreativeModeSlot} would silently
+ * discard (the grafted index is past vanilla's {@code [1,45]} slot range) is
+ * routed to the grafted slot's backing {@code Storage} by the library's
+ * creative-set-slot bridge ({@code CreativeSetSlotGraftMixin}). Direct
+ * click-to-place works in both modes; per-slot metadata (M1) lands with it.
+ *
  * <h3>Known limitation</h3>
  *
  * Shift-click (quick-move) <em>into</em> a grafted slot is not free: vanilla's
  * {@code quickMoveStack} has no knowledge of grafted slots. Direct click-to-place
- * works out of the box; full shift-click routing is consumer-side work (the
- * consumer may override {@code quickMoveStack} in their own mixin) or deferred.
+ * works out of the box (in both modes, per above); full shift-click routing is
+ * consumer-side work (the consumer may override {@code quickMoveStack} in their
+ * own mixin) or deferred.
  *
  * <h3>Recipe</h3>
  *
