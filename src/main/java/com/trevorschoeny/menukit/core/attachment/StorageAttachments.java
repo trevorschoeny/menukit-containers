@@ -10,6 +10,8 @@ import net.minecraft.world.item.component.ItemContainerContents;
 import com.mojang.serialization.Codec;
 import com.trevorschoeny.menukit.core.DropRule;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -156,6 +158,23 @@ public final class StorageAttachments {
     public static int slotCountOf(AttachmentType<ItemContainerContents> type) {
         Integer size = ATTACHMENT_SIZES.get(type);
         return size == null ? 0 : size;
+    }
+
+    /**
+     * The Identifier a content attachment was registered under, or null if it
+     * isn't in the cache. Used by the §0052 Phase 2 capture surface to tag a
+     * captured slot with a stable, serializable id (for grave round-trips).
+     */
+    public static @Nullable Identifier identifierOf(AttachmentType<ItemContainerContents> type) {
+        for (var e : CACHE.entrySet()) {
+            if (e.getValue() == type) return e.getKey();
+        }
+        return null;
+    }
+
+    /** The content attachment registered under {@code id}, or null. The capture-surface restore path. */
+    public static @Nullable AttachmentType<ItemContainerContents> typeById(Identifier id) {
+        return CACHE.get(id);
     }
 
     /** Produces an empty {@link ItemContainerContents} of the given size. */
