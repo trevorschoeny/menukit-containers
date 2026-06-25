@@ -1,10 +1,12 @@
 package com.trevorschoeny.menukit.core.attachment;
 
+import com.trevorschoeny.menukit.compat.GraveModPresence;
 import com.trevorschoeny.menukit.core.DropRule;
 
 import net.fabricmc.fabric.api.attachment.v1.AttachmentType;
 import net.minecraft.core.NonNullList;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemContainerContents;
@@ -80,7 +82,17 @@ public final class PlayerDeathDropHandler {
                         // 40-tick pickup delay, no thrower (any player can grab) —
                         // the same call vanilla's Inventory.dropAll uses. The slot
                         // is left EMPTY in `remaining` (cleared).
-                        player.drop(stack, true, false);
+                        ItemEntity dropped = player.drop(stack, true, false);
+                        // Grave-parity (§0052): when a grave-container mod is
+                        // installed, the player recovers their vanilla inventory
+                        // from a NON-expiring grave — so the slots that mod did not
+                        // capture (ours) must not expire either, or they'd vanish
+                        // after 5 min while the grave persists. Flag them
+                        // never-despawn. With no grave mod present, keep vanilla
+                        // despawn so a grafted slot matches a normal death drop.
+                        if (dropped != null && GraveModPresence.anyGraveModPresent()) {
+                            dropped.setUnlimitedLifetime();
+                        }
                         changed = true;
                     }
                     case DESTROY ->
