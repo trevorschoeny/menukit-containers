@@ -4,6 +4,8 @@ import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.EnchantmentEffectComponents;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
 
 /**
  * A vanilla {@link Slot} to the outside world. Carries its coordinates
@@ -156,7 +158,17 @@ public class MenuKitSlot extends Slot {
         // canRemove checks the current item — get it from storage, not
         // from getItem() which would return EMPTY if inert (but we already
         // checked inertness above).
-        return group.canRemove(super.getItem()) && super.mayPickup(player);
+        ItemStack stack = super.getItem();
+        // Curse of Binding: when this group binds cursed items, a bound item
+        // (PREVENT_ARMOR_CHANGE) can't be taken out while alive — survival only.
+        // Creative bypasses (vanilla parity); creative removal also routes through
+        // the §0051 set-slot bridge, which never calls mayPickup. Mirrors vanilla's
+        // own armor-slot binding check.
+        if (group.bindsCursedItems() && !player.hasInfiniteMaterials()
+                && EnchantmentHelper.has(stack, EnchantmentEffectComponents.PREVENT_ARMOR_CHANGE)) {
+            return false;
+        }
+        return group.canRemove(stack) && super.mayPickup(player);
     }
 
     /**

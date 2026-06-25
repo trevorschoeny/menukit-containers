@@ -145,6 +145,7 @@ public final class MenuKitGraft {
         private int originX = 0;
         private int originY = 0;
         private BooleanSupplier revealWhen = null;            // null => always client-visible
+        private boolean bindsCursedItems = false;             // Curse of Binding enforcement (opt-in)
 
         Builder(AbstractContainerMenu menu, Player player) {
             this.menu = menu;
@@ -196,6 +197,20 @@ public final class MenuKitGraft {
         }
 
         /**
+         * Enables the vanilla Curse of Binding on the grafted slots: an item
+         * carrying the binding curse ({@code PREVENT_ARMOR_CHANGE}) cannot be
+         * removed from the slot <em>while alive</em> — survival only; creative
+         * bypasses (matching vanilla, and creative removal routes through the
+         * §0051 set-slot bridge which never consults {@code mayPickup}). Off by
+         * default; opt in for equipment-semantic slots. Death is orthogonal: a
+         * bound item still drops/keeps at death per its {@code DropRule}.
+         */
+        public Builder bindsCursedItems() {
+            this.bindsCursedItems = true;
+            return this;
+        }
+
+        /**
          * Builds the standalone {@link Panel}/{@link SlotGroup}, constructs the
          * inertness-aware {@link MenuKitSlot}s over a {@link StorageContainerAdapter},
          * and appends them to the menu (via the vanilla {@code addSlot} invoker,
@@ -211,6 +226,7 @@ public final class MenuKitGraft {
             SlotGroup group = new SlotGroup(
                     groupId, storage, policy, qmp, /*shiftClickPriority*/ 100,
                     columns, /*rowGapAfter*/ -1, /*rowGapSize*/ 0);
+            group.setBindsCursedItems(bindsCursedItems);
 
             // 2. Standalone Panel — no PanelOwner (this isn't a MenuKitScreenHandler).
             //    Style NONE: the consumer's render adapter draws the frame; the

@@ -54,6 +54,12 @@ public class SlotGroup implements SlotGroupLike {
     // Directional pairing for shift-click routing
     private final List<SlotGroup> pairedWith = new ArrayList<>();
 
+    // Curse of Binding toggle: when set, a bound item (carrying the vanilla
+    // PREVENT_ARMOR_CHANGE component) can't be removed from this group's slots
+    // while alive — enforced in MenuKitSlot.mayPickup, survival only (creative
+    // bypasses). Off by default; equipment-semantic, opt-in per group.
+    private boolean bindsCursedItems = false;
+
     /**
      * Full constructor with all axes including layout metadata.
      *
@@ -138,6 +144,14 @@ public class SlotGroup implements SlotGroupLike {
     public void setRightClickHandler(@Nullable BiConsumer<Player, MenuKitSlot> handler) {
         this.rightClickHandler = handler;
     }
+
+    // ── Curse of Binding ───────────────────────────────────────────────
+
+    /** Whether this group enforces the vanilla Curse of Binding on its slots. */
+    public boolean bindsCursedItems() { return bindsCursedItems; }
+
+    /** Enables/disables Curse-of-Binding enforcement. Set during graft/builder construction. */
+    public void setBindsCursedItems(boolean binds) { this.bindsCursedItems = binds; }
 
     // ── Behavioral Delegation ───────────────────────────────────────────
     // Slots delegate to these methods. The policy is the source of truth.
