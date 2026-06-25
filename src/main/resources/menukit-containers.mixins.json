@@ -11,6 +11,7 @@
     "PlayerOpenMenuMixin",
     "PlayerListRespawnMixin",
     "M7BlockDropMixin",
+    "PlayerDeathDropMixin",
     "ShulkerBoxPortableStateMixin",
     "CreativeSetSlotGraftMixin"
   ],

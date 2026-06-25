@@ -89,6 +89,22 @@ public abstract class StorageAttachment<O, C> {
         };
     }
 
+    /**
+     * Sets this attachment's death-drop policy. Only meaningful on player
+     * content attachments ({@link #playerAttached}), which are enrolled in death
+     * handling at {@link DropRule#DEFAULT} (vanilla parity) on creation; call
+     * this to override — {@code KEEP} (soulbound), {@code DESTROY} (cursed), or
+     * {@code DROP} (always drop even with {@code keepInventory} on). Fluent:
+     * {@code playerAttached(...).dropsOnDeath(KEEP)}.
+     *
+     * <p>The base implementation throws — block / item / ephemeral / custom
+     * attachments have no player-death lifecycle.
+     */
+    public StorageAttachment<O, C> dropsOnDeath(DropRule rule) {
+        throw new UnsupportedOperationException(
+                "dropsOnDeath is only supported on playerAttached content attachments");
+    }
+
     // ══════════════════════════════════════════════════════════════════════
     // Factories
     // ══════════════════════════════════════════════════════════════════════
@@ -107,8 +123,18 @@ public abstract class StorageAttachment<O, C> {
 
     /**
      * Persists slot-group content on a {@link Player} via a Fabric attachment.
-     * Content travels with the player across sessions, dimensions, and
-     * respawn (player data serialization).
+     * Content travels with the player across sessions and dimensions.
+     *
+     * <h4>Death handling</h4>
+     *
+     * Player content attachments are enrolled in death handling at
+     * {@link DropRule#DEFAULT} — zero-config vanilla parity: on death the content
+     * <b>drops</b> at the death spot when {@code keepInventory} is off (Curse of
+     * Vanishing destroys instead) and is <b>kept</b> across respawn when
+     * {@code keepInventory} is on. Override per attachment with
+     * {@link #dropsOnDeath(DropRule)} — e.g. {@code KEEP} for a soulbound slot.
+     * (The attachment registers {@code copyOnDeath} so the kept path carries
+     * across respawn; the library owns the gamerule-gated drop.)
      *
      * @param namespace attachment-id namespace (consumer's mod id)
      * @param path      attachment-id path (unique per consumer-declared attachment)
@@ -118,7 +144,7 @@ public abstract class StorageAttachment<O, C> {
             String namespace, String path, int slotCount) {
         Identifier id = Identifier.fromNamespaceAndPath(namespace, path);
         AttachmentType<ItemContainerContents> type =
-                StorageAttachments.registerContainerAttachment(id, slotCount);
+                StorageAttachments.registerPlayerContentAttachment(id, slotCount);
         return new PlayerAttachment(slotCount, type);
     }
 
@@ -190,7 +216,7 @@ public abstract class StorageAttachment<O, C> {
         @Override public Storage bind(Void ignored) { return EphemeralStorage.of(slotCount); }
     }
 
-    /** Player-attached via Fabric attachment. */
+    /** Player-attached via Fabric attachment, with death handling ({@link DropRule}). */
     private static final class PlayerAttachment
             extends StorageAttachment<Player, NonNullList<ItemStack>> {
         private final int slotCount;
@@ -209,6 +235,12 @@ public abstract class StorageAttachment<O, C> {
                             : StorageAttachments.defaultEmpty(slotCount),
                     contents -> player.setAttached(type, contents),
                     () -> { /* Players auto-persist via Fabric; no setChanged */ });
+        }
+
+        @Override
+        public StorageAttachment<Player, NonNullList<ItemStack>> dropsOnDeath(DropRule rule) {
+            StorageAttachments.setDeathDropRule(type, rule);
+            return this;
         }
     }
 

@@ -8,6 +8,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemContainerContents;
 
 import com.mojang.serialization.Codec;
+import com.trevorschoeny.menukit.core.DropRule;
 
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -51,6 +52,16 @@ public final class StorageAttachments {
             BLOCK_SCOPED_ATTACHMENTS =
                     new java.util.concurrent.CopyOnWriteArrayList<>();
 
+    // Player content attachments enrolled for death handling. Mirrors
+    // BLOCK_SCOPED_ATTACHMENTS, but maps each type to its DropRule — mutable, so
+    // the consumer can override the policy via StorageAttachment.dropsOnDeath()
+    // after registration. (copyOnDeath is already set at registration time, so an
+    // override is a plain map update, not a re-registration.) PlayerDeathDropHandler
+    // iterates this; Phase 2 grave adapters can reuse the same "death-droppable
+    // player slots" surface. Populated by registerPlayerContentAttachment.
+    private static final ConcurrentHashMap<AttachmentType<ItemContainerContents>, DropRule>
+            PLAYER_DEATH_DROP = new ConcurrentHashMap<>();
+
     /**
      * Register (or retrieve) an attachment storing {@link ItemContainerContents}.
      * Persistence is automatic via Fabric's {@code .persistent(Codec)}.
@@ -76,6 +87,30 @@ public final class StorageAttachments {
     }
 
     /**
+     * Register (or retrieve) a PLAYER content attachment — like
+     * {@link #registerContainerAttachment(Identifier, int)} but with Fabric's
+     * {@code copyOnDeath()} flag (so a KEPT bag carries across respawn) plus
+     * enrollment in the player death-drop registry at {@link DropRule#DEFAULT}
+     * (zero-config vanilla parity). The death handler
+     * ({@link PlayerDeathDropHandler}) iterates the registry and owns the
+     * {@code keepInventory} check; the consumer overrides the per-attachment rule
+     * via {@code StorageAttachment.dropsOnDeath(...)}. Called by
+     * {@link com.trevorschoeny.menukit.core.StorageAttachment#playerAttached(String, String, int)}.
+     */
+    public static AttachmentType<ItemContainerContents> registerPlayerContentAttachment(
+            Identifier id, int defaultSlots) {
+        AttachmentType<ItemContainerContents> type = CACHE.computeIfAbsent(id, k ->
+                AttachmentRegistry.<ItemContainerContents>builder()
+                        .persistent(ItemContainerContents.CODEC)
+                        .copyOnDeath()
+                        .initializer(() -> defaultEmpty(defaultSlots))
+                        .buildAndRegister(k));
+        ATTACHMENT_SIZES.putIfAbsent(type, defaultSlots);
+        PLAYER_DEATH_DROP.putIfAbsent(type, DropRule.DEFAULT);
+        return type;
+    }
+
+    /**
      * Register a block-scoped attachment. Same as
      * {@link #registerContainerAttachment(Identifier, int)} plus enrollment
      * in the block-scoped registry that the drop-on-break mixin dispatches
@@ -95,6 +130,26 @@ public final class StorageAttachments {
     /** Snapshot of all registered block-scoped attachments, for drop-on-break iteration. */
     public static java.util.List<AttachmentType<ItemContainerContents>> blockScopedAttachments() {
         return java.util.List.copyOf(BLOCK_SCOPED_ATTACHMENTS);
+    }
+
+    /**
+     * Override the death-drop rule for a player content attachment. Called by
+     * {@code StorageAttachment.dropsOnDeath(...)} — a plain map update, valid
+     * post-registration because {@code copyOnDeath} was already set when the
+     * attachment registered.
+     */
+    public static void setDeathDropRule(AttachmentType<ItemContainerContents> type, DropRule rule) {
+        PLAYER_DEATH_DROP.put(type, rule);
+    }
+
+    /** The configured death-drop rule for a type, or {@code null} if it isn't death-enrolled. */
+    public static DropRule deathDropRuleOf(AttachmentType<ItemContainerContents> type) {
+        return PLAYER_DEATH_DROP.get(type);
+    }
+
+    /** Snapshot of all death-droppable player content attachments, for the death handler. */
+    public static java.util.Set<AttachmentType<ItemContainerContents>> playerDeathDropAttachments() {
+        return java.util.Set.copyOf(PLAYER_DEATH_DROP.keySet());
     }
 
     /** Slot count for a registered attachment — used at drop-on-break to size the list. */
