@@ -147,6 +147,8 @@ public final class MenuKitGraft {
         private BooleanSupplier revealWhen = null;            // null => always client-visible
         private boolean bindsCursedItems = false;             // Curse of Binding enforcement (opt-in)
 
+        private boolean mendsFromXp = false;                  // XP-orb repair participation (opt-in)
+
         Builder(AbstractContainerMenu menu, Player player) {
             this.menu = menu;
             this.player = player;
@@ -211,6 +213,19 @@ public final class MenuKitGraft {
         }
 
         /**
+         * Enables vanilla Mending on the grafted slots: a damaged item carrying
+         * the {@code REPAIR_WITH_XP} effect, sitting in one of these slots, joins
+         * the XP-orb repair pool — so it mends from collected XP exactly like a
+         * worn armor piece or held tool does. Off by default; opt in for
+         * equipment-semantic slots. Generic grafted-slot vanilla mechanic
+         * (library-owned, same line as death-drop §0052 and binding §0053).
+         */
+        public Builder mendsFromXp() {
+            this.mendsFromXp = true;
+            return this;
+        }
+
+        /**
          * Builds the standalone {@link Panel}/{@link SlotGroup}, constructs the
          * inertness-aware {@link MenuKitSlot}s over a {@link StorageContainerAdapter},
          * and appends them to the menu (via the vanilla {@code addSlot} invoker,
@@ -227,6 +242,7 @@ public final class MenuKitGraft {
                     groupId, storage, policy, qmp, /*shiftClickPriority*/ 100,
                     columns, /*rowGapAfter*/ -1, /*rowGapSize*/ 0);
             group.setBindsCursedItems(bindsCursedItems);
+            group.setMendsFromXp(mendsFromXp);
 
             // 2. Standalone Panel — no PanelOwner (this isn't a MenuKitScreenHandler).
             //    Style NONE: the consumer's render adapter draws the frame; the

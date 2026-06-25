@@ -60,6 +60,12 @@ public class SlotGroup implements SlotGroupLike {
     // bypasses). Off by default; equipment-semantic, opt-in per group.
     private boolean bindsCursedItems = false;
 
+    // Mending toggle: when set, a damaged item carrying the vanilla REPAIR_WITH_XP
+    // effect (Mending) in this group's slots joins the XP-orb repair pool — so a
+    // mending item in a grafted equip slot repairs from XP like worn armor does.
+    // Read by the ExperienceOrb intercept. Off by default; equipment-semantic, opt-in.
+    private boolean mendsFromXp = false;
+
     /**
      * Full constructor with all axes including layout metadata.
      *
@@ -152,6 +158,14 @@ public class SlotGroup implements SlotGroupLike {
 
     /** Enables/disables Curse-of-Binding enforcement. Set during graft/builder construction. */
     public void setBindsCursedItems(boolean binds) { this.bindsCursedItems = binds; }
+
+    // ── Mending (XP repair) ─────────────────────────────────────────────
+
+    /** Whether a damaged Mending item in this group's slots repairs from XP orbs. */
+    public boolean mendsFromXp() { return mendsFromXp; }
+
+    /** Enables/disables XP-repair participation. Set during graft/builder construction. */
+    public void setMendsFromXp(boolean mends) { this.mendsFromXp = mends; }
 
     // ── Behavioral Delegation ───────────────────────────────────────────
     // Slots delegate to these methods. The policy is the source of truth.

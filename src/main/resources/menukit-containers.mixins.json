@@ -13,7 +13,8 @@
     "M7BlockDropMixin",
     "PlayerDeathDropMixin",
     "ShulkerBoxPortableStateMixin",
-    "CreativeSetSlotGraftMixin"
+    "CreativeSetSlotGraftMixin",
+    "ExperienceOrbMendMixin"
   ],
   "client": [],
   "injectors": {
