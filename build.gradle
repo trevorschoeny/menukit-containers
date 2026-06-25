@@ -32,6 +32,9 @@ java {
 
 repositories {
     maven { url 'https://maven.fabricmc.net/' }
+    // §0052 Phase 2 — optional grave-mod adapters (modCompileOnly below):
+    maven { url 'https://api.modrinth.com/maven' }   // Universal Graves, Pneumono's Gravestones
+    maven { url 'https://maven.nucleoid.xyz' }        // UG's transitive deps (xyz.nucleoid / Polymer)
 }
 
 dependencies {
@@ -53,6 +56,17 @@ dependencies {
     // depend on jetbrains-annotations at runtime; the annotation is a doc/IDE
     // signal, never required at execution time.
     compileOnly 'org.jetbrains:annotations:24.1.0'
+
+    // §0052 Phase 2 — grave-mod compat adapters. OPTIONAL dependencies: compile
+    // against the grave mods' capture APIs, but MKC hard-depends on NEITHER —
+    // each adapter class is loaded only behind a FabricLoader isModLoaded(...)
+    // guard, and falls back to the Phase-1 floor when the mod is absent.
+    modCompileOnly "maven.modrinth:universal-graves:3.10.2+1.21.11"
+    // Pneumono's Gravestones — DEFERRED (floored). Its 1.21.11 jar is built with
+    // Loom 1.15.5, newer than this project's Loom 1.14; Loom refuses to remap a
+    // newer-Loom mod, so it can't be a modCompileOnly dep without a workspace Loom
+    // upgrade. The Phase-1 floor covers Pneumono users; revisit on a Loom bump.
+    // modCompileOnly "maven.modrinth:pneumono_gravestones:1.4.1+1.21.11+A"
 }
 
 loom {

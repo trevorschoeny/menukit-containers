@@ -78,6 +78,19 @@ public class MenuKitContainers implements ModInitializer {
         // Verification harness — registers /mkverify command suite + test
         // MenuType so phase verification can be re-run at any time.
         com.trevorschoeny.menukit.verification.ContractVerification.initServer();
+
+        // §0052 Phase 2 — grave-mod compat. OPTIONAL: register a capture adapter
+        // only when the grave mod is present; MKC hard-depends on none. The
+        // adapter class is referenced ONLY inside the guard, so its grave-mod
+        // class references never load when the mod is absent — the Phase-1 floor
+        // (drop beside the death spot) covers that case. Universal Graves is the
+        // shippable 1.21.11 adapter; Pneumono's Gravestones is Loom-version-blocked
+        // (floor for now); YIGD has no 1.21.11 build (floor) — see
+        // MOD_INTEGRATION_TRACKING.md.
+        if (net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("universal-graves")) {
+            com.trevorschoeny.menukit.compat.UniversalGravesAdapter.register();
+            LOGGER.info("[MenuKit-Containers] Universal Graves detected — player-slot grave capture enabled");
+        }
     }
 
     /** Client-side initialization. Invoked from
