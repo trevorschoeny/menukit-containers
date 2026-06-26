@@ -34,6 +34,10 @@ public final class SlotStateAttachments {
             AttachmentRegistry.<SlotStateBag>builder()
                     .persistent(SlotStateBag.CODEC)
                     .initializer(SlotStateBag::new)
+                    // §0052 metadata parity: per-slot marks are slot configuration
+                    // (e.g. a lock), not item state — they survive death like the
+                    // slot itself, independent of whether content drops.
+                    .copyOnDeath()
                     .buildAndRegister(Identifier.fromNamespaceAndPath(
                             MOD_ID, "slot_state_player_inventory"));
 
@@ -41,6 +45,9 @@ public final class SlotStateAttachments {
             AttachmentRegistry.<SlotStateBag>builder()
                     .persistent(SlotStateBag.CODEC)
                     .initializer(SlotStateBag::new)
+                    // Ender-chest content always survives death (vanilla); its
+                    // per-slot metadata travels with it (§0052 parity).
+                    .copyOnDeath()
                     .buildAndRegister(Identifier.fromNamespaceAndPath(
                             MOD_ID, "slot_state_ender_chest"));
 
@@ -69,6 +76,10 @@ public final class SlotStateAttachments {
             AttachmentRegistry.<NamespacedSlotStateBag>builder()
                     .persistent(NamespacedSlotStateBag.CODEC)
                     .initializer(NamespacedSlotStateBag::new)
+                    // §0052 metadata parity: grafted-slot marks (§0045 pockets /
+                    // equipment) are slot config and survive death, matching the
+                    // graft content's own copyOnDeath parity.
+                    .copyOnDeath()
                     .buildAndRegister(Identifier.fromNamespaceAndPath(
                             MOD_ID, "slot_state_modded_player"));
 
