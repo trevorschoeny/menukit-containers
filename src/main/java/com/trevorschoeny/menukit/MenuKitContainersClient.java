@@ -1,5 +1,8 @@
 package com.trevorschoeny.menukit;
 
+import com.trevorschoeny.menukit.core.MenuKitGraftScreenHook;
+import com.trevorschoeny.menukit.inject.GraftScreenDispatcher;
+
 import net.fabricmc.api.ClientModInitializer;
 import org.jetbrains.annotations.ApiStatus;
 
@@ -29,5 +32,13 @@ public class MenuKitContainersClient implements ClientModInitializer {
     public void onInitializeClient() {
         // Delegate to MenuKit: Containers' client-state init.
         MenuKitContainers.initClient();
+
+        // Inventory-screen parity: plug the grafted-slot draw/input/reveal work
+        // into MenuKit's library-owned screen dispatch (§0042 — MK exposes the
+        // neutral hook + the per-screen mixins; MKC implements the grafted-slot
+        // half here). After this, any GraftScreenPresence a consumer registers
+        // manifests on every matching inventory-bearing screen, creative
+        // included, with no per-screen consumer mixin.
+        GraftScreenDispatcher.setHook(new MenuKitGraftScreenHook());
     }
 }

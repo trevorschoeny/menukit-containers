@@ -16,7 +16,10 @@
     "CreativeSetSlotGraftMixin",
     "ExperienceOrbMendMixin"
   ],
-  "client": [],
+  "client": [
+    "MenuKitGraftCreativeParkMixin",
+    "SlotWrapperAccessor"
+  ],
   "injectors": {
     "defaultRequire": 1
   }

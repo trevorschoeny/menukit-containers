@@ -8,6 +8,8 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Client-side render helper for grafted slots (§0045). Draws the slot frame
  * + item (+ hover highlight) for every revealed grafted {@link MenuKitSlot}
@@ -51,17 +53,44 @@ public final class MenuKitGraftRender {
      * menu. No-op for inert slots (their panel hidden) and for non-grafted
      * slots. Safe to call on any container screen — screens without grafted
      * slots draw nothing.
+     *
+     * <p>Draws all grafts regardless of panel. Equivalent to
+     * {@link #renderGraftedSlots(AbstractContainerScreen, GuiGraphics, int, int, String)}
+     * with a {@code null} filter.
      */
     public static void renderGraftedSlots(AbstractContainerScreen<?> screen,
                                           GuiGraphics graphics,
                                           int mouseX, int mouseY) {
+        renderGraftedSlots(screen, graphics, mouseX, mouseY, null);
+    }
+
+    /**
+     * Draws the revealed grafted slots on {@code screen}'s menu whose panel id
+     * equals {@code panelId} (or all grafts when {@code panelId} is null). The
+     * screen dispatcher passes one panel id per registered presence so each
+     * graft draws under its own decoration and respects its own per-screen
+     * opt-out.
+     *
+     * <p>Recognises grafts both directly ({@code MenuKitSlot} in the menu, the
+     * survival inventory) and through the creative {@code SlotWrapper} that wraps
+     * them ({@link GraftSlots#asGraft}) — so the same call renders correctly on
+     * the creative screen, where the wrappers are parked off-screen by
+     * {@code MenuKitGraftCreativeParkMixin} and the graft is drawn here at its
+     * live {@code graftX/graftY} instead.
+     */
+    public static void renderGraftedSlots(AbstractContainerScreen<?> screen,
+                                          GuiGraphics graphics,
+                                          int mouseX, int mouseY,
+                                          @Nullable String panelId) {
         AbstractContainerMenu menu = screen.getMenu();
         AbstractContainerScreenAccessor acc = (AbstractContainerScreenAccessor) screen;
         int leftPos = acc.menuKit$getLeftPos();
         int topPos = acc.menuKit$getTopPos();
 
         for (Slot slot : menu.slots) {
-            if (!(slot instanceof MenuKitSlot mk)) continue;
+            MenuKitSlot mk = GraftSlots.asGraft(slot);
+            if (mk == null) continue;
+            if (panelId != null && !panelId.equals(mk.getPanelId())) continue;
             if (mk.isInert()) continue; // hidden hover-reveal group → draw nothing
 
             int sx = leftPos + mk.graftX();

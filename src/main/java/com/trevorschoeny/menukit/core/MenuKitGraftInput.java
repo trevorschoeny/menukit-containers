@@ -6,8 +6,11 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Client-side input-resolution helper for grafted slots — the input
@@ -91,13 +94,36 @@ public final class MenuKitGraftInput {
     }
 
     /**
-     * Resolves the slot under {@code (mouseX, mouseY)} considering the revealed
-     * grafted panels on {@code screen}. See the class javadoc for the three
-     * outcomes. Safe on any container screen — one with no revealed grafted
-     * slots returns {@link Resolution#PASS}.
+     * Resolves the slot under {@code (mouseX, mouseY)} considering every revealed
+     * grafted panel on {@code screen}. Equivalent to
+     * {@link #resolveHoveredSlot(AbstractContainerScreen, double, double, Set)}
+     * with a {@code null} filter.
      */
     public static Resolution resolveHoveredSlot(AbstractContainerScreen<?> screen,
                                                 double mouseX, double mouseY) {
+        return resolveHoveredSlot(screen, mouseX, mouseY, null);
+    }
+
+    /**
+     * Resolves the slot under {@code (mouseX, mouseY)} considering only the
+     * revealed grafts whose panel id is in {@code panelFilter} (or all grafts when
+     * {@code panelFilter} is null). The screen dispatcher passes the active
+     * panels for the current screen so an opted-out graft neither wins hover nor
+     * blocks the slot behind it.
+     *
+     * <p>Recognises grafts directly and through the creative {@code SlotWrapper}
+     * ({@link GraftSlots#asGraft}). On a hit it returns the slot that is actually
+     * in {@code menu.slots} — the raw {@code MenuKitSlot} on the survival
+     * inventory, the {@code SlotWrapper} on the creative screen — because the
+     * caller (vanilla {@code getHoveredSlot}) routes the click to whatever this
+     * returns, and creative's click path requires the wrapper.
+     *
+     * <p>Safe on any container screen — one with no matching revealed grafts
+     * returns {@link Resolution#PASS}.
+     */
+    public static Resolution resolveHoveredSlot(AbstractContainerScreen<?> screen,
+                                                double mouseX, double mouseY,
+                                                @Nullable Set<String> panelFilter) {
         AbstractContainerMenu menu = screen.getMenu();
         AbstractContainerScreenAccessor acc = (AbstractContainerScreenAccessor) screen;
         int leftPos = acc.menuKit$getLeftPos();
@@ -113,7 +139,9 @@ public final class MenuKitGraftInput {
         Map<String, int[]> bounds = null; // panelId -> {minX, minY, maxX, maxY}
 
         for (Slot slot : menu.slots) {
-            if (!(slot instanceof MenuKitSlot mk) || mk.isInert()) continue;
+            MenuKitSlot mk = GraftSlots.asGraft(slot);
+            if (mk == null || mk.isInert()) continue;
+            if (panelFilter != null && !panelFilter.contains(mk.getPanelId())) continue;
 
             // Vanilla hover frame for an 18px slot cell: x-1 .. x+17, around the
             // slot's (mutable, §0047) presentation position.
@@ -121,7 +149,8 @@ public final class MenuKitGraftInput {
             int x1 = mk.graftX() + 17, y1 = mk.graftY() + 17;
 
             if (relX >= x0 && relX < x1 && relY >= y0 && relY < y1) {
-                return Resolution.hit(mk); // grafted slot wins outright
+                // Return the in-menu slot (raw graft, or the creative wrapper).
+                return Resolution.hit(slot); // grafted slot wins outright
             }
 
             if (bounds == null) bounds = new HashMap<>();
