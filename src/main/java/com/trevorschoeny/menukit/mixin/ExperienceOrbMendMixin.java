@@ -5,6 +5,7 @@ import com.trevorschoeny.menukit.core.MenuKitSlot;
 
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
@@ -49,11 +50,12 @@ import java.util.function.Predicate;
  * behavior. Vanilla equipped items keep their exact selection + break semantics
  * (via the original {@code getRandomItemWith} call).
  *
- * <h3>v1 selection</h3>
- * Random pick for parity, matching vanilla. NOTE: vanilla's equipped pick is one
- * pre-collapsed entry in the pool, so grafted/consumer candidates are slightly
- * over-weighted versus equipped-as-a-group. Accepted v1 simplification; a fair or
- * most-damaged-first selection policy is a later refinement (not requested yet).
+ * <h3>Fair selection (§0053)</h3>
+ * Uniform random pick across the unified pool — matching vanilla's per-orb
+ * randomness. Each equipped mendable item is expanded into its own pool entry
+ * (rather than vanilla's single pre-collapsed {@code getRandomItemWith} pick), so a
+ * uniform draw weights every mendable item equally and the opted-in grafted /
+ * consumer candidates are no longer over-represented versus equipped-as-a-group.
  *
  * <h3>Sync (the load-bearing subtlety)</h3>
  * Vanilla repairs the chosen stack <em>in place</em> AFTER this redirect returns,
@@ -130,8 +132,20 @@ public class ExperienceOrbMendMixin {
         // Nothing opted in → vanilla behavior, untouched.
         if (extras == 0) return vanilla;
 
-        // Add vanilla's equipped pick (if any) to the unified pool, then pick one.
-        vanilla.ifPresent(eiu -> { pool.add(eiu); commits.add(null); });
+        // §0053 fair weighting: add EVERY equipped mendable item as its own pool
+        // entry — not vanilla's single pre-collapsed pick — so the opted-in grafted /
+        // consumer candidates aren't over-represented versus equipped-as-a-group.
+        // (Vanilla's getRandomItemWith collapses all equipped matches to one entry;
+        // we expand them so a uniform pick weights every mendable item equally.)
+        // Equipped items repair in place on the live equipment stack, which syncs via
+        // vanilla's equipment broadcast — commit = null, exactly like vanilla's pick.
+        for (EquipmentSlot eq : EquipmentSlot.values()) {
+            ItemStack equipped = entity.getItemBySlot(eq);
+            if (menukit$mendable(equipped)) {
+                pool.add(new EnchantedItemInUse(equipped, null, player, item -> {}));
+                commits.add(null);
+            }
+        }
         if (pool.isEmpty()) return Optional.empty();
 
         int index = player.getRandom().nextInt(pool.size());
