@@ -2,6 +2,7 @@ package com.trevorschoeny.menukit.mixin;
 
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
 
 import org.jetbrains.annotations.ApiStatus;
 import org.spongepowered.asm.mixin.Mixin;
@@ -40,4 +41,18 @@ public interface AbstractContainerMenuInvoker {
      */
     @Invoker("addSlot")
     Slot menukit$addSlot(Slot slot);
+
+    /**
+     * Calls vanilla's {@code moveItemStackTo} — the merge-into-partials then
+     * fill-empties routine vanilla's own {@code quickMoveStack} uses. Exposed so
+     * {@link com.trevorschoeny.menukit.core.GraftQuickMove} can drive shift-click
+     * routing into / out of grafted slots on a <em>foreign</em> menu (chest,
+     * furnace) without reimplementing the merge logic — the library routes the
+     * consumer's own slot through vanilla's exact placement, it invents no
+     * behavior. Absorbed from inventory-max's hand-built equivalent so consumers
+     * stop re-declaring it.
+     */
+    @Invoker("moveItemStackTo")
+    boolean menukit$moveItemStackTo(ItemStack stack, int startIndex, int endIndex,
+                                    boolean reverseDirection);
 }

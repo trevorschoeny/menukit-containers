@@ -9,6 +9,7 @@
     "VerifyMayPlaceMixin",
     "VerifyGetItemMixin",
     "PlayerOpenMenuMixin",
+    "PlayerInitMenuProjectionMixin",
     "PlayerListRespawnMixin",
     "M7BlockDropMixin",
     "PlayerDeathDropMixin",
@@ -17,8 +18,7 @@
     "ExperienceOrbMendMixin"
   ],
   "client": [
-    "MenuKitGraftCreativeParkMixin",
-    "SlotWrapperAccessor"
+    "MenuKitGraftCreativeParkMixin"
   ],
   "injectors": {
     "defaultRequire": 1
