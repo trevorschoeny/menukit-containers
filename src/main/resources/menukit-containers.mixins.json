@@ -18,7 +18,9 @@
     "ExperienceOrbMendMixin"
   ],
   "client": [
-    "MenuKitGraftCreativeParkMixin"
+    "MenuKitGraftCreativeParkMixin",
+    "MenuKitGraftCreativeItemPickerMixin",
+    "MenuKitGraftCreativeClickRouteMixin"
   ],
   "injectors": {
     "defaultRequire": 1
