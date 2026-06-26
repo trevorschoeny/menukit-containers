@@ -8,6 +8,7 @@ import net.minecraft.core.NonNullList;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemContainerContents;
@@ -171,6 +172,32 @@ public abstract class StorageAttachment<O, C> {
     }
 
     /**
+     * Persists slot-group content on a generic {@link Entity} via a Fabric
+     * attachment. Content saves with the entity in its NBT and dies with it —
+     * no respawn carry (unlike {@link #playerAttached}, which has death handling;
+     * an entity is not a player). For entity-owned containers (minecart with
+     * chest, donkey/llama/mule, future entity-scoped grafts).
+     *
+     * <p>Server-persistent; the client view is kept current by the menu's vanilla
+     * slot protocol (the grafted slots write the client-side attachment on each
+     * {@code ContainerSetSlot}), the same way {@link #playerAttached} content
+     * displays without a separate attachment sync.
+     *
+     * @param namespace attachment-id namespace (consumer's mod id)
+     * @param path      attachment-id path (unique per consumer-declared attachment)
+     * @param slotCount number of item slots the content holds
+     */
+    public static StorageAttachment<Entity, NonNullList<ItemStack>> entityAttached(
+            String namespace, String path, int slotCount) {
+        Identifier id = Identifier.fromNamespaceAndPath(namespace, path);
+        // A plain persistent attachment (no copyOnDeath, no block-drop enrollment) —
+        // the generic factory works for any Fabric AttachmentTarget, Entity included.
+        AttachmentType<ItemContainerContents> type =
+                StorageAttachments.registerContainerAttachment(id, slotCount);
+        return new EntityAttachment(slotCount, type);
+    }
+
+    /**
      * Persists slot-group content on an {@link ItemStack} via vanilla's
      * {@link DataComponents#CONTAINER} component ({@link ItemContainerContents}).
      * Content travels with the item through menus, pickup, drop, throw.
@@ -277,6 +304,27 @@ public abstract class StorageAttachment<O, C> {
                             : StorageAttachments.defaultEmpty(slotCount),
                     contents -> be.setAttached(type, contents),
                     be::setChanged);
+        }
+    }
+
+    /** Generic Entity-attached via Fabric attachment (server-persistent; the menu
+     *  slot protocol carries the client view, like player content). */
+    private static final class EntityAttachment
+            extends StorageAttachment<Entity, NonNullList<ItemStack>> {
+        private final int slotCount;
+        private final AttachmentType<ItemContainerContents> type;
+        EntityAttachment(int slotCount, AttachmentType<ItemContainerContents> type) {
+            this.slotCount = slotCount;
+            this.type = type;
+        }
+        @Override public int slotCount() { return slotCount; }
+        @Override public Storage bind(Entity entity) {
+            return new FabricAttachmentStorage(slotCount,
+                    () -> entity.hasAttached(type)
+                            ? entity.getAttached(type)
+                            : StorageAttachments.defaultEmpty(slotCount),
+                    contents -> entity.setAttached(type, contents),
+                    () -> { /* Entities auto-persist via Fabric; no setChanged */ });
         }
     }
 
