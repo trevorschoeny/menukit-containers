@@ -24,7 +24,7 @@ import java.util.List;
  * <p><b>Optional dependency.</b> This class references UG types
  * ({@code eu.pb4.graves.*}, {@code modCompileOnly}) and is loaded ONLY behind a
  * {@code FabricLoader.isModLoaded("universal-graves")} guard (in
- * {@code MenuKitContainers.init}). When UG is absent the class never loads, and
+ * {@code MKC.init}). When UG is absent the class never loads, and
  * the Phase-1 floor drops the slots beside the death spot. MKC hard-depends on UG
  * not at all.
  *
@@ -42,8 +42,8 @@ public final class UniversalGravesAdapter implements GraveInventoryMask {
 
     private static final Identifier MASK_ID =
             Identifier.fromNamespaceAndPath("menukit", "player_slots");
-    private static final String K_ATTACHMENT = "MenuKitAttachment";
-    private static final String K_INDEX = "MenuKitIndex";
+    private static final String K_ATTACHMENT = "MKAttachment";
+    private static final String K_INDEX = "MKIndex";
 
     private UniversalGravesAdapter() {}
 

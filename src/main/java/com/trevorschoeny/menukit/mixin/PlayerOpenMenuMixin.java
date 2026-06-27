@@ -27,7 +27,7 @@ import java.util.OptionalInt;
 public abstract class PlayerOpenMenuMixin {
 
     @Inject(method = "openMenu", at = @At("RETURN"))
-    private void menuKit$sendSlotStateSnapshot(MenuProvider menuProvider,
+    private void mk$sendSlotStateSnapshot(MenuProvider menuProvider,
                                                  CallbackInfoReturnable<OptionalInt> cir) {
         OptionalInt result = cir.getReturnValue();
         if (result == null || result.isEmpty()) return;

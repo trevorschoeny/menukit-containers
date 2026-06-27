@@ -19,7 +19,7 @@ import net.minecraft.world.item.ItemStack;
  * the {@code ItemPickerMenu} on the <b>inventory</b> tab; the non-inventory tabs
  * carry a fixed base slot set (the item grid + hotbar) that never sees the slot,
  * so a slot is invisible and unclickable there. We append one of these wrappers
- * per slot to that base set ({@code MenuKitCreativeSlotItemPickerMixin}) so the
+ * per slot to that base set ({@code MKCCreativeSlotItemPickerMixin}) so the
  * existing slot dispatch — which walks {@code menu.slots} and unwraps via
  * {@link com.trevorschoeny.menukit.inject.Slots#target} — discovers the slot on
  * every tab. We can't construct vanilla's {@code SlotWrapper} (package-private),
@@ -32,7 +32,7 @@ import net.minecraft.world.item.ItemStack;
  *
  * Constructed off-screen (the screen dispatcher draws the slot at its live
  * {@code renderX/renderY} instead), and its placement clicks are re-routed to the
- * proven inventory-tab path by {@code MenuKitCreativeSlotClickRouteMixin}. The
+ * proven inventory-tab path by {@code MKCCreativeSlotClickRouteMixin}. The
  * delegation below keeps vanilla's own reads/writes (item, may-place, take, etc.)
  * faithful for anything that does touch the wrapper directly.
  *
@@ -55,7 +55,7 @@ public final class CreativeSlotWrapper extends Slot implements SlotWrapperAccess
 
     /** The unwrap seam — resolves this wrapper back to its slot (see {@link SlotWrapperAccessor}). */
     @Override
-    public Slot menuKit$getTarget() {
+    public Slot mk$getTarget() {
         return this.target;
     }
 

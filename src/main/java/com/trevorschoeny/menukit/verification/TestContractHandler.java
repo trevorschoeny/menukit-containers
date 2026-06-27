@@ -4,7 +4,7 @@ import com.trevorschoeny.menukit.core.EphemeralStorage;
 import com.trevorschoeny.menukit.core.InteractionPolicy;
 import com.trevorschoeny.menukit.core.QuickMoveParticipation;
 import com.trevorschoeny.menukit.core.VirtualStorage;
-import com.trevorschoeny.menukit.screen.MenuKitScreenHandler;
+import com.trevorschoeny.menukit.screen.MKCScreenHandler;
 
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.MenuType;
@@ -40,9 +40,9 @@ public final class TestContractHandler {
     private TestContractHandler() {}
 
     /** Factory — wired into the MenuType at registration time. */
-    public static MenuKitScreenHandler create(int syncId,
+    public static MKCScreenHandler create(int syncId,
                                               Inventory playerInventory,
-                                              MenuType<MenuKitScreenHandler> menuType) {
+                                              MenuType<MKCScreenHandler> menuType) {
         // Main panel storage — 6 free slots. Seed a couple of non-empty
         // stacks so composability/substitutability tests have items to
         // observe without requiring the player to pre-place anything.
@@ -72,7 +72,7 @@ public final class TestContractHandler {
                 },
                 playerInventory::setChanged);
 
-        return MenuKitScreenHandler.builder(menuType)
+        return MKCScreenHandler.builder(menuType)
                 .panel("main", p -> p
                         .group("container", mainStorage, InteractionPolicy.free()))
                 .panel("hidden", p -> p

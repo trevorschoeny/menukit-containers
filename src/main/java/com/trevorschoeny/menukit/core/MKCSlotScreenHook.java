@@ -193,7 +193,7 @@ public final class MKCSlotScreenHook implements SlotScreenHook {
     private static SlotScreenContext context(AbstractContainerScreen<?> screen,
                                               double mouseX, double mouseY) {
         AbstractContainerScreenAccessor acc = (AbstractContainerScreenAccessor) screen;
-        return new SlotScreenContext(screen, acc.menuKit$getLeftPos(),
-                acc.menuKit$getTopPos(), mouseX, mouseY);
+        return new SlotScreenContext(screen, acc.mk$getLeftPos(),
+                acc.mk$getTopPos(), mouseX, mouseY);
     }
 }

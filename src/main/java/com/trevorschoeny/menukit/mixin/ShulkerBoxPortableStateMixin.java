@@ -47,7 +47,7 @@ public abstract class ShulkerBoxPortableStateMixin {
 
     /** BE → item: emit the M1 bag as the travel component (snapshot copy). */
     @Inject(method = "collectImplicitComponents", at = @At("TAIL"))
-    private void menukit$emitPortableSlotState(DataComponentMap.Builder components, CallbackInfo ci) {
+    private void mk$emitPortableSlotState(DataComponentMap.Builder components, CallbackInfo ci) {
         if (!((Object) this instanceof ShulkerBoxBlockEntity)) return; // block-portable: shulkers only
         BlockEntity be = (BlockEntity) (Object) this;
         if (!be.hasAttached(SlotStateAttachments.BLOCK_ENTITY)) return;
@@ -60,7 +60,7 @@ public abstract class ShulkerBoxPortableStateMixin {
 
     /** item → BE: restore the M1 bag from the travel component (fresh copy). */
     @Inject(method = "applyImplicitComponents", at = @At("TAIL"))
-    private void menukit$restorePortableSlotState(DataComponentGetter input, CallbackInfo ci) {
+    private void mk$restorePortableSlotState(DataComponentGetter input, CallbackInfo ci) {
         if (!((Object) this instanceof ShulkerBoxBlockEntity)) return; // block-portable: shulkers only
         PerPlayerSlotStateBag bag = input.get(SlotStateComponents.PORTABLE_SLOT_STATE);
         if (bag != null) {

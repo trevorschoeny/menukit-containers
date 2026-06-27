@@ -26,7 +26,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * 5×9 item grid + the player hotbar — built once here in the constructor. Only on
  * the <b>inventory</b> tab does {@code selectTab} swap that base for wrappers of
  * every {@code player.inventoryMenu} slot (slots included, then parked off-screen
- * by {@code MenuKitCreativeSlotParkMixin}); leaving the inventory tab restores the
+ * by {@code MKCCreativeSlotParkMixin}); leaving the inventory tab restores the
  * base. So the slot dispatch — which walks the active {@code menu.slots} and
  * unwraps each via {@code Slots.target} — finds the slot on the inventory tab but
  * never on the base set the other tabs show. That is the exact boundary behind
@@ -44,14 +44,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * at {@code renderX/renderY} throughout.
  *
  * <p>Placement clicks on these wrappers are re-routed to the proven inventory-tab
- * path by {@code MenuKitCreativeSlotClickRouteMixin} (the base-set click path is
+ * path by {@code MKCCreativeSlotClickRouteMixin} (the base-set click path is
  * client-only and would not reach the slot's backing storage).
  *
  * <p>Generic — detects a slot by {@code instanceof MKCSlot}, no per-consumer
  * knowledge. Client-only (the creative screen is a client type).
  */
 @Mixin(CreativeModeInventoryScreen.ItemPickerMenu.class)
-public abstract class MenuKitCreativeSlotItemPickerMixin {
+public abstract class MKCCreativeSlotItemPickerMixin {
 
     /** Far off-screen — the same parking coordinate the inventory-tab wrappers use. */
     private static final int SLOT_OFFSCREEN = -10000;
@@ -60,7 +60,7 @@ public abstract class MenuKitCreativeSlotItemPickerMixin {
     @Shadow @Final private AbstractContainerMenu inventoryMenu;
 
     @Inject(method = "<init>", at = @At("TAIL"))
-    private void menukit$appendSlotWrappers(Player player, CallbackInfo ci) {
+    private void mk$appendSlotWrappers(Player player, CallbackInfo ci) {
         // The slot set on inventoryMenu is structural and stable (slots are
         // appended once at registration; reveal/hide is inertness, not add/remove),
         // so a fixed wrapper per slot is correct for the menu's lifetime.
@@ -73,7 +73,7 @@ public abstract class MenuKitCreativeSlotItemPickerMixin {
         AbstractContainerMenuInvoker self = (AbstractContainerMenuInvoker) (Object) this;
         for (Slot slot : this.inventoryMenu.slots) {
             if (slot instanceof MKCSlot mk) {
-                self.menukit$addSlot(new CreativeSlotWrapper(mk, SLOT_OFFSCREEN, SLOT_OFFSCREEN));
+                self.mk$addSlot(new CreativeSlotWrapper(mk, SLOT_OFFSCREEN, SLOT_OFFSCREEN));
             }
         }
     }

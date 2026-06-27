@@ -18,9 +18,9 @@
     "ExperienceOrbMendMixin"
   ],
   "client": [
-    "MenuKitCreativeSlotParkMixin",
-    "MenuKitCreativeSlotItemPickerMixin",
-    "MenuKitCreativeSlotClickRouteMixin"
+    "MKCCreativeSlotParkMixin",
+    "MKCCreativeSlotItemPickerMixin",
+    "MKCCreativeSlotClickRouteMixin"
   ],
   "injectors": {
     "defaultRequire": 1

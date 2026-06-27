@@ -65,7 +65,7 @@ public class CreativeSetSlotMixin {
     @Shadow public ServerPlayer player;
 
     @Inject(method = "handleSetCreativeModeSlot", at = @At("HEAD"), cancellable = true)
-    private void menukit$routeSlotCreativeSet(
+    private void mk$routeSlotCreativeSet(
             ServerboundSetCreativeModeSlotPacket packet, CallbackInfo ci) {
         // Run only on the server thread. Vanilla's very first action (just after
         // this HEAD inject) is PacketUtils.ensureRunningOnSameThread, which

@@ -36,7 +36,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class PlayerDeathDropMixin {
 
     @Inject(method = "dropEquipment", at = @At("TAIL"))
-    private void menukit$dropPlayerSlotsOnDeath(ServerLevel level, CallbackInfo ci) {
+    private void mk$dropPlayerSlotsOnDeath(ServerLevel level, CallbackInfo ci) {
         PlayerDeathDropHandler.dropAllOnDeath((Player) (Object) this, level);
     }
 }

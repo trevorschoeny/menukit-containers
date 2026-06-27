@@ -74,18 +74,18 @@ public class ExperienceOrbMendMixin {
     // Lives on the orb instance (stable across playerTouch → repairPlayerItems
     // recursion); lazy-init at playerTouch HEAD so it cannot leak across orbs.
     @Unique
-    private List<Runnable> menukit$mendCommits;
+    private List<Runnable> mk$mendCommits;
 
     @Inject(method = "playerTouch", at = @At("HEAD"))
-    private void menukit$mendBegin(Player player, CallbackInfo ci) {
-        this.menukit$mendCommits = new ArrayList<>();
+    private void mk$mendBegin(Player player, CallbackInfo ci) {
+        this.mk$mendCommits = new ArrayList<>();
     }
 
     @Inject(method = "playerTouch", at = @At("TAIL"))
-    private void menukit$mendDrain(Player player, CallbackInfo ci) {
-        if (this.menukit$mendCommits != null) {
-            for (Runnable commit : this.menukit$mendCommits) commit.run();
-            this.menukit$mendCommits = null;
+    private void mk$mendDrain(Player player, CallbackInfo ci) {
+        if (this.mk$mendCommits != null) {
+            for (Runnable commit : this.mk$mendCommits) commit.run();
+            this.mk$mendCommits = null;
         }
     }
 
@@ -96,7 +96,7 @@ public class ExperienceOrbMendMixin {
                             + "getRandomItemWith(Lnet/minecraft/core/component/DataComponentType;"
                             + "Lnet/minecraft/world/entity/LivingEntity;Ljava/util/function/Predicate;)"
                             + "Ljava/util/Optional;"))
-    private Optional<EnchantedItemInUse> menukit$widenMendPool(
+    private Optional<EnchantedItemInUse> mk$widenMendPool(
             DataComponentType<?> effect, LivingEntity entity, Predicate<ItemStack> isDamaged) {
         Optional<EnchantedItemInUse> vanilla =
                 EnchantmentHelper.getRandomItemWith(effect, entity, isDamaged);
@@ -112,7 +112,7 @@ public class ExperienceOrbMendMixin {
         for (Slot slot : player.inventoryMenu.slots) {
             if (slot instanceof MKCSlot mk && mk.getGroup().mendsFromXp()) {
                 ItemStack stack = mk.getItem();
-                if (menukit$mendable(stack)) {
+                if (mk$mendable(stack)) {
                     pool.add(new EnchantedItemInUse(stack, null, player, item -> {}));
                     commits.add(() -> mk.set(stack));   // write back + markDirty
                     extras++;
@@ -122,7 +122,7 @@ public class ExperienceOrbMendMixin {
         // Consumer-contributed candidates (MKC applies the predicate; consumer owns "which").
         for (MendingCandidates.Candidate candidate : MendingCandidates.gather(player)) {
             ItemStack stack = candidate.stack();
-            if (menukit$mendable(stack)) {
+            if (mk$mendable(stack)) {
                 pool.add(new EnchantedItemInUse(stack, null, player, item -> {}));
                 commits.add(candidate::onRepaired);
                 extras++;
@@ -141,7 +141,7 @@ public class ExperienceOrbMendMixin {
         // vanilla's equipment broadcast — commit = null, exactly like vanilla's pick.
         for (EquipmentSlot eq : EquipmentSlot.values()) {
             ItemStack equipped = entity.getItemBySlot(eq);
-            if (menukit$mendable(equipped)) {
+            if (mk$mendable(equipped)) {
                 pool.add(new EnchantedItemInUse(equipped, null, player, item -> {}));
                 commits.add(null);
             }
@@ -150,15 +150,15 @@ public class ExperienceOrbMendMixin {
 
         int index = player.getRandom().nextInt(pool.size());
         Runnable commit = commits.get(index);
-        if (commit != null && this.menukit$mendCommits != null) {
-            this.menukit$mendCommits.add(commit);
+        if (commit != null && this.mk$mendCommits != null) {
+            this.mk$mendCommits.add(commit);
         }
         return Optional.of(pool.get(index));
     }
 
     /** Damaged AND carries the vanilla {@code REPAIR_WITH_XP} (Mending) effect. */
     @Unique
-    private static boolean menukit$mendable(ItemStack stack) {
+    private static boolean mk$mendable(ItemStack stack) {
         return !stack.isEmpty() && stack.isDamaged()
                 && EnchantmentHelper.has(stack, EnchantmentEffectComponents.REPAIR_WITH_XP);
     }

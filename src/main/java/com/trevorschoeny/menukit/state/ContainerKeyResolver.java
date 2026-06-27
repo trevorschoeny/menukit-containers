@@ -57,8 +57,8 @@ final class ContainerKeyResolver {
 
         if (container instanceof CompoundContainer compound) {
             CompoundContainerAccessor halves = (CompoundContainerAccessor) (Object) compound;
-            Container first = halves.menukit$getContainer1();
-            Container second = halves.menukit$getContainer2();
+            Container first = halves.mk$getContainer1();
+            Container second = halves.mk$getContainer2();
             int firstSize = first.getContainerSize();
             // Below the split → first half at the same local index; at or above
             // → second half, local index rebased past the first half's slots.

@@ -128,8 +128,8 @@ public final class SlotElement implements PanelElement {
         Screen screen = Minecraft.getInstance().screen;
         if (screen instanceof AbstractContainerScreen<?> acs) {
             AbstractContainerScreenAccessor acc = (AbstractContainerScreenAccessor) acs;
-            slot.setRenderPosition(screenX - acc.menuKit$getLeftPos(),
-                    screenY - acc.menuKit$getTopPos());
+            slot.setRenderPosition(screenX - acc.mk$getLeftPos(),
+                    screenY - acc.mk$getTopPos());
         }
 
         int size = SlotRendering.DEFAULT_SIZE;

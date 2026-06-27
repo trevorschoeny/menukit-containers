@@ -30,7 +30,7 @@ import org.jspecify.annotations.Nullable;
  * screen's slots have drawn — for inventory-family screens that means
  * {@code AbstractRecipeBookScreen.render} at
  * {@code INVOKE renderContents shift AFTER} (see MK's
- * {@code MenuKitRecipeBookPanelRenderMixin} for the exact injection point).
+ * {@code MKRecipeBookPanelRenderMixin} for the exact injection point).
  * The library does not ship that mixin (§0019 / §0045 — render decoration is
  * consumer-owned, the same as panel decoration); the consumer composes this
  * helper inside their mixin.
@@ -75,7 +75,7 @@ public final class MKCSlotRender {
      * survival inventory) and through the creative {@code SlotWrapper} that wraps
      * them ({@link Slots#asMKCSlot}) — so the same call renders correctly on
      * the creative screen, where the wrappers are parked off-screen by
-     * {@code MenuKitCreativeSlotParkMixin} and the slot is drawn here at its
+     * {@code MKCCreativeSlotParkMixin} and the slot is drawn here at its
      * live {@code renderX/renderY} instead.
      */
     public static void renderSlots(AbstractContainerScreen<?> screen,
@@ -84,8 +84,8 @@ public final class MKCSlotRender {
                                           @Nullable String panelId) {
         AbstractContainerMenu menu = screen.getMenu();
         AbstractContainerScreenAccessor acc = (AbstractContainerScreenAccessor) screen;
-        int leftPos = acc.menuKit$getLeftPos();
-        int topPos = acc.menuKit$getTopPos();
+        int leftPos = acc.mk$getLeftPos();
+        int topPos = acc.mk$getTopPos();
 
         for (Slot slot : menu.slots) {
             MKCSlot mk = MKCSlotAccess.asMKCSlot(slot);

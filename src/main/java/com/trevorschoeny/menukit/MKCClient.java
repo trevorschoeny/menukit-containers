@@ -19,22 +19,22 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <ul>
  *   <li>M1 client-state init (delegated to
- *       {@link MenuKitContainers#initClient}) — registers client-side
+ *       {@link MKC#initClient}) — registers client-side
  *       networking handlers + verification client-side test-screen
  *       factory.</li>
  * </ul>
  *
  * <p>Post-§0043: {@code VanillaSlotGroupResolvers.registerAll()} and
- * {@code SlotGroupPanelRegistry.init()} moved to {@code MenuKitClient} —
+ * {@code SlotGroupPanelRegistry.init()} moved to {@code MKClient} —
  * those are observation idioms, complete on MK's side.
  */
 @ApiStatus.Internal
-public class MenuKitContainersClient implements ClientModInitializer {
+public class MKCClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
         // Delegate to MenuKit: Containers' client-state init.
-        MenuKitContainers.initClient();
+        MKC.initClient();
 
         // Inventory-screen parity: plug the registered-slot draw/input/reveal work
         // into MenuKit's library-owned screen dispatch (§0042 — MK exposes the

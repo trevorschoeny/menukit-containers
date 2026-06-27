@@ -16,14 +16,14 @@ import org.jetbrains.annotations.ApiStatus;
  *       vanilla menus, click-through prohibition, recipe-book awareness —
  *       the UI library.</li>
  *   <li><b>MenuKit: Containers</b> ({@code menukit-containers}, universal):
- *       custom container menus ({@code MenuKitScreenHandler}), per-slot
+ *       custom container menus ({@code MKCScreenHandler}), per-slot
  *       state (M1), slot-group regions, custom payloads, server-coupled
  *       mixins, contract verification harness — the slot extension.</li>
  * </ul>
  *
  * <p>The story: <i>MenuKit is the UI library; MenuKit: Containers adds
  * slots to MenuKit.</i> Consumer mods that build custom container menus
- * (define a {@code MenuKitScreenHandler} subclass) depend on this artifact
+ * (define a {@code MKCScreenHandler} subclass) depend on this artifact
  * and inherit MenuKit's UI surface transitively. Consumer mods that only
  * need HUD/widgets/layouts depend on the MenuKit artifact alone and ship
  * as {@code "environment": "client"}.
@@ -31,12 +31,12 @@ import org.jetbrains.annotations.ApiStatus;
  * <p>This class owns common-side init for slot-state machinery — M1
  * attachment registration, networking-payload registration, and the
  * verification harness's server-side init. The companion
- * {@link MenuKitContainersClient} owns the client-side counterpart.
+ * {@link MKCClient} owns the client-side counterpart.
  *
  * <p>The MenuKit: Containers canonical surface for consumers:
  * <ul>
- *   <li><b>Screens:</b> {@code com.trevorschoeny.menukit.screen.MenuKitScreenHandler}
- *       + {@code MenuKitHandledScreen}</li>
+ *   <li><b>Screens:</b> {@code com.trevorschoeny.menukit.screen.MKCScreenHandler}
+ *       + {@code MKCHandledScreen}</li>
  *   <li><b>Slot composition:</b> {@code com.trevorschoeny.menukit.core.SlotGroup},
  *       {@code SlotGroupLike}</li>
  *   <li><b>Observed screens:</b> {@code HandlerRecognizerRegistry},
@@ -48,7 +48,7 @@ import org.jetbrains.annotations.ApiStatus;
  * </ul>
  */
 @ApiStatus.Internal
-public class MenuKitContainers implements ModInitializer {
+public class MKC implements ModInitializer {
 
     /** Logger for the MenuKit: Containers artifact — distinct from MenuKit's
      *  own logger so init traces are distinguishable in the log output. */
@@ -62,7 +62,7 @@ public class MenuKitContainers implements ModInitializer {
     /** Common-side initialization. Registers M1 attachment types + shared
      *  networking payloads + the verification harness's server-side hooks.
      *  Must run before any consumer-mod code that references
-     *  {@code MenuKitScreenHandler}, {@code MKSlotState}, or
+     *  {@code MKCScreenHandler}, {@code MKSlotState}, or
      *  {@code StorageAttachment}. */
     public static void init() {
         LOGGER.info("[MenuKit-Containers] Initialized");
@@ -94,7 +94,7 @@ public class MenuKitContainers implements ModInitializer {
     }
 
     /** Client-side initialization. Invoked from
-     *  {@link MenuKitContainersClient#onInitializeClient()}. Registers M1's
+     *  {@link MKCClient#onInitializeClient()}. Registers M1's
      *  client-side networking handlers. */
     public static void initClient() {
         LOGGER.info("[MenuKit-Containers] Client initialized");

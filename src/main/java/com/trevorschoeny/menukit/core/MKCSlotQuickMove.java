@@ -16,7 +16,7 @@ import java.util.Set;
  * Library-owned shift-click (quick-move) routing for registered slots on a
  * <b>foreign</b> menu — a chest/furnace/donkey menu MenuKit didn't build, that a
  * slot has been projected onto ({@link MKCSlotProjection}). The generalization of
- * {@code MenuKitScreenHandler.quickMoveStack}'s declarative routing to a menu
+ * {@code MKCScreenHandler.quickMoveStack}'s declarative routing to a menu
  * whose own vanilla {@code quickMoveStack} knows nothing about the appended slot
  * tail block.
  *
@@ -93,14 +93,14 @@ public final class MKCSlotQuickMove {
         // 1. Other slot groups that import + accept, highest priority first.
         for (SlotGroup candidate : sortedImporters(slotGroups, sourceGroup, working)) {
             if (working.isEmpty()) break;
-            mover.menukit$moveItemStackTo(working,
+            mover.mk$moveItemStackTo(working,
                     candidate.getFlatIndexStart(), candidate.getFlatIndexEnd(), false);
         }
         // 2. The menu's own vanilla slots (chest storage + player inventory), in
         //    menu order. Slots sit in the tail block [firstSlotIndex, size); the
         //    vanilla region is everything before it.
         if (!working.isEmpty() && firstSlotIndex > 0) {
-            mover.menukit$moveItemStackTo(working, 0, firstSlotIndex, false);
+            mover.mk$moveItemStackTo(working, 0, firstSlotIndex, false);
         }
 
         return finishSource(player, source, original, working);
@@ -123,7 +123,7 @@ public final class MKCSlotQuickMove {
         AbstractContainerMenuInvoker mover = (AbstractContainerMenuInvoker) menu;
         for (SlotGroup candidate : importers) {
             if (working.isEmpty()) break;
-            mover.menukit$moveItemStackTo(working,
+            mover.mk$moveItemStackTo(working,
                     candidate.getFlatIndexStart(), candidate.getFlatIndexEnd(), false);
         }
         if (working.getCount() == original.getCount()) return ItemStack.EMPTY; // slots took nothing

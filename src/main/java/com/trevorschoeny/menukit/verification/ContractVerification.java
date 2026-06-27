@@ -22,7 +22,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.NonNullList;
 import com.trevorschoeny.menukit.inject.ScreenBounds;
 import com.trevorschoeny.menukit.inject.ScreenOrigin;
-import com.trevorschoeny.menukit.screen.MenuKitScreenHandler;
+import com.trevorschoeny.menukit.screen.MKCScreenHandler;
 import com.trevorschoeny.menukit.state.SlotStateAttachments;
 import com.trevorschoeny.menukit.state.SlotStateBag;
 
@@ -133,7 +133,7 @@ public final class ContractVerification {
 
     // ── MenuType + screen registration ──────────────────────────────────
 
-    private static MenuType<MenuKitScreenHandler> testMenuType;
+    private static MenuType<MKCScreenHandler> testMenuType;
 
     // ── Per-slot state test channel (M1 contract 7) ─────────────────────
     // Registered in initServer so the channel exists before /mkverify runs.
@@ -159,7 +159,7 @@ public final class ContractVerification {
             StorageAttachment.playerAttached("menukit-verify", "m7_test_content", 3);
 
     /**
-     * Called from {@code MenuKit.init()} — server-safe MenuType
+     * Called from {@code MK.init()} — server-safe MenuType
      * registration. Phase 14d-2.7: chat command registration removed
      * entirely per TESTING_CONVENTIONS.md (single test entry point is
      * the validator's inventory "Test" button; library exposes
@@ -176,7 +176,7 @@ public final class ContractVerification {
     }
 
     // Phase 14d-2.7 — visual smoke wireups (dialog, scroll, opacity)
-    // migrated to validator/.../scenarios/smoke/MenuKitSmokeWireup.java
+    // migrated to validator/.../scenarios/smoke/MKSmokeWireup.java
     // per the testing convention's library/validator split. Library
     // exposes only pure-logic contracts; validator owns visual smoke.
 
@@ -206,7 +206,7 @@ public final class ContractVerification {
      * the real visible screen (which will get its own live syncId).
      */
     private static void installTestHandler(ServerPlayer player) {
-        MenuKitScreenHandler handler = TestContractHandler.create(
+        MKCScreenHandler handler = TestContractHandler.create(
                 0, player.getInventory(), testMenuType);
         player.containerMenu = handler;
     }
@@ -274,7 +274,7 @@ public final class ContractVerification {
 
         // ── Switch to test handler (server-side only) ───────────────────
         installTestHandler(player);
-        MenuKitScreenHandler handler = (MenuKitScreenHandler) player.containerMenu;
+        MKCScreenHandler handler = (MKCScreenHandler) player.containerMenu;
 
         // ── MK phases ───────────────────────────────────────────────────
         composabilityPhaseB(handler);
@@ -390,7 +390,7 @@ public final class ContractVerification {
         }
     }
 
-    private static void composabilityPhaseB(MenuKitScreenHandler handler) {
+    private static void composabilityPhaseB(MKCScreenHandler handler) {
         LOGGER.info("[Verify.Composability] Phase B — BEGIN (MK slots)");
         arm();
         try {
@@ -429,7 +429,7 @@ public final class ContractVerification {
     // MenuKit's inertness check runs, so a hidden-panel slot's return value
     // is EMPTY in the mixin's log — that's composition, not replacement.
 
-    private static void substitutability(MenuKitScreenHandler handler) {
+    private static void substitutability(MKCScreenHandler handler) {
         LOGGER.info("[Verify.Substitutability] BEGIN");
 
         int total = 0, mk = 0, passedInstance = 0;
@@ -484,7 +484,7 @@ public final class ContractVerification {
     // 10-toggle stress test checks this invariant after each toggle; any
     // desync is logged as a concrete failure.
 
-    private static void syncSafety(MenuKitScreenHandler handler) {
+    private static void syncSafety(MKCScreenHandler handler) {
         LOGGER.info("[Verify.SyncSafety] BEGIN");
 
         Panel hidden = handler.getPanel("hidden");
@@ -558,7 +558,7 @@ public final class ContractVerification {
         logUniformProbe("Phase A", player.inventoryMenu);
     }
 
-    private static void uniformPhaseB(MenuKitScreenHandler handler) {
+    private static void uniformPhaseB(MKCScreenHandler handler) {
         LOGGER.info("[Verify.Uniform] Phase B — BEGIN (MK handler)");
         logUniformProbe("Phase B", handler);
 
@@ -583,7 +583,7 @@ public final class ContractVerification {
         // through to MK's vanilla observation for non-owned. Both are complete
         // on their respective sides.
         Slot probe = menu.slots.get(0);
-        var result = (menu instanceof com.trevorschoeny.menukit.screen.MenuKitScreenHandler mkH)
+        var result = (menu instanceof com.trevorschoeny.menukit.screen.MKCScreenHandler mkH)
                 ? mkH.findGroupForSlot(probe)
                 : HandlerRecognizerRegistry.findGroup(menu, probe);
         if (result.isPresent()) {
@@ -631,7 +631,7 @@ public final class ContractVerification {
     // interaction policy, getItem returns real storage contents,
     // isInert()=false).
 
-    private static void inertness(ServerPlayer player, MenuKitScreenHandler handler) {
+    private static void inertness(ServerPlayer player, MKCScreenHandler handler) {
         LOGGER.info("[Verify.Inertness] BEGIN");
 
         Panel hidden = handler.getPanel("hidden");

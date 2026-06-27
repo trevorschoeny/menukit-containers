@@ -40,7 +40,7 @@ public interface AbstractContainerMenuInvoker {
      * the invoker reuses vanilla's exact bookkeeping.
      */
     @Invoker("addSlot")
-    Slot menukit$addSlot(Slot slot);
+    Slot mk$addSlot(Slot slot);
 
     /**
      * Calls vanilla's {@code moveItemStackTo} — the merge-into-partials then
@@ -53,6 +53,6 @@ public interface AbstractContainerMenuInvoker {
      * stop re-declaring it.
      */
     @Invoker("moveItemStackTo")
-    boolean menukit$moveItemStackTo(ItemStack stack, int startIndex, int endIndex,
+    boolean mk$moveItemStackTo(ItemStack stack, int startIndex, int endIndex,
                                     boolean reverseDirection);
 }

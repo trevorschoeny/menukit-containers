@@ -33,9 +33,9 @@ public interface CompoundContainerAccessor {
 
     /** The first backing half (slots {@code 0 .. container1.size-1} of the global range). */
     @Accessor("container1")
-    Container menukit$getContainer1();
+    Container mk$getContainer1();
 
     /** The second backing half (the remainder of the global range). */
     @Accessor("container2")
-    Container menukit$getContainer2();
+    Container mk$getContainer2();
 }

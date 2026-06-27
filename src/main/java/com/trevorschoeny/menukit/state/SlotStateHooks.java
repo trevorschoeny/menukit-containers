@@ -26,7 +26,7 @@ import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Wiring for M1 network payloads + player-join snapshot delivery.
- * Registration happens in {@code MenuKit.initServer} / {@code initClient};
+ * Registration happens in {@code MK.initServer} / {@code initClient};
  * per-call flows are static helpers so mixins and event callbacks can invoke
  * them without instance management.
  */

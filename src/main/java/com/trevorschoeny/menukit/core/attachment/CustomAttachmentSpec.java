@@ -16,7 +16,7 @@ import net.minecraft.world.item.ItemStack;
  *       to wrap it.</li>
  *   <li><b>Decorator-path escape hatch.</b> Consumers decorating vanilla
  *       menus via {@code ScreenPanelAdapter} — which doesn't route through
- *       {@code MenuKitScreenHandler} and therefore doesn't get the default
+ *       {@code MKCScreenHandler} and therefore doesn't get the default
  *       handler-owned save/load lifecycle — use a custom spec and trigger
  *       save/load from their decorator mixin directly.</li>
  * </ol>

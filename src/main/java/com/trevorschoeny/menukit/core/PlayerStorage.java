@@ -5,7 +5,7 @@ package com.trevorschoeny.menukit.core;
  * <b>player inventory side</b> of a menu, as opposed to the container side.
  *
  * <p>Used by
- * {@link com.trevorschoeny.menukit.screen.MenuKitScreenHandler}'s shift-click
+ * {@link com.trevorschoeny.menukit.screen.MKCScreenHandler}'s shift-click
  * routing ("Layer 2: source-aware baseline") to route items in the
  * player-prefers-container / container-prefers-player direction.
  *

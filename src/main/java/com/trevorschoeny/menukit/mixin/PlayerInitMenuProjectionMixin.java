@@ -39,7 +39,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class PlayerInitMenuProjectionMixin {
 
     @Inject(method = "initMenu", at = @At("HEAD"))
-    private void menukit$projectSlots(AbstractContainerMenu menu, CallbackInfo ci) {
+    private void mk$projectSlots(AbstractContainerMenu menu, CallbackInfo ci) {
         MKCSlotProjection.appendProjectedSlots(menu, (ServerPlayer) (Object) this);
     }
 }

@@ -35,7 +35,7 @@ import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
  * per-consumer knowledge. Client-only (creative screen is a client type).
  */
 @Mixin(CreativeModeInventoryScreen.class)
-public abstract class MenuKitCreativeSlotParkMixin {
+public abstract class MKCCreativeSlotParkMixin {
 
     /** Far off-screen — same parking coordinate the survival slot uses. */
     private static final int SLOT_OFFSCREEN = -10000;
@@ -45,7 +45,7 @@ public abstract class MenuKitCreativeSlotParkMixin {
             at = @At(value = "INVOKE",
                     target = "Lnet/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen$SlotWrapper;"
                             + "<init>(Lnet/minecraft/world/inventory/Slot;III)V"))
-    private void menuKit$parkSlotWrappers(Args args) {
+    private void mk$parkSlotWrappers(Args args) {
         // arg 0 is the wrapped target slot; slots wrap a raw MKCSlot.
         if (args.<Object>get(0) instanceof MKCSlot) {
             args.set(2, SLOT_OFFSCREEN); // x

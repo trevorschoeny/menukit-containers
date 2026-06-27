@@ -19,7 +19,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Creative non-inventory-tab slot <em>click</em> routing — the sync half of the
- * all-tabs parity fix ({@code MenuKitCreativeSlotItemPickerMixin} is the
+ * all-tabs parity fix ({@code MKCCreativeSlotItemPickerMixin} is the
  * visibility half).
  *
  * <h3>Why routing is needed</h3>
@@ -48,12 +48,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * there). Non-slot slots are never touched. Client-only.
  */
 @Mixin(CreativeModeInventoryScreen.class)
-public abstract class MenuKitCreativeSlotClickRouteMixin {
+public abstract class MKCCreativeSlotClickRouteMixin {
 
     @Shadow private static CreativeModeTab selectedTab;
 
     @Inject(method = "slotClicked", at = @At("HEAD"), cancellable = true)
-    private void menukit$routeSlotClick(Slot slot, int slotId, int button,
+    private void mk$routeSlotClick(Slot slot, int slotId, int button,
                                          ClickType clickType, CallbackInfo ci) {
         if (slot == null) return;
         MKCSlot mkcSlot = MKCSlotAccess.asMKCSlot(slot);

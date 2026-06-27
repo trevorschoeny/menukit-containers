@@ -233,7 +233,7 @@ public final class MKSlotState {
         if (container instanceof BlockEntity be) return be;
         if (container instanceof CompoundContainer compound) {
             // Both halves share a level; the first half is enough to reach the server.
-            Container first = ((CompoundContainerAccessor) (Object) compound).menukit$getContainer1();
+            Container first = ((CompoundContainerAccessor) (Object) compound).mk$getContainer1();
             if (first instanceof BlockEntity be) return be;
         }
         return null;

@@ -23,7 +23,7 @@ import java.util.Map;
 import java.util.function.BiConsumer;
 
 /**
- * Client-side partner to {@link MenuKitScreenHandler}. Owns layout computation,
+ * Client-side partner to {@link MKCScreenHandler}. Owns layout computation,
  * panel background rendering, slot positioning, and hover detection.
  *
  * <p>This is MenuKit's own screen base class for screens it builds.
@@ -39,7 +39,7 @@ import java.util.function.BiConsumer;
  *   <li>{@code renderTooltip()} — item tooltip at mouse position</li>
  * </ol>
  */
-public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenHandler> {
+public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("MenuKit");
 
@@ -75,7 +75,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
     // lands at screen center, even when relative panels (leftOf/above
     // anchors) produce negative layout-local coords.
     //
-    // Mirrors MenuKitScreen's centering formula:
+    // Mirrors MKScreen's centering formula:
     //   leftPos = (width - imageWidth) / 2 - layoutOriginX
     //   topPos  = (height - imageHeight) / 2 - layoutOriginY
     //
@@ -112,7 +112,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
 
     // ── Construction ───────────────────────────────────────────────────
 
-    public MenuKitHandledScreen(MenuKitScreenHandler handler, Inventory inventory,
+    public MKCHandledScreen(MKCScreenHandler handler, Inventory inventory,
                                 Component title) {
         super(handler, inventory, title);
         // Compute initial layout to set imageWidth/imageHeight before
@@ -177,7 +177,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
      * width via {@link Panel#size(int,int)} / {@link Panel#pinnedWidth(int)},
      * that pinned content extent overrides the slot+element max for that
      * axis (consumer set a hard budget). Same for pinned height. This
-     * mirrors the MK-side {@code MenuKitScreen.computePanelSize} fix from
+     * mirrors the MK-side {@code MKScreen.computePanelSize} fix from
      * 16g and is what makes Panel auto-wrap + auto-scroll fire on MKC
      * panels too — without it, MKC panels with pinned dims would still
      * be sized by the slot+element math, ignoring the consumer's pin.
@@ -302,7 +302,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
      * so the layout's geometric center lands at screen center even when
      * relative panels produce negative layout-local coords.
      *
-     * <p>Formula matches MenuKitScreen.computeLayout:
+     * <p>Formula matches MKScreen.computeLayout:
      * <pre>
      *   leftPos = (width - imageWidth)  / 2 - layoutOriginX
      *   topPos  = (height - imageHeight) / 2 - layoutOriginY
@@ -354,15 +354,15 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
                         // Phase 18r — padding is style-conditional per
                         // Panel.interiorPadding().
                         int padding = panel.interiorPadding();
-                        ((SlotPositionAccessor) slot).menuKit$setX(
+                        ((SlotPositionAccessor) slot).mk$setX(
                                 bounds.x() + padding + col * SLOT_SIZE + 1);
-                        ((SlotPositionAccessor) slot).menuKit$setY(
+                        ((SlotPositionAccessor) slot).mk$setY(
                                 bounds.y() + padding + groupOffsetY
                                         + row * SLOT_SIZE + extraY + 1);
                     } else {
                         // Hidden — move off screen so vanilla ignores them
-                        ((SlotPositionAccessor) slot).menuKit$setX(-9999);
-                        ((SlotPositionAccessor) slot).menuKit$setY(-9999);
+                        ((SlotPositionAccessor) slot).mk$setX(-9999);
+                        ((SlotPositionAccessor) slot).mk$setY(-9999);
                     }
                 }
 
@@ -516,7 +516,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
     /** Action triggered by a key press while this screen is open. */
     @FunctionalInterface
     public interface KeyAction {
-        boolean onKey(KeyEvent event, MenuKitHandledScreen screen);
+        boolean onKey(KeyEvent event, MKCHandledScreen screen);
     }
 
     private final Map<Integer, KeyAction> keyRegistry = new LinkedHashMap<>();
@@ -756,9 +756,9 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
      * ScrollContainer + future draggable elements per 14d-2 plumbing).
      *
      * <p>Phase 14d-2.7 primitive-gap fold-inline: element release was
-     * missing from MenuKitHandledScreen because no consumer surfaced
+     * missing from MKCHandledScreen because no consumer surfaced
      * the need until the Test Hub wanted a ScrollContainer inside the
-     * Hub screen. Same shape as MenuKitScreen's similar fold-inline.
+     * Hub screen. Same shape as MKScreen's similar fold-inline.
      * Element release fires for every visible element regardless of
      * cursor position — drag-end detection per 14d-2 ScrollContainer
      * plumbing.

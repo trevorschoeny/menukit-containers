@@ -34,7 +34,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public class VerifyGetItemMixin {
 
     @Inject(method = "getItem", at = @At("RETURN"))
-    private void menuKit$verifySubstitutability(CallbackInfoReturnable<ItemStack> cir) {
+    private void mk$verifySubstitutability(CallbackInfoReturnable<ItemStack> cir) {
         if (!ContractVerification.isActive()) return;
 
         Slot self = (Slot) (Object) this;

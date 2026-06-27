@@ -22,7 +22,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class PlayerListRespawnMixin {
 
     @Inject(method = "respawn", at = @At("RETURN"))
-    private void menuKit$sendJoinSnapshotOnRespawn(
+    private void mk$sendJoinSnapshotOnRespawn(
             ServerPlayer serverPlayer, boolean removed, Entity.RemovalReason reason,
             CallbackInfoReturnable<ServerPlayer> cir) {
         ServerPlayer respawned = cir.getReturnValue();

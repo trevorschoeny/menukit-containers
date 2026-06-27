@@ -126,8 +126,8 @@ public final class MKCSlotInput {
                                                 @Nullable Set<String> panelFilter) {
         AbstractContainerMenu menu = screen.getMenu();
         AbstractContainerScreenAccessor acc = (AbstractContainerScreenAccessor) screen;
-        int leftPos = acc.menuKit$getLeftPos();
-        int topPos = acc.menuKit$getTopPos();
+        int leftPos = acc.mk$getLeftPos();
+        int topPos = acc.mk$getTopPos();
 
         // Cursor in container-relative space (vanilla's isHovering frame).
         double relX = mouseX - leftPos;

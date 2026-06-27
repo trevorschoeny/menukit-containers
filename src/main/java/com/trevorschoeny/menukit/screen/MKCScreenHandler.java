@@ -27,7 +27,7 @@ import java.util.function.Consumer;
  * <p>Implements {@link PanelOwner} so Panel can notify on visibility changes
  * without depending on this class directly.
  */
-public class MenuKitScreenHandler extends AbstractContainerMenu implements PanelOwner {
+public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwner {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("MenuKit");
 
@@ -68,7 +68,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
      * @param groupsByPanel map from panel id to the list of slot groups
      *                      attached to that panel, in declaration order
      */
-    protected MenuKitScreenHandler(MenuType<?> type, int syncId,
+    protected MKCScreenHandler(MenuType<?> type, int syncId,
                                    List<Panel> panels,
                                    Map<String, List<SlotGroup>> groupsByPanel) {
         super(type, syncId);
@@ -101,7 +101,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
                 int groupStart = flatIndex;
 
                 for (int local = 0; local < group.getStorage().size(); local++) {
-                    // Temporary grid layout for testing — MenuKitHandledScreen
+                    // Temporary grid layout for testing — MKCHandledScreen
                     // positions slots properly during its layout pass.
                     int x = 8 + (flatIndex % 9) * 18;
                     int y = 18 + (flatIndex / 9) * 18;
@@ -118,7 +118,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
             }
         }
 
-        LOGGER.info("[MenuKitScreenHandler] Constructed: {} panels, {} total slots",
+        LOGGER.info("[MKCScreenHandler] Constructed: {} panels, {} total slots",
                 panels.size(), this.slots.size());
     }
 
@@ -169,7 +169,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
      *
      * <p>Per §0043 (Complete-on-Side Feature Ownership), this is the MKC-side
      * facade for combined owned + observed lookup. Consumer mods with a
-     * {@link MenuKitScreenHandler} in hand call this for the fast-path;
+     * {@link MKCScreenHandler} in hand call this for the fast-path;
      * consumer mods working only against vanilla handlers call MK's static
      * {@link HandlerRecognizerRegistry#findGroup(AbstractContainerMenu, Slot)}
      * directly.
@@ -348,7 +348,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
     // ── Builder API ─────────────────────────────────────────────────────
 
     /**
-     * Creates a builder for declaratively constructing a MenuKitScreenHandler.
+     * Creates a builder for declaratively constructing a MKCScreenHandler.
      *
      * <pre>{@code
      * // Mod-init: declare attachments via M7's StorageAttachment.
@@ -358,7 +358,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
      *     StorageAttachment.playerAttached("my-mod", "pockets", 27);
      *
      * // Menu construction: bind attachments to owner instances.
-     * MenuKitScreenHandler.builder(MY_MENU_TYPE)
+     * MKCScreenHandler.builder(MY_MENU_TYPE)
      *     .panel("main", p -> p
      *         .group("container", CHEST_EXTRA.bind(blockEntity), InteractionPolicy.free())
      *         .group("player", POCKETS.bind(player), InteractionPolicy.free()))
@@ -389,7 +389,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
         }
 
         /** Produces the configured handler. */
-        public MenuKitScreenHandler build(int syncId) {
+        public MKCScreenHandler build(int syncId) {
             List<Panel> panels = new ArrayList<>();
             Map<String, List<SlotGroup>> groupsByPanel = new LinkedHashMap<>();
 
@@ -433,7 +433,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
                 }
             }
 
-            return new MenuKitScreenHandler(menuType, syncId, panels, groupsByPanel);
+            return new MKCScreenHandler(menuType, syncId, panels, groupsByPanel);
         }
     }
 
@@ -538,7 +538,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
          * Declares a directional pairing from the last-added group to a target
          * group, identified by {@code "{panelId}.{groupId}"}. Paired targets
          * sort first in shift-click routing (Layer 1 in
-         * {@link MenuKitScreenHandler#quickMoveStack}), ahead of the
+         * {@link MKCScreenHandler#quickMoveStack}), ahead of the
          * source-aware baseline and declared priority.
          *
          * <p>Exposure-only wrapper over the already-shipped routing semantics

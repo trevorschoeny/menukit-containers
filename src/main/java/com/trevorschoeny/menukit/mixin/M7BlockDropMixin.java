@@ -47,7 +47,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class M7BlockDropMixin {
 
     @Inject(method = "preRemoveSideEffects", at = @At("HEAD"))
-    private void menukit$dropBlockScopedContents(BlockPos pos, BlockState state,
+    private void mk$dropBlockScopedContents(BlockPos pos, BlockState state,
                                                    CallbackInfo ci) {
         BlockEntity self = (BlockEntity) (Object) this;
         Level level = self.getLevel();

@@ -10,7 +10,7 @@ import net.minecraft.world.item.ItemStack;
  * constructor takes a Container, but MenuKit consumers declare storage via
  * the narrower {@link Storage} interface.
  *
- * <p>Used by {@link com.trevorschoeny.menukit.screen.MenuKitScreenHandler}
+ * <p>Used by {@link com.trevorschoeny.menukit.screen.MKCScreenHandler}
  * for MenuKit-native handlers. Consumers registering slots onto vanilla handlers
  * (M4) also wrap a Storage in this adapter when calling {@code addSlot} with
  * a {@link net.minecraft.world.inventory.Slot} instance.

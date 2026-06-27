@@ -255,7 +255,7 @@ public abstract class StorageAttachment<O, C> {
         @Override public int slotCount() { return slotCount; }
         @Override public Storage bind(Player player) {
             // Wrap in a PlayerStorage-implementing adapter so shift-click
-            // routing (MenuKitScreenHandler) sees this as player-side.
+            // routing (MKCScreenHandler) sees this as player-side.
             return new PlayerFabricStorage(slotCount,
                     () -> player.hasAttached(type)
                             ? player.getAttached(type)

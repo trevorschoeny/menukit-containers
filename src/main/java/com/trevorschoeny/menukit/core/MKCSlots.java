@@ -31,7 +31,7 @@ import java.util.function.BooleanSupplier;
  * <h3>What you get</h3>
  *
  * The registered slots are {@link MKCSlot}s over a standalone {@link Panel} +
- * {@link SlotGroup} (neither needs a {@code MenuKitScreenHandler}). That buys
+ * {@link SlotGroup} (neither needs a {@code MKCScreenHandler}). That buys
  * the canonical inertness contract (§0021): when the panel is hidden the slots
  * are invisible <em>and</em> inert — {@code getItem} returns EMPTY, they reject
  * placement/pickup, and vanilla skips them for render + hover. Toggle the
@@ -244,7 +244,7 @@ public final class MKCSlots {
             group.setBindsCursedItems(bindsCursedItems);
             group.setMendsFromXp(mendsFromXp);
 
-            // 2. Standalone Panel — no PanelOwner (this isn't a MenuKitScreenHandler).
+            // 2. Standalone Panel — no PanelOwner (this isn't a MKCScreenHandler).
             //    Style NONE: the consumer's render adapter draws the frame; the
             //    Panel itself carries no elements, only the visibility flag the
             //    slots read for inertness.
@@ -282,7 +282,7 @@ public final class MKCSlots {
                 MKCSlot slot = new MKCSlot(
                         adapter, local, OFFSCREEN, OFFSCREEN, group, panel, groupId, local);
                 slot.setRenderPosition(x, y);     // real (mutable) presentation position
-                inv.menukit$addSlot(slot);
+                inv.mk$addSlot(slot);
                 mkSlots.add(slot);
             }
             int flatEnd = menu.slots.size();
