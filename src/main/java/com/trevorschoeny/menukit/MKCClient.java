@@ -47,6 +47,12 @@ public class MKCClient implements ClientModInitializer {
         // included, with no per-screen consumer mixin.
         SlotScreenDispatcher.setHook(new MKCSlotScreenHook());
 
+        // THE ONE WINDOW — created-slot resolution port (§0042). MK resolves
+        // vanilla/panel/element addresses itself; created slots are MKCSlots whose
+        // position lives on that MKC type, so MKC installs the resolver here.
+        com.trevorschoeny.menukit.window.SlotWindowResolver.setCreatedSlotResolver(
+                com.trevorschoeny.menukit.core.CreatedSlotAdapter.INSTANCE);
+
         // Container-parity chrome. Build each MKCContainerPanel's display panel
         // (chrome + slot presentation) and wire its ScreenPanelAdapter, scoped by
         // the registered parity matcher. Runs now (in the library's client init,
