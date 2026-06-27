@@ -90,11 +90,11 @@ public final class MenuKitGraftScreenHook implements GraftScreenHook {
     @Override
     public GraftHoverResult resolveHover(AbstractContainerScreen<?> screen,
                                          double mouseX, double mouseY) {
-        List<GraftScreenPresence> matching = matching(screen);
-        if (matching.isEmpty()) return GraftHoverResult.PASS;
+        Set<String> ids = resolvablePanelIds(matching(screen));
+        if (ids.isEmpty()) return GraftHoverResult.PASS;
 
         MenuKitGraftInput.Resolution r =
-                MenuKitGraftInput.resolveHoveredSlot(screen, mouseX, mouseY, panelIds(matching));
+                MenuKitGraftInput.resolveHoveredSlot(screen, mouseX, mouseY, ids);
         if (!r.handled()) return GraftHoverResult.PASS;
         // handled with a slot → graft wins; handled with null → in-panel gap (block).
         return r.slot() == null ? GraftHoverResult.BLOCK : GraftHoverResult.of(r.slot());
@@ -104,20 +104,26 @@ public final class MenuKitGraftScreenHook implements GraftScreenHook {
     public boolean mouseClicked(AbstractContainerScreen<?> screen,
                                 double mouseX, double mouseY, int button) {
         List<GraftScreenPresence> matching = matching(screen);
-        if (matching.isEmpty()) return false;
-        GraftScreenContext ctx = context(screen, mouseX, mouseY);
 
         // Consumer interactive decoration first (e.g. +/− buttons), explicit order
         // so a button always wins over the covered-click guard behind it.
-        for (GraftScreenPresence p : matching) {
-            GraftScreenPresence.Click c = p.clickHandler();
-            if (c != null && c.click(ctx, button)) return true;
+        if (!matching.isEmpty()) {
+            GraftScreenContext ctx = context(screen, mouseX, mouseY);
+            for (GraftScreenPresence p : matching) {
+                GraftScreenPresence.Click c = p.clickHandler();
+                if (c != null && c.click(ctx, button)) return true;
+            }
         }
         // Then eat clicks that land in a revealed panel's empty space (gap), so a
         // carried item can't fall through to the inert vanilla slot behind it. A
-        // click on the graft slot itself is NOT eaten — getHoveredSlot routed it.
+        // click on the slot itself is NOT eaten — getHoveredSlot routed it. For a
+        // panel-hosted SlotElement in an opaque panel this is a backstop: Phase A
+        // panel opacity already eats gap clicks at the MouseHandler level before
+        // this fires; it still covers a non-opaque panel of bare slots.
+        Set<String> ids = resolvablePanelIds(matching);
+        if (ids.isEmpty()) return false;
         MenuKitGraftInput.Resolution r =
-                MenuKitGraftInput.resolveHoveredSlot(screen, mouseX, mouseY, panelIds(matching));
+                MenuKitGraftInput.resolveHoveredSlot(screen, mouseX, mouseY, ids);
         return r.handled() && r.slot() == null;
     }
 
@@ -163,9 +169,22 @@ public final class MenuKitGraftScreenHook implements GraftScreenHook {
         return out == null ? List.of() : out;
     }
 
-    /** The set of panel ids across the given presences (for the input filter). */
-    private static Set<String> panelIds(List<GraftScreenPresence> presences) {
-        Set<String> ids = new HashSet<>(presences.size() * 2);
+    /**
+     * The panel ids to resolve hover/click against on this screen: the matching
+     * {@link GraftScreenPresence}s' panels UNIONED with every panel that
+     * currently hosts a {@link SlotElement} ({@link SlotElementRegistry}). Empty
+     * when there's nothing to resolve — no presence and no panel-hosted slot — so
+     * the caller can short-circuit to PASS without touching {@code menu.slots}.
+     *
+     * <p>The union is what lets a slot live in a panel with no
+     * {@code GraftScreenPresence} at all: its panel id rides in via the registry,
+     * and {@link MenuKitGraftInput#resolveHoveredSlot} resolves it through the
+     * same creative-aware path as a presence-registered graft.
+     */
+    private static Set<String> resolvablePanelIds(List<GraftScreenPresence> presences) {
+        Set<String> slotElementIds = SlotElementRegistry.activePanelIds();
+        if (presences.isEmpty() && slotElementIds.isEmpty()) return Set.of();
+        Set<String> ids = new HashSet<>(slotElementIds);
         for (GraftScreenPresence p : presences) ids.add(p.panelId());
         return ids;
     }
