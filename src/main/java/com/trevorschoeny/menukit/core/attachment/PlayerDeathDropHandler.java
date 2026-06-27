@@ -111,5 +111,64 @@ public final class PlayerDeathDropHandler {
                 player.setAttached(type, StorageAttachments.listToContents(remaining));
             }
         }
+
+        // §0052 completion — custom (consumer-defined) player-anchored specs.
+        // These have no library-owned AttachmentType (the consumer owns the
+        // storage), so they live in a parallel registry. Same per-stack
+        // DROP/DESTROY/KEEP resolution, sourced through the spec. KEEP relies on
+        // the consumer's storage surviving death (their own copyOnDeath); the
+        // library owns only the gamerule-gated drop at this death site.
+        for (var entry : StorageAttachments.customPlayerDeathSpecs().entrySet()) {
+            dropCustomSpecOnDeath(player, keepInventory, entry.getKey(), entry.getValue());
+        }
+    }
+
+    /**
+     * Death-drops one custom player-anchored spec. Generic helper isolating the
+     * single unchecked cast — the spec's owner is {@code Player} by the
+     * {@code dropsOnDeath} precondition (a non-player spec enrolled here would
+     * surface as a {@link ClassCastException}, the documented usage error).
+     * Mirrors the AttachmentType path's per-stack DROP/DESTROY/KEEP resolution,
+     * read/written through the spec instead of a Fabric attachment.
+     */
+    @SuppressWarnings("unchecked")
+    private static void dropCustomSpecOnDeath(Player player, boolean keepInventory,
+            CustomAttachmentSpec<?, ?> rawSpec, DropRule configured) {
+        CustomAttachmentSpec<Player, Object> spec =
+                (CustomAttachmentSpec<Player, Object>) rawSpec;
+        if (configured == null) configured = DropRule.DEFAULT;
+
+        Object content = spec.read(player);
+        if (content == null) return;
+        NonNullList<ItemStack> items = spec.toItemList(content);
+        NonNullList<ItemStack> remaining = NonNullList.withSize(items.size(), ItemStack.EMPTY);
+        boolean changed = false;
+
+        for (int i = 0; i < items.size(); i++) {
+            ItemStack stack = items.get(i);
+            if (stack.isEmpty()) continue;
+            DropRule effective = configured.resolve(stack, keepInventory);
+            switch (effective) {
+                case DROP -> {
+                    // Same vanilla player-death drop leaf the AttachmentType
+                    // path uses; the slot is left EMPTY in `remaining`.
+                    ItemEntity dropped = player.drop(stack, true, false);
+                    if (dropped != null && GraveModPresence.anyGraveModPresent()) {
+                        dropped.setUnlimitedLifetime();
+                    }
+                    changed = true;
+                }
+                case DESTROY -> changed = true;       // vanish; slot left empty
+                default -> remaining.set(i, stack);   // KEEP — consumer storage must survive death
+            }
+        }
+
+        // Write the kept-only list back through the spec so the consumer's
+        // storage holds exactly the KEPT stacks at death time (no dupe). For
+        // KEEP to carry across respawn, that storage must itself survive death.
+        if (changed) {
+            spec.write(player, spec.fromItemList(remaining));
+            spec.markDirty(player);
+        }
     }
 }

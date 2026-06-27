@@ -9,6 +9,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.CompoundContainer;
 import net.minecraft.world.Container;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.PlayerEnderChestContainer;
 import net.minecraft.world.level.Level;
@@ -121,11 +122,25 @@ final class ContainerKeyResolver {
             if (modded.isPresent()) return modded;
         }
 
-        // Entity-backed containers (v1: deferred — requires per-container-type
-        // reverse lookup to the owning entity, which vanilla doesn't expose
-        // uniformly). Registered modded entity resolvers are consulted by
-        // whoever explicitly resolves an entity.
+        // Entity-backed containers. The minecart family (chest/hopper minecart)
+        // IS the entity — AbstractMinecartContainer extends Entity — so the
+        // container resolves directly to its own UUID, no reverse lookup
+        // needed. A registered entity resolver (consumer-supplied) wins first,
+        // so consumers can override the default mapping.
+        if (container instanceof Entity entity) {
+            Optional<PersistentContainerKey> registered =
+                    SlotStateRegistry.resolveEntity(entity);
+            if (registered.isPresent()) return registered;
+            return Optional.of(new PersistentContainerKey.EntityKey(entity.getUUID()));
+        }
 
+        // Horse family (donkey/llama/mule): storage is a separate
+        // SimpleContainer owned by the entity, with NO back-link to it —
+        // vanilla exposes no uniform Container→Entity lookup. These resolve
+        // only when resolution is driven from the entity side (a consumer
+        // calling SlotStateRegistry.resolveEntity at open time, where the
+        // entity reference IS in hand); from the Container alone they fall
+        // through to session-scoped state. (M1 design §4.2 reverse-lookup.)
         return Optional.empty();
     }
 }

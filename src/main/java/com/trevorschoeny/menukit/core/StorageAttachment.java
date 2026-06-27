@@ -367,6 +367,22 @@ public abstract class StorageAttachment<O, C> {
         private final CustomAttachmentSpec<O, C> spec;
         CustomAttachmentWrapper(CustomAttachmentSpec<O, C> spec) { this.spec = spec; }
         @Override public int slotCount() { return spec.slotCount(); }
+
+        @Override
+        public StorageAttachment<O, C> dropsOnDeath(DropRule rule) {
+            // §0052 completion — opt a PLAYER-anchored custom spec into death
+            // handling. PRECONDITION: O is Player. The consumer declares the
+            // spec player-anchored by calling this; calling it on a non-player
+            // custom spec is a usage error that surfaces as a ClassCastException
+            // at death (PlayerDeathDropHandler casts the owner to Player). The
+            // library owns the gamerule-gated DROP/DESTROY at the death site;
+            // KEEP-across-respawn is the consumer storage's own responsibility —
+            // set copyOnDeath on your Fabric attachment (or use a persistent
+            // store); the library cannot set copyOnDeath on storage it does not
+            // own (which is the whole point of a custom spec).
+            StorageAttachments.registerCustomPlayerDeathSpec(spec, rule);
+            return this;
+        }
         @Override public Storage bind(O owner) {
             return new Storage() {
                 @Override public ItemStack getStack(int i) {

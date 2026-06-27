@@ -13,6 +13,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
@@ -186,12 +187,32 @@ public final class SlotStateServer {
             return shared ? perPlayer.getOrCreateShared() : perPlayer.getOrCreate(viewerId);
         }
 
-        if (key instanceof PersistentContainerKey.EntityKey) {
-            // v1: stub. Entity-backed persistence is deferred — resolving
-            // EntityKey requires either a scan across levels or stashing the
-            // entity UUID→level mapping at open time. See M1 design doc §4.2
-            // for the future-work note.
-            return null;
+        if (key instanceof PersistentContainerKey.EntityKey ek) {
+            if (server == null) return null;
+            // EntityKey carries only the entity UUID (no dimension) — minecarts
+            // cross dimensions, so we resolve across all of them.
+            // getEntityInAnyDimension searches every loaded level, so a single
+            // level reference (overworld, always present) suffices.
+            Entity entity = server.overworld().getEntityInAnyDimension(ek.entityId());
+            if (entity == null) return null;
+            // Mirror the BlockEntityKey path: PRIVATE needs a known viewer (its
+            // UUID keys the bag); SHARED is player-agnostic (§0049).
+            UUID viewerId = null;
+            if (!shared) {
+                viewerId = viewer != null ? viewer.getUUID() : null;
+                if (viewerId == null) return null;
+            }
+            PerPlayerSlotStateBag perPlayer =
+                    entity.getAttachedOrCreate(SlotStateAttachments.ENTITY);
+            if (forWrite) {
+                // FRESH value + setAttached so Fabric round-trips the write on
+                // load (same rule as every player/BE branch above). Entities
+                // persist attachments with their own save cycle — there is no
+                // BlockEntity-style setChanged() to call.
+                perPlayer = new PerPlayerSlotStateBag(perPlayer.backing().copy());
+                entity.setAttached(SlotStateAttachments.ENTITY, perPlayer);
+            }
+            return shared ? perPlayer.getOrCreateShared() : perPlayer.getOrCreate(viewerId);
         }
 
         if (key instanceof PersistentContainerKey.Modded modded) {
