@@ -11,7 +11,6 @@ import net.minecraft.world.inventory.Slot;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
-import org.spongepowered.asm.mixin.gen.Invoker;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -60,18 +59,21 @@ public abstract class MenuKitGraftCreativeItemPickerMixin {
     /** The player's real inventory menu (where the grafts live). */
     @Shadow @Final private AbstractContainerMenu inventoryMenu;
 
-    /** Inherited {@code AbstractContainerMenu#addSlot}, reached without subclassing. */
-    @Invoker("addSlot")
-    protected abstract Slot menukit$addSlot(Slot slot);
-
     @Inject(method = "<init>", at = @At("TAIL"))
     private void menukit$appendGraftWrappers(Player player, CallbackInfo ci) {
         // The graft set on inventoryMenu is structural and stable (grafts are
         // appended once at registration; reveal/hide is inertness, not add/remove),
         // so a fixed wrapper per graft is correct for the menu's lifetime.
+        //
+        // addSlot is declared on AbstractContainerMenu (the superclass), not on
+        // ItemPickerMenu — a local @Invoker on this subclass mixin can't see the
+        // inherited method (Mixin searches the target class only) and fails at
+        // apply time. Reach it through the established AbstractContainerMenuInvoker
+        // shim, which targets the superclass and so applies to this subclass too.
+        AbstractContainerMenuInvoker self = (AbstractContainerMenuInvoker) (Object) this;
         for (Slot slot : this.inventoryMenu.slots) {
             if (slot instanceof MenuKitSlot mk) {
-                menukit$addSlot(new GraftCreativeWrapper(mk, GRAFT_OFFSCREEN, GRAFT_OFFSCREEN));
+                self.menukit$addSlot(new GraftCreativeWrapper(mk, GRAFT_OFFSCREEN, GRAFT_OFFSCREEN));
             }
         }
     }
