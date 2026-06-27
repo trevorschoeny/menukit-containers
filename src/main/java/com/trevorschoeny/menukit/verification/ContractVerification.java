@@ -12,9 +12,13 @@ import com.trevorschoeny.menukit.core.RegionMath;
 import com.trevorschoeny.menukit.core.SlotGroup;
 import com.trevorschoeny.menukit.core.SlotGroupLike;
 import com.trevorschoeny.menukit.core.SlotStateChannel;
+import com.trevorschoeny.menukit.core.DropRule;
 import com.trevorschoeny.menukit.core.Storage;
 import com.trevorschoeny.menukit.core.StorageAttachment;
 import com.trevorschoeny.menukit.core.VirtualSlotGroup;
+import com.trevorschoeny.menukit.core.attachment.CustomAttachmentSpec;
+import com.trevorschoeny.menukit.core.attachment.StorageAttachments;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.NonNullList;
 import com.trevorschoeny.menukit.inject.ScreenBounds;
 import com.trevorschoeny.menukit.inject.ScreenOrigin;
@@ -279,13 +283,71 @@ public final class ContractVerification {
         syncSafety(handler);
         inertness(player, handler);
 
-        LOGGER.info("[Verify] END — thirteen contracts checked. Scan log for VERDICT lines.");
+        // §0052 death edge-a — custom-spec player-anchored death enrollment.
+        boolean deathEdgeA = customSpecDeathEnrollment();
+
+        LOGGER.info("[Verify] END — fourteen contracts checked. Scan log for VERDICT lines.");
 
         player.displayClientMessage(
                 Component.literal("[Verify] All contracts — see log."),
                 false);
+        // Distinct chat line for the new death edge-a contract so its result
+        // is visible without reading the log.
+        player.displayClientMessage(
+                Component.literal("[Verify] custom-spec death enrollment (§0052): "
+                        + (deathEdgeA ? "PASS" : "FAIL"))
+                        .withStyle(deathEdgeA ? ChatFormatting.GREEN : ChatFormatting.RED),
+                false);
         return 1;
     }
+
+    /**
+     * §0052 death edge-a — verifies a custom (consumer-defined) player-anchored
+     * spec can opt into death handling via {@code dropsOnDeath} (it previously
+     * threw {@link UnsupportedOperationException} on any non-{@code playerAttached}
+     * attachment). Checks the call succeeds AND the spec lands in the
+     * custom-player-death registry the death handler iterates. Pure enrollment
+     * check — the actual gamerule-gated drop is a manual {@code /kill} scenario.
+     *
+     * @return true if the custom spec enrolled cleanly
+     */
+    private static boolean customSpecDeathEnrollment() {
+        try {
+            StorageAttachment.custom(DEATH_PROBE_SPEC).dropsOnDeath(DropRule.KEEP);
+            boolean enrolled = StorageAttachments.customPlayerDeathSpecs()
+                    .containsKey(DEATH_PROBE_SPEC);
+            LOGGER.info("[Verify.DeathEdgeA] custom-spec dropsOnDeath enrolled={} — VERDICT {}",
+                    enrolled, enrolled ? "PASS" : "FAIL");
+            return enrolled;
+        } catch (UnsupportedOperationException e) {
+            LOGGER.info("[Verify.DeathEdgeA] custom-spec dropsOnDeath threw — VERDICT FAIL");
+            return false;
+        }
+    }
+
+    /**
+     * Minimal player-anchored {@link CustomAttachmentSpec} for the death edge-a
+     * enrollment probe. A single static instance keeps re-enrollment idempotent
+     * (the registry is keyed by spec). The probe exercises only the enrollment
+     * API, so the read/write hooks are trivial (no real backing store).
+     */
+    private static final CustomAttachmentSpec<Player, NonNullList<ItemStack>> DEATH_PROBE_SPEC =
+            new CustomAttachmentSpec<>() {
+                @Override public NonNullList<ItemStack> read(Player owner) {
+                    return NonNullList.withSize(1, ItemStack.EMPTY);
+                }
+                @Override public void write(Player owner, NonNullList<ItemStack> content) { /* probe no-op */ }
+                @Override public void markDirty(Player owner) { /* probe no-op */ }
+                @Override public NonNullList<ItemStack> defaultFactory() {
+                    return NonNullList.withSize(1, ItemStack.EMPTY);
+                }
+                @Override public NonNullList<ItemStack> toItemList(NonNullList<ItemStack> content) { return content; }
+                @Override public NonNullList<ItemStack> fromItemList(NonNullList<ItemStack> items) { return items; }
+                @Override public int slotCount() { return 1; }
+                @Override public Identifier id() {
+                    return Identifier.fromNamespaceAndPath("menukit", "verify_custom_death_probe");
+                }
+            };
 
     // Phase 14d-2.7 — /mkverify elements + /mkverify regions removed.
     // ElementDemoHandler/Screen deleted; V1 (Palette Matrix + Composed)
