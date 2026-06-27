@@ -66,7 +66,7 @@ public final class SlotElementRegistry {
             if (ACTIVE.isEmpty()) return Set.of();
             Set<String> ids = new HashSet<>(ACTIVE.size() * 2);
             for (SlotElement element : ACTIVE) {
-                ids.add(element.slot().getPanelId());
+                ids.add(element.panelId());
             }
             return ids;
         }

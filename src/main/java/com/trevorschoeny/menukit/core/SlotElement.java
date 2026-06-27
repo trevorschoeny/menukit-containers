@@ -5,7 +5,11 @@ import com.trevorschoeny.menukit.mixin.AbstractContainerScreenAccessor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+
+import org.jspecify.annotations.Nullable;
 
 /**
  * A registered MKC slot presented as a {@link PanelElement} — the keystone of
@@ -17,14 +21,13 @@ import net.minecraft.world.item.ItemStack;
  *
  * A slot has always had two separable layers:
  * <ul>
- *   <li><b>Registration</b> — the underlying {@link MenuKitSlot} is a real,
- *       server-synced entry in {@code menu.slots} (JEI/EMI see a normal slot).
- *       Built at menu-construction time via {@link MenuKitGraft}; <em>untouched
- *       by this class</em>.</li>
+ *   <li><b>Registration</b> — a real, server-synced {@link MenuKitSlot} in
+ *       {@code menu.slots} (JEI/EMI see a normal slot). Built at menu-construction
+ *       time via {@link MenuKitGraft}; <em>untouched by this class</em>.</li>
  *   <li><b>Presentation</b> — where it sits on screen, and its frame/item/hover
- *       draw. Historically driven by a per-slot {@code onPrepare} reposition
- *       callback plus {@link MenuKitGraftRender}, both inside the graft overlay
- *       world. <em>This is what {@code SlotElement} takes over.</em></li>
+ *       draw. Historically a per-slot {@code onPrepare} reposition callback plus
+ *       {@link MenuKitGraftRender}, both inside the graft overlay world. <em>This
+ *       is what {@code SlotElement} takes over.</em></li>
  * </ul>
  *
  * The panel already resolves its own screen origin every frame (region anchors,
@@ -33,6 +36,18 @@ import net.minecraft.world.item.ItemStack;
  * other element: per-screen position becomes a <em>panel</em> property, not a
  * per-slot mechanism. That deletes the duplicate positioning system instead of
  * bridging to it.
+ *
+ * <h3>Located, not held — the menu-attach lifecycle</h3>
+ *
+ * A {@code SlotElement} does <em>not</em> hold a slot reference; it holds the
+ * slot's stable identity ({@code panelId}/{@code groupId}/{@code localIndex}) and
+ * resolves the live {@link MenuKitSlot} from the current screen's menu each frame.
+ * This is what lets one statically-registered panel work on every screen: the
+ * survival inventory and the creative screen carry <em>different</em> slot
+ * instances for the same logical slot (creative wraps it in a {@code SlotWrapper}
+ * and projects it onto a throwaway menu), and a held reference would bind to one
+ * and be wrong on the other. Resolving by identity each frame — the same thing the
+ * old per-frame reposition scan did — is screen-agnostic by construction.
  *
  * <h3>Why a slot is a click-through HOLE in its panel</h3>
  *
@@ -51,24 +66,31 @@ import net.minecraft.world.item.ItemStack;
  */
 public final class SlotElement implements PanelElement {
 
-    private final MenuKitSlot slot;
+    private final String panelId;
+    private final String groupId;
+    private final int localIndex;
     private final int childX;
     private final int childY;
 
     /**
-     * @param slot   the registered slot this element presents (created by
-     *               {@link MenuKitGraft} at menu-build time)
-     * @param childX panel-local X (within the panel's content area, after padding)
-     * @param childY panel-local Y
+     * @param panelId    the grafted slot's panel id (as given to
+     *                   {@link MenuKitGraft.Builder#panel})
+     * @param groupId    the grafted slot's group id ({@link MenuKitGraft.Builder#group})
+     * @param localIndex the slot's index within its group (0-based)
+     * @param childX     panel-local X (within the panel's content area, after padding)
+     * @param childY     panel-local Y
      */
-    public SlotElement(MenuKitSlot slot, int childX, int childY) {
-        this.slot = slot;
+    public SlotElement(String panelId, String groupId, int localIndex,
+                       int childX, int childY) {
+        this.panelId = panelId;
+        this.groupId = groupId;
+        this.localIndex = localIndex;
         this.childX = childX;
         this.childY = childY;
     }
 
-    /** The registered slot this element presents. */
-    public MenuKitSlot slot() { return slot; }
+    /** The grafted slot's panel id this element presents (its registry key). */
+    public String panelId() { return panelId; }
 
     @Override public int getChildX() { return childX; }
     @Override public int getChildY() { return childY; }
@@ -83,19 +105,26 @@ public final class SlotElement implements PanelElement {
      */
     @Override public boolean isElementOpaque() { return false; }
 
-    /** Hidden when the owning panel is hidden — mirrors the slot's own inertness. */
-    @Override public boolean isVisible() { return !slot.isInert(); }
+    /** Hidden when the slot can't be resolved on this screen, or its panel is hidden. */
+    @Override
+    public boolean isVisible() {
+        MenuKitSlot slot = resolve();
+        return slot != null && !slot.isInert();
+    }
 
     @Override
     public void render(RenderContext ctx) {
+        MenuKitSlot slot = resolve();
+        if (slot == null || slot.isInert()) return;
+
         int screenX = ctx.originX() + childX;
         int screenY = ctx.originY() + childY;
 
-        // Keep the underlying slot's presentation position current, in the graft
-        // coordinate space (leftPos-relative), so the library's getHoveredSlot
-        // resolution ({@link MenuKitGraftInput}) hit-tests it where the panel
-        // actually drew it. This is the per-frame positioning that used to be a
-        // per-slot onPrepare callback — now it's just "an element rides its panel".
+        // Keep the slot's presentation position current, in the graft coordinate
+        // space (leftPos-relative), so the library's getHoveredSlot resolution
+        // ({@link MenuKitGraftInput}) hit-tests it where the panel actually drew
+        // it. This is the per-frame positioning that used to be an onPrepare
+        // callback — now it's just "an element rides its panel".
         Screen screen = Minecraft.getInstance().screen;
         if (screen instanceof AbstractContainerScreen<?> acs) {
             AbstractContainerScreenAccessor acc = (AbstractContainerScreenAccessor) acs;
@@ -112,6 +141,29 @@ public final class SlotElement implements PanelElement {
         if (ctx.isHovered(childX, childY, size, size)) {
             SlotRendering.drawHoverHighlight(ctx.graphics(), screenX, screenY, size);
         }
+    }
+
+    /**
+     * Resolves the live {@link MenuKitSlot} for this element's identity from the
+     * current screen's menu (unwrapping a creative {@code SlotWrapper} via
+     * {@link GraftSlots#asGraft}). Returns {@code null} when the screen isn't a
+     * container screen or the slot isn't present (e.g. a screen the graft doesn't
+     * apply to).
+     */
+    private @Nullable MenuKitSlot resolve() {
+        Screen screen = Minecraft.getInstance().screen;
+        if (!(screen instanceof AbstractContainerScreen<?> acs)) return null;
+        AbstractContainerMenu menu = acs.getMenu();
+        for (Slot slot : menu.slots) {
+            MenuKitSlot mk = GraftSlots.asGraft(slot);
+            if (mk == null) continue;
+            if (mk.getLocalIndex() == localIndex
+                    && groupId.equals(mk.getGroupId())
+                    && panelId.equals(mk.getPanelId())) {
+                return mk;
+            }
+        }
+        return null;
     }
 
     // ── Lifecycle: join/leave the active-slot registry so the screen hook can
