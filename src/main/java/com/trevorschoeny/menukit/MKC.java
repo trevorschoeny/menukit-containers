@@ -66,6 +66,12 @@ public class MKC implements ModInitializer {
      *  {@code StorageAttachment}. */
     public static void init() {
         LOGGER.info("[MenuKit-Containers] Initialized");
+        // THE ONE WINDOW — install the server tier into MK's engine (DIP: MK owns
+        // the ports, MKC conforms). Runs on both sides (universal init): server
+        // holds authoritative bindings; client mirrors for prediction.
+        com.trevorschoeny.menukit.window.ServerTier.install(
+                com.trevorschoeny.menukit.core.BehaviorBindingTable.INSTANCE,
+                com.trevorschoeny.menukit.core.BehaviorBindingTable.INSTANCE);
         // M1 per-slot state — attachments + shared networking types register
         // here (attachment registration must run on both sides; networking
         // payload-type registration is also symmetric).
