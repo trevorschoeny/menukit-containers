@@ -13,8 +13,8 @@ import java.util.Set;
  * when such a mod is present, the floor's death-drops are flagged
  * <em>never-despawn</em> so they persist beside the grave instead of expiring in
  * the vanilla 5 minutes — matching the grave's own persistence. With <b>no</b>
- * grave mod present, drops keep vanilla despawn, so grafted slots behave exactly
- * like a normal death drop (no asymmetry where grafted items outlive vanilla ones).
+ * grave mod present, drops keep vanilla despawn, so registered slots behave exactly
+ * like a normal death drop (no asymmetry where registered items outlive vanilla ones).
  *
  * <p><b>Grave-container mods only.</b> Keep-inventory / void-rescue mods (e.g.
  * "Your Items Are Safe", "Lenient Death") are deliberately <em>excluded</em>: they

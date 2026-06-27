@@ -22,7 +22,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * to add global behaviors) fire identically on:
  * <ul>
  *   <li>Vanilla {@code Slot} instances (chests, furnaces, etc.)</li>
- *   <li>MenuKit {@code MenuKitSlot} instances (which extend {@code Slot})</li>
+ *   <li>MenuKit {@code MKCSlot} instances (which extend {@code Slot})</li>
  * </ul>
  *
  * <p>That's the composability guarantee — MenuKit doesn't disrupt the

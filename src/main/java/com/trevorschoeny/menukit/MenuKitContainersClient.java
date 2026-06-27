@@ -1,8 +1,8 @@
 package com.trevorschoeny.menukit;
 
-import com.trevorschoeny.menukit.core.GraftProjection;
-import com.trevorschoeny.menukit.core.MenuKitGraftScreenHook;
-import com.trevorschoeny.menukit.inject.GraftScreenDispatcher;
+import com.trevorschoeny.menukit.core.MKCSlotProjection;
+import com.trevorschoeny.menukit.core.MKCSlotScreenHook;
+import com.trevorschoeny.menukit.inject.SlotScreenDispatcher;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
@@ -36,25 +36,25 @@ public class MenuKitContainersClient implements ClientModInitializer {
         // Delegate to MenuKit: Containers' client-state init.
         MenuKitContainers.initClient();
 
-        // Inventory-screen parity: plug the grafted-slot draw/input/reveal work
+        // Inventory-screen parity: plug the registered-slot draw/input/reveal work
         // into MenuKit's library-owned screen dispatch (§0042 — MK exposes the
-        // neutral hook + the per-screen mixins; MKC implements the grafted-slot
-        // half here). After this, any GraftScreenPresence a consumer registers
+        // neutral hook + the per-screen mixins; MKC implements the registered-slot
+        // half here). After this, any SlotScreenPresence a consumer registers
         // manifests on every matching inventory-bearing screen, creative
         // included, with no per-screen consumer mixin.
-        GraftScreenDispatcher.setHook(new MenuKitGraftScreenHook());
+        SlotScreenDispatcher.setHook(new MKCSlotScreenHook());
 
-        // Graft projection — client seam. Append a player's registered projected
-        // grafts onto a foreign container menu (chest/furnace/donkey) at screen
+        // Slot projection — client seam. Append a player's registered projected
+        // slots onto a foreign container menu (chest/furnace/donkey) at screen
         // init, which fires synchronously inside handleOpenScreen BEFORE the
         // initial content packet is processed — mirroring the server's
-        // ServerPlayer.initMenu HEAD seam so both menus carry the grafts (same set,
+        // ServerPlayer.initMenu HEAD seam so both menus carry the slots (same set,
         // same order) before the first sync. No-op for menus with no registered
         // projection source (incl. the player's own InventoryMenu). See
-        // GraftProjection for the sync-safety contract.
+        // MKCSlotProjection for the sync-safety contract.
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
             if (screen instanceof AbstractContainerScreen<?> acs && client.player != null) {
-                GraftProjection.appendProjectedGrafts(acs.getMenu(), client.player);
+                MKCSlotProjection.appendProjectedSlots(acs.getMenu(), client.player);
             }
         });
     }

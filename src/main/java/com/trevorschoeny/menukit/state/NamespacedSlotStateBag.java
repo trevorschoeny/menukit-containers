@@ -8,20 +8,20 @@ import org.jspecify.annotations.Nullable;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * Resolver-namespaced slot-state bags for player-scoped grafted slots
- * (§0045). Wraps a {@link CompoundTag} whose keys are graft resolver-id
+ * Resolver-namespaced slot-state bags for player-scoped registered slots
+ * (§0045). Wraps a {@link CompoundTag} whose keys are slot resolver-id
  * strings and whose values are {@link SlotStateBag}s. Attached to a
  * {@code Player} via {@link SlotStateAttachments#MODDED_PLAYER}.
  *
- * <p>The resolver-id namespace keeps multiple grafts on the same player from
- * colliding: a mod grafting both "pockets" and "equipment" onto the inventory
+ * <p>The resolver-id namespace keeps multiple slots on the same player from
+ * colliding: a mod registering both "pockets" and "equipment" onto the inventory
  * gets a distinct bag per resolver-id, so their independent slot-index spaces
  * (each {@code 0..N}) never overwrite each other — and the same holds across
  * mods (§0019 coexistence).
  *
  * <p>Same shape as {@link PerPlayerSlotStateBag}, but keyed by resolver-id
  * rather than viewer UUID: here the owner <em>is</em> the player, and the
- * namespace is the graft, not the viewer.
+ * namespace is the slot, not the viewer.
  */
 @ApiStatus.Internal
 public final class NamespacedSlotStateBag {

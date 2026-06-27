@@ -9,16 +9,16 @@ import java.util.UUID;
 /**
  * Factories for {@link KeyedStorage} — a {@link Storage} that declares its
  * own {@link PersistentContainerKey} so M1 per-slot metadata persists for
- * grafted slots (§0045).
+ * registered slots (§0045).
  *
- * <p>The player-scoped factory is the supported path for grafting
+ * <p>The player-scoped factory is the supported path for registering
  * player-owned storage (IP Pockets, IP Equipment Slots) with per-slot
  * metadata. It wraps a content {@link Storage} (typically bound from a
  * {@link StorageAttachment}) and tags it with a
  * {@link PersistentContainerKey.Modded} key whose payload encodes the owning
- * player. M1's {@code ContainerKeyResolver} routes the grafted slot to this
+ * player. M1's {@code ContainerKeyResolver} routes the registered slot to this
  * key; the server resolves it to a resolver-id-namespaced bag on the player
- * (so distinct grafts, and distinct mods, never collide).
+ * (so distinct slots, and distinct mods, never collide).
  *
  * <p>The payload shape is <b>library-owned</b> — these are library-produced
  * keys, distinct from the consumer-defined opaque payloads of §0034's general
@@ -29,11 +29,11 @@ public final class KeyedStorages {
 
     private KeyedStorages() {}
 
-    /** Payload key: graft ownership scope. */
+    /** Payload key: slot ownership scope. */
     public static final String SCOPE_KEY = "menukit:scope";
     /** Payload key: owning player UUID (string form), when scope is {@link #SCOPE_PLAYER}. */
     public static final String OWNER_KEY = "menukit:owner";
-    /** {@link #SCOPE_KEY} value for player-owned grafts. */
+    /** {@link #SCOPE_KEY} value for player-owned slots. */
     public static final String SCOPE_PLAYER = "player";
 
     /**
@@ -41,7 +41,7 @@ public final class KeyedStorages {
      * returned storage delegates all content operations to {@code backing} and
      * reports a stable {@link PersistentContainerKey.Modded} key identifying
      * ({@code resolverId}, {@code playerId}) — so per-slot metadata written
-     * against the grafted slots persists on the player, namespaced by
+     * against the registered slots persists on the player, namespaced by
      * {@code resolverId}.
      *
      * <p>The key is equality-stable across the client/server boundary (same
@@ -49,7 +49,7 @@ public final class KeyedStorages {
      * contract.
      *
      * @param backing    the content storage (e.g. {@code POCKETS.bind(player)})
-     * @param resolverId stable identity of this graft (e.g.
+     * @param resolverId stable identity of this slot (e.g.
      *                   {@code "inventory-plus:pockets"}); namespaces the bag
      * @param playerId   the owning player's UUID
      */

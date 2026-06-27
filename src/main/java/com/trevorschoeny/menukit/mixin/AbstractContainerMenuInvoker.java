@@ -11,12 +11,12 @@ import org.spongepowered.asm.mixin.gen.Invoker;
 /**
  * MenuKit-Containers internal invoker — exposes vanilla's {@code protected}
  * {@link AbstractContainerMenu#addSlot(Slot)} so the consumer-invoked
- * slot-graft helper ({@link com.trevorschoeny.menukit.core.MenuKitGraft})
- * can append grafted slots to a vanilla menu it does not subclass.
+ * slot-slot helper ({@link com.trevorschoeny.menukit.core.MKCSlots})
+ * can append registered slots to a vanilla menu it does not subclass.
  *
  * <p><b>§0019 / §0045 note.</b> This is a pure access shim: it exposes an
  * existing vanilla method, injects no behavior, registers no hook, and owns
- * no code path. The graft itself is performed by the <em>consumer's</em>
+ * no code path. The slot itself is performed by the <em>consumer's</em>
  * mixin (which calls the helper); this invoker only lets the helper reach a
  * {@code protected} method from outside the menu's class hierarchy. It
  * mirrors MK's {@code SlotPositionAccessor} ({@code @Accessor} on vanilla
@@ -25,7 +25,7 @@ import org.spongepowered.asm.mixin.gen.Invoker;
  * forbids.
  *
  * <p>Applies on both sides (the vanilla menu is constructed client- and
- * server-side; the graft runs in both), so it lives in the general mixin
+ * server-side; the slot runs in both), so it lives in the general mixin
  * block, not the client block.
  */
 @ApiStatus.Internal
@@ -45,8 +45,8 @@ public interface AbstractContainerMenuInvoker {
     /**
      * Calls vanilla's {@code moveItemStackTo} — the merge-into-partials then
      * fill-empties routine vanilla's own {@code quickMoveStack} uses. Exposed so
-     * {@link com.trevorschoeny.menukit.core.GraftQuickMove} can drive shift-click
-     * routing into / out of grafted slots on a <em>foreign</em> menu (chest,
+     * {@link com.trevorschoeny.menukit.core.MKCSlotQuickMove} can drive shift-click
+     * routing into / out of registered slots on a <em>foreign</em> menu (chest,
      * furnace) without reimplementing the merge logic — the library routes the
      * consumer's own slot through vanilla's exact placement, it invents no
      * behavior. Absorbed from inventory-max's hand-built equivalent so consumers

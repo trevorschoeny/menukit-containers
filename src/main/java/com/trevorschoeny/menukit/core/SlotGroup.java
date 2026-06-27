@@ -25,7 +25,7 @@ import java.util.function.BiConsumer;
  * a uniform interface shared with {@link VirtualSlotGroup} (observed screens).
  *
  * <p>Part of the canonical MenuKit hierarchy:
- * Screen → Panel → SlotGroup → MenuKitSlot
+ * Screen → Panel → SlotGroup → MKCSlot
  */
 public class SlotGroup implements SlotGroupLike {
 
@@ -44,7 +44,7 @@ public class SlotGroup implements SlotGroupLike {
     // Optional handler invoked when a slot in this group is right-clicked.
     // Lives on the group per the canonical story — right-click is a
     // group-level capability, not a slot-level one.
-    private @Nullable BiConsumer<Player, MenuKitSlot> rightClickHandler;
+    private @Nullable BiConsumer<Player, MKCSlot> rightClickHandler;
 
     // Flat index range in the handler's slot list — set once during
     // handler construction, then frozen. Used by shift-click routing.
@@ -56,13 +56,13 @@ public class SlotGroup implements SlotGroupLike {
 
     // Curse of Binding toggle: when set, a bound item (carrying the vanilla
     // PREVENT_ARMOR_CHANGE component) can't be removed from this group's slots
-    // while alive — enforced in MenuKitSlot.mayPickup, survival only (creative
+    // while alive — enforced in MKCSlot.mayPickup, survival only (creative
     // bypasses). Off by default; equipment-semantic, opt-in per group.
     private boolean bindsCursedItems = false;
 
     // Mending toggle: when set, a damaged item carrying the vanilla REPAIR_WITH_XP
     // effect (Mending) in this group's slots joins the XP-orb repair pool — so a
-    // mending item in a grafted equip slot repairs from XP like worn armor does.
+    // mending item in a registered equip slot repairs from XP like worn armor does.
     // Read by the ExperienceOrb intercept. Off by default; equipment-semantic, opt-in.
     private boolean mendsFromXp = false;
 
@@ -142,12 +142,12 @@ public class SlotGroup implements SlotGroupLike {
     // ── Right-Click Handler ────────────────────────────────────────────
 
     /** Returns the right-click handler for this group, or null. */
-    public @Nullable BiConsumer<Player, MenuKitSlot> getRightClickHandler() {
+    public @Nullable BiConsumer<Player, MKCSlot> getRightClickHandler() {
         return rightClickHandler;
     }
 
     /** Sets the right-click handler. Called during builder construction. */
-    public void setRightClickHandler(@Nullable BiConsumer<Player, MenuKitSlot> handler) {
+    public void setRightClickHandler(@Nullable BiConsumer<Player, MKCSlot> handler) {
         this.rightClickHandler = handler;
     }
 
@@ -156,7 +156,7 @@ public class SlotGroup implements SlotGroupLike {
     /** Whether this group enforces the vanilla Curse of Binding on its slots. */
     public boolean bindsCursedItems() { return bindsCursedItems; }
 
-    /** Enables/disables Curse-of-Binding enforcement. Set during graft/builder construction. */
+    /** Enables/disables Curse-of-Binding enforcement. Set during slot/builder construction. */
     public void setBindsCursedItems(boolean binds) { this.bindsCursedItems = binds; }
 
     // ── Mending (XP repair) ─────────────────────────────────────────────
@@ -164,7 +164,7 @@ public class SlotGroup implements SlotGroupLike {
     /** Whether a damaged Mending item in this group's slots repairs from XP orbs. */
     public boolean mendsFromXp() { return mendsFromXp; }
 
-    /** Enables/disables XP-repair participation. Set during graft/builder construction. */
+    /** Enables/disables XP-repair participation. Set during slot/builder construction. */
     public void setMendsFromXp(boolean mends) { this.mendsFromXp = mends; }
 
     // ── Behavioral Delegation ───────────────────────────────────────────
@@ -174,7 +174,7 @@ public class SlotGroup implements SlotGroupLike {
      * Can this group accept the given stack? Delegates to the policy's
      * {@code canAccept} predicate.
      *
-     * <p>When a MenuKitSlot calls {@code mayPlace}, it calls this AND
+     * <p>When a MKCSlot calls {@code mayPlace}, it calls this AND
      * {@code super.mayPlace} — the mixin chain composes, and the most
      * restrictive answer wins.
      */
@@ -220,19 +220,19 @@ public class SlotGroup implements SlotGroupLike {
      * flat slot list. Convenience for consumers that need to iterate
      * a group's slots without walking the flat index range manually.
      *
-     * <p>Returns {@code List<MenuKitSlot>} — a valid covariant override of
+     * <p>Returns {@code List<MKCSlot>} — a valid covariant override of
      * {@link SlotGroupLike#getSlots}'s {@code List<? extends Slot>}.
      *
      * @param handler the handler whose slot list contains this group's slots
-     * @return unmodifiable list of MenuKitSlots in this group
+     * @return unmodifiable list of MKCSlots in this group
      */
     @Override
-    public List<MenuKitSlot> getSlots(AbstractContainerMenu handler) {
+    public List<MKCSlot> getSlots(AbstractContainerMenu handler) {
         if (flatIndexStart < 0 || flatIndexEnd < 0) return List.of();
-        List<MenuKitSlot> result = new ArrayList<>();
+        List<MKCSlot> result = new ArrayList<>();
         for (int i = flatIndexStart; i < flatIndexEnd; i++) {
             Slot slot = handler.slots.get(i);
-            if (slot instanceof MenuKitSlot mk) {
+            if (slot instanceof MKCSlot mk) {
                 result.add(mk);
             }
         }

@@ -10,27 +10,27 @@ import java.util.List;
 import java.util.function.BooleanSupplier;
 
 /**
- * Grafts real, server-synced, persistent slots onto a vanilla menu — the
- * library half of the §0045 "consumer-composed graft" pattern (IP Pockets,
+ * Slots real, server-synced, persistent slots onto a vanilla menu — the
+ * library half of the §0045 "consumer-composed slot" pattern (IP Pockets,
  * IP Equipment Slots).
  *
  * <h3>Who calls this</h3>
  *
- * The <b>consumer</b> calls {@code MenuKitGraft} from inside <b>their own</b>
+ * The <b>consumer</b> calls {@code MKCSlots} from inside <b>their own</b>
  * mixin, injected at {@code TAIL} on the vanilla menu's constructor — e.g.
- * {@code InventoryMenu.<init>}. The library ships no such mixin and no graft
+ * {@code InventoryMenu.<init>}. The library ships no such mixin and no slot
  * registry (§0019 / §0045): owning a vanilla injection point, or providing a
  * hook consumers register into, is the platform-shaped move library-not-platform
  * forbids. This class is a <em>stateless helper</em> the consumer's mixin
  * invokes imperatively — it registers and applies nothing on its own.
  *
  * <p>Because the vanilla constructor re-runs on every menu reconstruction
- * (login, respawn, dimension change, on both sides), grafting from there means
+ * (login, respawn, dimension change, on both sides), registering from there means
  * the slots re-appear automatically — no separate lifecycle hook.
  *
  * <h3>What you get</h3>
  *
- * The grafted slots are {@link MenuKitSlot}s over a standalone {@link Panel} +
+ * The registered slots are {@link MKCSlot}s over a standalone {@link Panel} +
  * {@link SlotGroup} (neither needs a {@code MenuKitScreenHandler}). That buys
  * the canonical inertness contract (§0021): when the panel is hidden the slots
  * are invisible <em>and</em> inert — {@code getItem} returns EMPTY, they reject
@@ -52,27 +52,27 @@ import java.util.function.BooleanSupplier;
  *
  * <h3>Persistence &amp; metadata</h3>
  *
- * Item <em>content</em> persists by giving the graft a player- (or block-)
+ * Item <em>content</em> persists by giving the slot a player- (or block-)
  * attached {@link Storage} (see {@link StorageAttachment}); sync is free via
  * vanilla's slot protocol (§0034). For per-slot <em>metadata</em> (lock flags,
- * etc.), back the graft with a {@link KeyedStorage} that returns a stable
+ * etc.), back the slot with a {@link KeyedStorage} that returns a stable
  * {@link PersistentContainerKey} — M1's {@code SlotStateChannel} API then works
- * against the grafted slots (§0045).
+ * against the registered slots (§0045).
  *
  * <h3>Creative/survival parity (§0051)</h3>
  *
- * Grafted slots round-trip in <b>both</b> game modes with no consumer code.
+ * RegisteredSlots slots round-trip in <b>both</b> game modes with no consumer code.
  * Survival edits reach the slot through vanilla's container-click path; a
  * creative edit that vanilla's {@code handleSetCreativeModeSlot} would silently
- * discard (the grafted index is past vanilla's {@code [1,45]} slot range) is
- * routed to the grafted slot's backing {@code Storage} by the library's
- * creative-set-slot bridge ({@code CreativeSetSlotGraftMixin}). Direct
+ * discard (the registered index is past vanilla's {@code [1,45]} slot range) is
+ * routed to the registered slot's backing {@code Storage} by the library's
+ * creative-set-slot bridge ({@code CreativeSetSlotMixin}). Direct
  * click-to-place works in both modes; per-slot metadata (M1) lands with it.
  *
  * <h3>Known limitation</h3>
  *
- * Shift-click (quick-move) <em>into</em> a grafted slot is not free: vanilla's
- * {@code quickMoveStack} has no knowledge of grafted slots. Direct click-to-place
+ * Shift-click (quick-move) <em>into</em> a registered slot is not free: vanilla's
+ * {@code quickMoveStack} has no knowledge of registered slots. Direct click-to-place
  * works out of the box (in both modes, per above); full shift-click routing is
  * consumer-side work (the consumer may override {@code quickMoveStack} in their
  * own mixin) or deferred.
@@ -86,44 +86,44 @@ import java.util.function.BooleanSupplier;
  *
  * // Consumer mixin — @Inject(method = "<init>", at = @At("TAIL")) on InventoryMenu:
  * Storage storage = POCKETS.bind(player);              // or a KeyedStorage for metadata
- * MenuKitGraft.Grafted pockets = MenuKitGraft.onto((AbstractContainerMenu)(Object) this, player)
+ * MKCSlots.RegisteredSlots pockets = MKCSlots.onto((AbstractContainerMenu)(Object) this, player)
  *     .panel("inventory-plus:pockets")
  *     .group("pockets")
  *     .storage(storage)
  *     .layout(originX, originY, 3)                      // screen-relative origin + columns
  *     .revealWhen(() -> PocketHoverState.isRevealed())  // client-side predicate
- *     .graft();
+ *     .register();
  * // Stash `pockets` (panel + group) so the client render adapter can draw it.
  * }</pre>
  */
-public final class MenuKitGraft {
+public final class MKCSlots {
 
     /** Vanilla slot pitch in pixels (16px slot + 2px frame). */
     public static final int SLOT_PITCH = 18;
 
     /**
-     * Off-screen sentinel for a grafted slot's vanilla {@code Slot.x/y} (§0047).
-     * Grafted slots are helper-rendered, so vanilla must not draw them at a fixed
+     * Off-screen sentinel for a registered slot's vanilla {@code Slot.x/y} (§0047).
+     * RegisteredSlots slots are helper-rendered, so vanilla must not draw them at a fixed
      * coordinate — that would double-render the moment a slot's presentation
      * position moves. Parking the vanilla coords far off-screen makes vanilla's
-     * render + hit a harmless no-op; the graft helpers own presentation via
-     * {@code MenuKitSlot.graftX()/graftY()}.
+     * render + hit a harmless no-op; the slot helpers own presentation via
+     * {@code MKCSlot.renderX()/renderY()}.
      */
     private static final int OFFSCREEN = -10000;
 
-    private MenuKitGraft() {}
+    private MKCSlots() {}
 
     /**
-     * The result of a graft: the live {@link Panel} and {@link SlotGroup} that
+     * The result of a slot: the live {@link Panel} and {@link SlotGroup} that
      * were created, plus the flat slot-index range appended to the menu (for
-     * consumers that need to walk the grafted slots directly). The consumer
+     * consumers that need to walk the registered slots directly). The consumer
      * wires the client render adapter against {@code panel} / {@code group}.
      */
-    public record Grafted(Panel panel, SlotGroup group, int flatStart, int flatEnd,
-                          List<MenuKitSlot> slots) {}
+    public record RegisteredSlots(Panel panel, SlotGroup group, int flatStart, int flatEnd,
+                          List<MKCSlot> slots) {}
 
     /**
-     * Begins a graft onto {@code menu} owned by {@code player}. Call from the
+     * Begins a slot onto {@code menu} owned by {@code player}. Call from the
      * consumer's {@code @Inject(at = TAIL)} on the vanilla menu's constructor,
      * where both the menu ({@code this}) and the owning player are in scope.
      */
@@ -131,13 +131,13 @@ public final class MenuKitGraft {
         return new Builder(menu, player);
     }
 
-    /** Fluent configuration for a single graft. Terminates in {@link #graft()}. */
+    /** Fluent configuration for a single slot. Terminates in {@link #register()}. */
     public static final class Builder {
         private final AbstractContainerMenu menu;
         private final Player player;
 
-        private String panelId = "menukit:graft";
-        private String groupId = "graft";
+        private String panelId = "menukit:slot";
+        private String groupId = "slot";
         private Storage storage;                              // required
         private InteractionPolicy policy = InteractionPolicy.free();
         private QuickMoveParticipation qmp = QuickMoveParticipation.BOTH;
@@ -154,7 +154,7 @@ public final class MenuKitGraft {
             this.player = player;
         }
 
-        /** Panel id (unique per graft). Used for inertness + render anchoring. */
+        /** Panel id (unique per slot). Used for inertness + render anchoring. */
         public Builder panel(String id) { this.panelId = id; return this; }
 
         /** Slot-group id within the panel. */
@@ -188,7 +188,7 @@ public final class MenuKitGraft {
 
         /**
          * Client-side reveal predicate. The panel (and therefore the whole
-         * grafted group) is visible + interactive on the client only while
+         * registered group) is visible + interactive on the client only while
          * this returns true; the server keeps the slots syncing regardless
          * (see class javadoc). MUST be client-safe. If unset, the group is
          * always visible on the client.
@@ -199,7 +199,7 @@ public final class MenuKitGraft {
         }
 
         /**
-         * Enables the vanilla Curse of Binding on the grafted slots: an item
+         * Enables the vanilla Curse of Binding on the registered slots: an item
          * carrying the binding curse ({@code PREVENT_ARMOR_CHANGE}) cannot be
          * removed from the slot <em>while alive</em> — survival only; creative
          * bypasses (matching vanilla, and creative removal routes through the
@@ -213,11 +213,11 @@ public final class MenuKitGraft {
         }
 
         /**
-         * Enables vanilla Mending on the grafted slots: a damaged item carrying
+         * Enables vanilla Mending on the registered slots: a damaged item carrying
          * the {@code REPAIR_WITH_XP} effect, sitting in one of these slots, joins
          * the XP-orb repair pool — so it mends from collected XP exactly like a
          * worn armor piece or held tool does. Off by default; opt in for
-         * equipment-semantic slots. Generic grafted-slot vanilla mechanic
+         * equipment-semantic slots. Generic registered-slot vanilla mechanic
          * (library-owned, same line as death-drop §0052 and binding §0053).
          */
         public Builder mendsFromXp() {
@@ -227,14 +227,14 @@ public final class MenuKitGraft {
 
         /**
          * Builds the standalone {@link Panel}/{@link SlotGroup}, constructs the
-         * inertness-aware {@link MenuKitSlot}s over a {@link StorageContainerAdapter},
+         * inertness-aware {@link MKCSlot}s over a {@link StorageContainerAdapter},
          * and appends them to the menu (via the vanilla {@code addSlot} invoker,
          * which keeps the sync-tracking lists consistent). Returns the handle.
          */
-        public Grafted graft() {
+        public RegisteredSlots register() {
             if (storage == null) {
                 throw new IllegalStateException(
-                        "MenuKitGraft: storage() is required before graft()");
+                        "MKCSlots: storage() is required before register()");
             }
 
             // 1. Standalone SlotGroup — owns the behavioral policy for these slots.
@@ -262,33 +262,33 @@ public final class MenuKitGraft {
                     || reveal == null                 // no predicate: always visible
                     || reveal.getAsBoolean());         // client side: gate on hover
 
-            // 3. Build + append the grafted slots.
+            // 3. Build + append the registered slots.
             //
-            // §0047: grafted slots are helper-rendered (MenuKitGraftRender /
-            // MenuKitGraftInput own their presentation), and their position is
+            // §0047: registered slots are helper-rendered (MKCSlotRender /
+            // MKCSlotInput own their presentation), and their position is
             // mutable presentation, not frozen structure. The vanilla Slot.x/y
             // are parked OFF-SCREEN so vanilla never draws or hit-tests them at a
             // fixed spot (which would double-render once a slot moves); the real,
-            // runtime-movable position lives in the slot's graftX/graftY — seeded
-            // here from the layout, changeable later via setGraftPosition.
+            // runtime-movable position lives in the slot's renderX/renderY — seeded
+            // here from the layout, changeable later via setRenderPosition.
             StorageContainerAdapter adapter = new StorageContainerAdapter(storage);
             AbstractContainerMenuInvoker inv = (AbstractContainerMenuInvoker) menu;
 
             int flatStart = menu.slots.size();
-            List<MenuKitSlot> mkSlots = new ArrayList<>();
+            List<MKCSlot> mkSlots = new ArrayList<>();
             for (int local = 0; local < storage.size(); local++) {
                 int x = originX + (local % columns) * SLOT_PITCH;
                 int y = originY + (local / columns) * SLOT_PITCH;
-                MenuKitSlot slot = new MenuKitSlot(
+                MKCSlot slot = new MKCSlot(
                         adapter, local, OFFSCREEN, OFFSCREEN, group, panel, groupId, local);
-                slot.setGraftPosition(x, y);     // real (mutable) presentation position
+                slot.setRenderPosition(x, y);     // real (mutable) presentation position
                 inv.menukit$addSlot(slot);
                 mkSlots.add(slot);
             }
             int flatEnd = menu.slots.size();
             group.setFlatIndexRange(flatStart, flatEnd);
 
-            return new Grafted(panel, group, flatStart, flatEnd, List.copyOf(mkSlots));
+            return new RegisteredSlots(panel, group, flatStart, flatEnd, List.copyOf(mkSlots));
         }
     }
 }

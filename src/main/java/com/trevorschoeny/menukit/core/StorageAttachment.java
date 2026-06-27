@@ -176,10 +176,10 @@ public abstract class StorageAttachment<O, C> {
      * attachment. Content saves with the entity in its NBT and dies with it —
      * no respawn carry (unlike {@link #playerAttached}, which has death handling;
      * an entity is not a player). For entity-owned containers (minecart with
-     * chest, donkey/llama/mule, future entity-scoped grafts).
+     * chest, donkey/llama/mule, future entity-scoped slots).
      *
      * <p>Server-persistent; the client view is kept current by the menu's vanilla
-     * slot protocol (the grafted slots write the client-side attachment on each
+     * slot protocol (the registered slots write the client-side attachment on each
      * {@code ContainerSetSlot}), the same way {@link #playerAttached} content
      * displays without a separate attachment sync.
      *

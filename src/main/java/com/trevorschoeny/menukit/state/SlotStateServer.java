@@ -216,7 +216,7 @@ public final class SlotStateServer {
         }
 
         if (key instanceof PersistentContainerKey.Modded modded) {
-            // §0045: player-scoped grafted slots (IP Pockets / Equipment Slots).
+            // §0045: player-scoped registered slots (IP Pockets / Equipment Slots).
             // Keys produced by KeyedStorages.player(...) encode the owning
             // player in the payload; resolve to a resolver-id-namespaced bag on
             // that player. Consumer-rolled Modded keys without the library scope

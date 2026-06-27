@@ -58,7 +58,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
      * Constructs a handler from a pre-built panel list and a map of slot
      * groups keyed by panel id.
      *
-     * <p>Allocates MenuKitSlots in declaration order: for each panel,
+     * <p>Allocates MKCSlots in declaration order: for each panel,
      * for each of its slot groups (as supplied in {@code groupsByPanel}),
      * for each slot index. Flat indices are sequential.
      *
@@ -106,7 +106,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
                     int x = 8 + (flatIndex % 9) * 18;
                     int y = 18 + (flatIndex / 9) * 18;
 
-                    MenuKitSlot slot = new MenuKitSlot(
+                    MKCSlot slot = new MKCSlot(
                             adapter, local, x, y,
                             group, panel, group.getId(), local
                     );
@@ -156,7 +156,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
     public SlotGroup getGroupContaining(int flatIndex) {
         if (flatIndex < 0 || flatIndex >= this.slots.size()) return null;
         net.minecraft.world.inventory.Slot slot = this.slots.get(flatIndex);
-        if (slot instanceof MenuKitSlot mkSlot) {
+        if (slot instanceof MKCSlot mkSlot) {
             return mkSlot.getGroup();
         }
         return null;
@@ -179,7 +179,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
      *         empty if no group contains the slot
      */
     public Optional<SlotGroupLike> findGroupForSlot(Slot slot) {
-        if (slot instanceof MenuKitSlot mkSlot) {
+        if (slot instanceof MKCSlot mkSlot) {
             return Optional.of(mkSlot.getGroup());
         }
         return HandlerRecognizerRegistry.findGroup(this, slot);
@@ -259,7 +259,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
     @Override
     public ItemStack quickMoveStack(Player player, int index) {
         Slot rawSlot = this.slots.get(index);
-        if (!(rawSlot instanceof MenuKitSlot sourceSlot)) return ItemStack.EMPTY;
+        if (!(rawSlot instanceof MKCSlot sourceSlot)) return ItemStack.EMPTY;
         if (!sourceSlot.hasItem()) return ItemStack.EMPTY;
 
         SlotGroup sourceGroup = sourceSlot.getGroup();
@@ -342,7 +342,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
 
     // ── Container Adapter ───────────────────────────────────────────────
     // Extracted to core/StorageContainerAdapter.java so M4 consumers
-    // grafting slots onto vanilla handlers can reuse it. The adapter
+    // registering slots onto vanilla handlers can reuse it. The adapter
     // bridges Storage → Container for Slot construction.
 
     // ── Builder API ─────────────────────────────────────────────────────
@@ -523,7 +523,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
          * Invoked when a slot in that group is right-clicked.
          */
         public PanelBuilder rightClick(
-                java.util.function.BiConsumer<net.minecraft.world.entity.player.Player, MenuKitSlot> handler) {
+                java.util.function.BiConsumer<net.minecraft.world.entity.player.Player, MKCSlot> handler) {
             if (!groups.isEmpty()) {
                 // Replace last group config with one that includes the handler
                 GroupConfig last = groups.remove(groups.size() - 1);
@@ -768,7 +768,7 @@ public class MenuKitScreenHandler extends AbstractContainerMenu implements Panel
             QuickMoveParticipation qmp, int priority,
             int columns, int rowGapAfter, int rowGapSize,
             List<String> pairingTargets,
-            java.util.function.BiConsumer<net.minecraft.world.entity.player.Player, MenuKitSlot> rightClickHandler
+            java.util.function.BiConsumer<net.minecraft.world.entity.player.Player, MKCSlot> rightClickHandler
     ) {
         GroupConfig(String id, Storage storage, InteractionPolicy policy,
                     QuickMoveParticipation qmp, int priority,

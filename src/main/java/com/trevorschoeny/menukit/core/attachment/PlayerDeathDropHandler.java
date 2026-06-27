@@ -89,7 +89,7 @@ public final class PlayerDeathDropHandler {
                         // capture (ours) must not expire either, or they'd vanish
                         // after 5 min while the grave persists. Flag them
                         // never-despawn. With no grave mod present, keep vanilla
-                        // despawn so a grafted slot matches a normal death drop.
+                        // despawn so a registered slot matches a normal death drop.
                         if (dropped != null && GraveModPresence.anyGraveModPresent()) {
                             dropped.setUnlimitedLifetime();
                         }

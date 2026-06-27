@@ -11,18 +11,18 @@ import net.minecraft.world.item.ItemStack;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Client-side render helper for grafted slots (§0045). Draws the slot frame
- * + item (+ hover highlight) for every revealed grafted {@link MenuKitSlot}
+ * Client-side render helper for registered slots (§0045). Draws the slot frame
+ * + item (+ hover highlight) for every revealed registered {@link MKCSlot}
  * on a screen's menu.
  *
  * <h3>Why a render helper at all</h3>
  *
- * Grafted slots are real vanilla slots, so vanilla already draws their items,
+ * RegisteredSlots slots are real vanilla slots, so vanilla already draws their items,
  * hover highlights, and routes their clicks when they're active. The one
  * thing vanilla can't draw is the recessed 18×18 slot <em>frame</em> — those
- * live in the screen's GUI texture, and grafted slots sit outside it. This
+ * live in the screen's GUI texture, and registered slots sit outside it. This
  * helper draws the frame (and re-draws the item on top, since the frame would
- * otherwise cover vanilla's item) for each revealed grafted slot.
+ * otherwise cover vanilla's item) for each revealed registered slot.
  *
  * <h3>Call site</h3>
  *
@@ -38,47 +38,47 @@ import org.jspecify.annotations.Nullable;
  * <h3>Client-only</h3>
  *
  * References client render types; only ever loaded client-side. The server
- * never touches it — the graft itself runs through {@link MenuKitGraft},
+ * never touches it — the slot itself runs through {@link MKCSlots},
  * which carries no client types.
  *
- * <p>Inert (hidden) grafted slots are skipped: a hidden hover-reveal group
+ * <p>Inert (hidden) registered slots are skipped: a hidden hover-reveal group
  * draws nothing, matching its inertness (§0021).
  */
-public final class MenuKitGraftRender {
+public final class MKCSlotRender {
 
-    private MenuKitGraftRender() {}
+    private MKCSlotRender() {}
 
     /**
-     * Draws every revealed grafted {@link MenuKitSlot} on {@code screen}'s
-     * menu. No-op for inert slots (their panel hidden) and for non-grafted
-     * slots. Safe to call on any container screen — screens without grafted
+     * Draws every revealed registered {@link MKCSlot} on {@code screen}'s
+     * menu. No-op for inert slots (their panel hidden) and for non-registered
+     * slots. Safe to call on any container screen — screens without registered
      * slots draw nothing.
      *
-     * <p>Draws all grafts regardless of panel. Equivalent to
-     * {@link #renderGraftedSlots(AbstractContainerScreen, GuiGraphics, int, int, String)}
+     * <p>Draws all slots regardless of panel. Equivalent to
+     * {@link #renderSlots(AbstractContainerScreen, GuiGraphics, int, int, String)}
      * with a {@code null} filter.
      */
-    public static void renderGraftedSlots(AbstractContainerScreen<?> screen,
+    public static void renderSlots(AbstractContainerScreen<?> screen,
                                           GuiGraphics graphics,
                                           int mouseX, int mouseY) {
-        renderGraftedSlots(screen, graphics, mouseX, mouseY, null);
+        renderSlots(screen, graphics, mouseX, mouseY, null);
     }
 
     /**
-     * Draws the revealed grafted slots on {@code screen}'s menu whose panel id
-     * equals {@code panelId} (or all grafts when {@code panelId} is null). The
+     * Draws the revealed registered slots on {@code screen}'s menu whose panel id
+     * equals {@code panelId} (or all slots when {@code panelId} is null). The
      * screen dispatcher passes one panel id per registered presence so each
-     * graft draws under its own decoration and respects its own per-screen
+     * slot draws under its own decoration and respects its own per-screen
      * opt-out.
      *
-     * <p>Recognises grafts both directly ({@code MenuKitSlot} in the menu, the
+     * <p>Recognises slots both directly ({@code MKCSlot} in the menu, the
      * survival inventory) and through the creative {@code SlotWrapper} that wraps
-     * them ({@link GraftSlots#asGraft}) — so the same call renders correctly on
+     * them ({@link Slots#asMKCSlot}) — so the same call renders correctly on
      * the creative screen, where the wrappers are parked off-screen by
-     * {@code MenuKitGraftCreativeParkMixin} and the graft is drawn here at its
-     * live {@code graftX/graftY} instead.
+     * {@code MenuKitCreativeSlotParkMixin} and the slot is drawn here at its
+     * live {@code renderX/renderY} instead.
      */
-    public static void renderGraftedSlots(AbstractContainerScreen<?> screen,
+    public static void renderSlots(AbstractContainerScreen<?> screen,
                                           GuiGraphics graphics,
                                           int mouseX, int mouseY,
                                           @Nullable String panelId) {
@@ -88,13 +88,13 @@ public final class MenuKitGraftRender {
         int topPos = acc.menuKit$getTopPos();
 
         for (Slot slot : menu.slots) {
-            MenuKitSlot mk = GraftSlots.asGraft(slot);
+            MKCSlot mk = MKCSlotAccess.asMKCSlot(slot);
             if (mk == null) continue;
             if (panelId != null && !panelId.equals(mk.getPanelId())) continue;
             if (mk.isInert()) continue; // hidden hover-reveal group → draw nothing
 
-            int sx = leftPos + mk.graftX();
-            int sy = topPos + mk.graftY();
+            int sx = leftPos + mk.renderX();
+            int sy = topPos + mk.renderY();
             int size = SlotRendering.DEFAULT_SIZE;
 
             // Frame first (covers vanilla's under-frame item render), then the

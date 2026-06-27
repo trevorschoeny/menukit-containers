@@ -5,7 +5,7 @@ import com.trevorschoeny.menukit.core.HandlerRecognizerRegistry;
 import com.trevorschoeny.menukit.core.HudRegion;
 import com.trevorschoeny.menukit.core.MenuRegion;
 import com.trevorschoeny.menukit.core.MKSlotState;
-import com.trevorschoeny.menukit.core.MenuKitSlot;
+import com.trevorschoeny.menukit.core.MKCSlot;
 import com.trevorschoeny.menukit.core.Panel;
 import com.trevorschoeny.menukit.core.PersistentContainerKey;
 import com.trevorschoeny.menukit.core.RegionMath;
@@ -361,7 +361,7 @@ public final class ContractVerification {
     // Expected evidence: VerifyMayPlaceMixin (a global Slot.mayPlace
     // @Inject at HEAD that rejects cobblestone while armed) fires on both
     // vanilla slots (player.inventoryMenu has 46 vanilla slots) AND MenuKit
-    // slots (test screen's 46 MenuKitSlot instances). Mixin's per-invocation
+    // slots (test screen's 46 MKCSlot instances). Mixin's per-invocation
     // log lines show it reaching both slot types, and cobblestone is
     // rejected uniformly.
 
@@ -378,7 +378,7 @@ public final class ContractVerification {
 
             int aMk = 0, aVanilla = 0, aCobbleRejected = 0, aDiamondAccepted = 0;
             for (Slot slot : vanillaMenu.slots) {
-                if (slot instanceof MenuKitSlot) aMk++; else aVanilla++;
+                if (slot instanceof MKCSlot) aMk++; else aVanilla++;
                 if (!slot.mayPlace(cobble)) aCobbleRejected++;
                 if (slot.mayPlace(diamond)) aDiamondAccepted++;
             }
@@ -402,7 +402,7 @@ public final class ContractVerification {
 
             int bMk = 0, bVanilla = 0, bCobbleRejected = 0, bDiamondAccepted = 0;
             for (Slot slot : handler.slots) {
-                if (slot instanceof MenuKitSlot) bMk++; else bVanilla++;
+                if (slot instanceof MKCSlot) bMk++; else bVanilla++;
                 if (!slot.mayPlace(cobble)) bCobbleRejected++;
                 if (slot.mayPlace(diamond)) bDiamondAccepted++;
             }
@@ -421,7 +421,7 @@ public final class ContractVerification {
     // 2. Vanilla-slot substitutability
     // ══════════════════════════════════════════════════════════════════════
     //
-    // Expected evidence: every MenuKitSlot passes `instanceof Slot`
+    // Expected evidence: every MKCSlot passes `instanceof Slot`
     // (structural check). Then VerifyGetItemMixin (a global Slot.getItem
     // @Inject at RETURN logging MK-class invocations) fires on MK slots,
     // demonstrating that ecosystem-style Slot.getItem mixins compose with
@@ -435,18 +435,18 @@ public final class ContractVerification {
         int total = 0, mk = 0, passedInstance = 0;
         for (Slot slot : handler.slots) {
             total++;
-            if (slot instanceof MenuKitSlot) mk++;
+            if (slot instanceof MKCSlot) mk++;
             if (slot instanceof Slot) passedInstance++;
         }
         LOGGER.info("[Verify.Substitutability] Structural: {}/{} slots pass `instanceof Slot` "
-                        + "({} are MenuKitSlot)",
+                        + "({} are MKCSlot)",
                 passedInstance, total, mk);
 
         // Sample per-class logging — enough to show the type hierarchy
         // (avoid 40+ lines when they're all the same class).
         for (Slot slot : handler.slots) {
-            if (slot instanceof MenuKitSlot) {
-                LOGGER.info("[Verify.Substitutability] Sample slot — class={} instanceof Slot={} instanceof MenuKitSlot={}",
+            if (slot instanceof MKCSlot) {
+                LOGGER.info("[Verify.Substitutability] Sample slot — class={} instanceof Slot={} instanceof MKCSlot={}",
                         slot.getClass().getName(),
                         slot instanceof Slot,
                         true);
@@ -462,7 +462,7 @@ public final class ContractVerification {
         try {
             LOGGER.info("[Verify.Substitutability] Triggering getItem() on all MK slots (mixin armed)…");
             for (Slot slot : handler.slots) {
-                if (slot instanceof MenuKitSlot) slot.getItem();
+                if (slot instanceof MKCSlot) slot.getItem();
             }
         } finally {
             disarm();
@@ -625,7 +625,7 @@ public final class ContractVerification {
     //   isActive()           == false
     //   mayPlace(any)        == false
     //   mayPickup(player)    == false
-    //   MenuKitSlot.isInert()== true
+    //   MKCSlot.isInert()== true
     // After toggling the panel visible, all properties flip back to
     // reflecting real state (active=true, mayPlace/Pickup respect the
     // interaction policy, getItem returns real storage contents,
@@ -655,7 +655,7 @@ public final class ContractVerification {
         int checked = 0, allInert = 0;
         for (int s = hiddenStart; s < hiddenEnd; s++) {
             Slot slot = handler.slots.get(s);
-            if (!(slot instanceof MenuKitSlot mks)) continue;
+            if (!(slot instanceof MKCSlot mks)) continue;
             checked++;
 
             boolean getItemEmpty = slot.getItem().isEmpty();
@@ -682,7 +682,7 @@ public final class ContractVerification {
         int flipped = 0;
         for (int s = hiddenStart; s < hiddenEnd; s++) {
             Slot slot = handler.slots.get(s);
-            if (!(slot instanceof MenuKitSlot mks)) continue;
+            if (!(slot instanceof MKCSlot mks)) continue;
 
             boolean getItemEmpty = slot.getItem().isEmpty();
             boolean active = slot.isActive();

@@ -88,21 +88,21 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
     private int layoutOriginY = 0;
 
     // ── Hover Tracking ─────────────────────────────────────────────────
-    // Tracks the previously hovered MenuKitSlot to fire enter/exit events.
+    // Tracks the previously hovered MKCSlot to fire enter/exit events.
     // Also exposes current hover state as a queryable property for consumers.
-    private @Nullable MenuKitSlot previouslyHoveredMkSlot = null;
+    private @Nullable MKCSlot previouslyHoveredMkSlot = null;
 
     /**
-     * Returns the currently hovered MenuKitSlot, or null if the mouse
+     * Returns the currently hovered MKCSlot, or null if the mouse
      * isn't over a MenuKit slot. Synchronous query — consumers like HUD
      * overlays can read this each frame without subscribing to events.
      */
-    public @Nullable MenuKitSlot getHoveredMenuKitSlot() {
+    public @Nullable MKCSlot getHoveredMKCSlot() {
         return previouslyHoveredMkSlot;
     }
 
     /**
-     * Returns the SlotGroup of the currently hovered MenuKitSlot, or
+     * Returns the SlotGroup of the currently hovered MKCSlot, or
      * null. Convenience for consumers that care about group identity.
      */
     public @Nullable SlotGroup getHoveredGroup() {
@@ -447,7 +447,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         // ── Hover tracking (fire enter/exit events) ────────────────────
         // After super.render(), hoveredSlot is set by vanilla's pipeline.
         // Compare with previous frame to detect enter/exit transitions.
-        MenuKitSlot currentHovered = (this.hoveredSlot instanceof MenuKitSlot mk) ? mk : null;
+        MKCSlot currentHovered = (this.hoveredSlot instanceof MKCSlot mk) ? mk : null;
         if (currentHovered != previouslyHoveredMkSlot) {
             if (previouslyHoveredMkSlot != null) {
                 fireSlotHoverExit(previouslyHoveredMkSlot);
@@ -555,18 +555,18 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
      * All methods have default no-ops — override only what you need.
      */
     public interface ScreenEventListener {
-        /** A MenuKitSlot was clicked. Button: 0=left, 1=right, 2=middle. */
-        default void onSlotClick(MenuKitSlot slot, int button) {}
-        /** An empty MenuKitSlot was clicked with an empty cursor. */
-        default void onEmptySlotClick(MenuKitSlot slot, int button) {}
-        /** Mouse entered a MenuKitSlot's hover area. */
-        default void onSlotHoverEnter(MenuKitSlot slot) {}
-        /** Mouse left a MenuKitSlot's hover area. */
-        default void onSlotHoverExit(MenuKitSlot slot) {}
+        /** A MKCSlot was clicked. Button: 0=left, 1=right, 2=middle. */
+        default void onSlotClick(MKCSlot slot, int button) {}
+        /** An empty MKCSlot was clicked with an empty cursor. */
+        default void onEmptySlotClick(MKCSlot slot, int button) {}
+        /** Mouse entered a MKCSlot's hover area. */
+        default void onSlotHoverEnter(MKCSlot slot) {}
+        /** Mouse left a MKCSlot's hover area. */
+        default void onSlotHoverExit(MKCSlot slot) {}
         /** A panel's visibility changed. */
         default void onPanelToggle(Panel panel, boolean nowVisible) {}
         /**
-         * A shift-click (quick move) is about to happen on a MenuKitSlot.
+         * A shift-click (quick move) is about to happen on a MKCSlot.
          * Fires BEFORE vanilla routes the items — destination is unknown
          * at this point. The movedStack is a copy of what's in the source.
          *
@@ -580,7 +580,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
          * post-routing observation (where items ended up), a future
          * onAfterQuickMove event would fire from quickMoveStack.
          */
-        default void onQuickMove(MenuKitSlot sourceSlot,
+        default void onQuickMove(MKCSlot sourceSlot,
                                  net.minecraft.world.item.ItemStack movedStack) {}
     }
 
@@ -591,19 +591,19 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         eventListeners.add(listener);
     }
 
-    private void fireSlotClick(MenuKitSlot slot, int button) {
+    private void fireSlotClick(MKCSlot slot, int button) {
         for (var listener : eventListeners) listener.onSlotClick(slot, button);
     }
 
-    private void fireEmptySlotClick(MenuKitSlot slot, int button) {
+    private void fireEmptySlotClick(MKCSlot slot, int button) {
         for (var listener : eventListeners) listener.onEmptySlotClick(slot, button);
     }
 
-    private void fireSlotHoverEnter(MenuKitSlot slot) {
+    private void fireSlotHoverEnter(MKCSlot slot) {
         for (var listener : eventListeners) listener.onSlotHoverEnter(slot);
     }
 
-    private void fireSlotHoverExit(MenuKitSlot slot) {
+    private void fireSlotHoverExit(MKCSlot slot) {
         for (var listener : eventListeners) listener.onSlotHoverExit(slot);
     }
 
@@ -611,13 +611,13 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         for (var listener : eventListeners) listener.onPanelToggle(panel, nowVisible);
     }
 
-    private void fireQuickMove(MenuKitSlot sourceSlot, net.minecraft.world.item.ItemStack movedStack) {
+    private void fireQuickMove(MKCSlot sourceSlot, net.minecraft.world.item.ItemStack movedStack) {
         for (var listener : eventListeners) listener.onQuickMove(sourceSlot, movedStack);
     }
 
     // ── Drag Modes ────────────────────────────────────────────────────
     // Per-screen drag mode registry. When a mouse drag starts on a
-    // MenuKitSlot, the registry is checked for a mode that accepts
+    // MKCSlot, the registry is checked for a mode that accepts
     // the drag. The active mode receives drag/end callbacks.
 
     /**
@@ -626,12 +626,12 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
      */
     public interface DragMode {
         /**
-         * Called when a drag starts on a MenuKitSlot.
+         * Called when a drag starts on a MKCSlot.
          * Return true to claim the drag (subsequent drag/end go to this mode).
          */
-        boolean onDragStart(MenuKitSlot slot, int button);
+        boolean onDragStart(MKCSlot slot, int button);
         /** Called when the mouse moves over a new slot during a drag. */
-        void onDrag(MenuKitSlot slot);
+        void onDrag(MKCSlot slot);
         /** Called when the mouse button is released, ending the drag. */
         void onDragEnd();
     }
@@ -699,7 +699,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         }
 
         // Drag mode start — check if a registered mode claims this drag
-        if (this.hoveredSlot instanceof MenuKitSlot mkSlot && activeDrag == null) {
+        if (this.hoveredSlot instanceof MKCSlot mkSlot && activeDrag == null) {
             for (DragMode mode : dragModes) {
                 if (mode.onDragStart(mkSlot, event.button())) {
                     activeDrag = mode;
@@ -709,8 +709,8 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         }
 
         // Right-click handler dispatch (group-level capability)
-        if (event.button() == 1 && this.hoveredSlot instanceof MenuKitSlot mkSlot) {
-            BiConsumer<net.minecraft.world.entity.player.Player, MenuKitSlot> handler =
+        if (event.button() == 1 && this.hoveredSlot instanceof MKCSlot mkSlot) {
+            BiConsumer<net.minecraft.world.entity.player.Player, MKCSlot> handler =
                     mkSlot.getGroup().getRightClickHandler();
             if (handler != null && this.minecraft != null && this.minecraft.player != null) {
                 handler.accept(this.minecraft.player, mkSlot);
@@ -720,7 +720,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
         }
 
         // Fire slot click event (doesn't consume — vanilla still processes)
-        if (this.hoveredSlot instanceof MenuKitSlot mkSlot) {
+        if (this.hoveredSlot instanceof MKCSlot mkSlot) {
             fireSlotClick(mkSlot, event.button());
 
             // Empty slot click: slot has no item AND cursor is empty
@@ -743,7 +743,7 @@ public class MenuKitHandledScreen extends AbstractContainerScreen<MenuKitScreenH
      */
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
-        if (activeDrag != null && this.hoveredSlot instanceof MenuKitSlot mkSlot) {
+        if (activeDrag != null && this.hoveredSlot instanceof MKCSlot mkSlot) {
             activeDrag.onDrag(mkSlot);
             return true;
         }

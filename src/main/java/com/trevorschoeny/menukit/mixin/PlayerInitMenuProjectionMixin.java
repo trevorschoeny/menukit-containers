@@ -1,6 +1,6 @@
 package com.trevorschoeny.menukit.mixin;
 
-import com.trevorschoeny.menukit.core.GraftProjection;
+import com.trevorschoeny.menukit.core.MKCSlotProjection;
 
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Server-side projection seam: appends a player's registered projected grafts onto
+ * Server-side projection seam: appends a player's registered projected slots onto
  * a just-opened foreign menu, <em>before</em> its first content sync.
  *
  * <h3>Why {@code initMenu} HEAD, not {@code openMenu} RETURN</h3>
@@ -20,17 +20,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * {@code ServerPlayer.openMenu} runs {@code createMenu → send OpenScreen →
  * initMenu(menu)}, and {@code initMenu} is what performs the initial
  * {@code sendAllDataToRemote}. Injecting at {@code openMenu} RETURN would append
- * the grafts <em>after</em> that content was sent, so the first
+ * the slots <em>after</em> that content was sent, so the first
  * {@code ContainerSetContent} would omit them and the client menu (which appends
- * grafts at {@code AFTER_INIT}) would be one tail block longer than the packet —
+ * slots at {@code AFTER_INIT}) would be one tail block longer than the packet —
  * a guaranteed {@code remoteSlots} desync. Injecting at {@code initMenu} HEAD puts
- * the grafts on the menu just before the same method sends content, so the initial
+ * the slots on the menu just before the same method sends content, so the initial
  * packet already carries them. The client's {@code AFTER_INIT} append (also before
- * its content packet) mirrors this exactly. See {@link GraftProjection} for the
+ * its content packet) mirrors this exactly. See {@link MKCSlotProjection} for the
  * full sync-safety contract.
  *
  * <p>A no-op for any menu with no registered projection source (the player's own
- * {@code InventoryMenu} is grafted by the consumer's {@code <init>} mixin, never
+ * {@code InventoryMenu} is registered by the consumer's {@code <init>} mixin, never
  * registered here). Server-side only ({@code ServerPlayer}); the parallel client
  * seam lives in the MKC client initializer.
  */
@@ -39,7 +39,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class PlayerInitMenuProjectionMixin {
 
     @Inject(method = "initMenu", at = @At("HEAD"))
-    private void menukit$projectGrafts(AbstractContainerMenu menu, CallbackInfo ci) {
-        GraftProjection.appendProjectedGrafts(menu, (ServerPlayer) (Object) this);
+    private void menukit$projectSlots(AbstractContainerMenu menu, CallbackInfo ci) {
+        MKCSlotProjection.appendProjectedSlots(menu, (ServerPlayer) (Object) this);
     }
 }

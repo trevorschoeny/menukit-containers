@@ -91,7 +91,7 @@ public final class SlotStateHooks {
         List<SlotStateSnapshotS2CPayload.Entry> entries = buildEntries(menu, player,
                 key -> key instanceof PersistentContainerKey.PlayerInventory
                     || key instanceof PersistentContainerKey.EnderChest
-                    // §0045: player-scoped grafted slots (Pockets / Equipment)
+                    // §0045: player-scoped registered slots (Pockets / Equipment)
                     // live on the inventory menu and resolve to Modded keys;
                     // include them so their metadata reaches the client on
                     // join/respawn (the inventory menu never routes through

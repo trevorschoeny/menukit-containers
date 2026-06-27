@@ -13,7 +13,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * A registered MKC slot presented as a {@link PanelElement} — the keystone of
- * the everything-is-a-panel model. A slot stops being a thing the old graft
+ * the everything-is-a-panel model. A slot stops being a thing the old slot
  * "decoration" overlay world drew and positioned, and becomes just another
  * element you drop into a panel, alongside buttons and labels.
  *
@@ -21,12 +21,12 @@ import org.jspecify.annotations.Nullable;
  *
  * A slot has always had two separable layers:
  * <ul>
- *   <li><b>Registration</b> — a real, server-synced {@link MenuKitSlot} in
+ *   <li><b>Registration</b> — a real, server-synced {@link MKCSlot} in
  *       {@code menu.slots} (JEI/EMI see a normal slot). Built at menu-construction
- *       time via {@link MenuKitGraft}; <em>untouched by this class</em>.</li>
+ *       time via {@link MKCSlots}; <em>untouched by this class</em>.</li>
  *   <li><b>Presentation</b> — where it sits on screen, and its frame/item/hover
  *       draw. Historically a per-slot {@code onPrepare} reposition callback plus
- *       {@link MenuKitGraftRender}, both inside the graft overlay world. <em>This
+ *       {@link MKCSlotRender}, both inside the slot overlay world. <em>This
  *       is what {@code SlotElement} takes over.</em></li>
  * </ul>
  *
@@ -41,7 +41,7 @@ import org.jspecify.annotations.Nullable;
  *
  * A {@code SlotElement} does <em>not</em> hold a slot reference; it holds the
  * slot's stable identity ({@code panelId}/{@code groupId}/{@code localIndex}) and
- * resolves the live {@link MenuKitSlot} from the current screen's menu each frame.
+ * resolves the live {@link MKCSlot} from the current screen's menu each frame.
  * This is what lets one statically-registered panel work on every screen: the
  * survival inventory and the creative screen carry <em>different</em> slot
  * instances for the same logical slot (creative wraps it in a {@code SlotWrapper}
@@ -54,15 +54,15 @@ import org.jspecify.annotations.Nullable;
  * A slot's actual item interaction is owned by vanilla: a click flows through
  * {@code AbstractContainerScreen.mouseClicked} → {@code slotClicked(getHoveredSlot())},
  * and MenuKit's library-owned {@code getHoveredSlot} interception
- * ({@link MenuKitGraftInput}) routes that to the grafted slot — making it win
+ * ({@link MKCSlotInput}) routes that to the registered slot — making it win
  * over, and so block, the vanilla slot it covers. So the panel must <em>not</em>
  * eat the click; {@link #isElementOpaque()} returns {@code false} (a hole) so the
  * click reaches vanilla. The "block what's behind" is done by that hover
- * resolution, exactly as grafts have always worked — the panel here owns only
+ * resolution, exactly as slots have always worked — the panel here owns only
  * position + render. {@link #render} keeps the slot's presentation position
  * current so the hover resolution finds it; {@link SlotElementRegistry} lets the
  * library's screen hook resolve panel-hosted slots even with no
- * {@code GraftScreenPresence} registered.
+ * {@code SlotScreenPresence} registered.
  */
 public final class SlotElement implements PanelElement {
 
@@ -73,9 +73,9 @@ public final class SlotElement implements PanelElement {
     private final int childY;
 
     /**
-     * @param panelId    the grafted slot's panel id (as given to
-     *                   {@link MenuKitGraft.Builder#panel})
-     * @param groupId    the grafted slot's group id ({@link MenuKitGraft.Builder#group})
+     * @param panelId    the registered slot's panel id (as given to
+     *                   {@link MKCSlots.Builder#panel})
+     * @param groupId    the registered slot's group id ({@link MKCSlots.Builder#group})
      * @param localIndex the slot's index within its group (0-based)
      * @param childX     panel-local X (within the panel's content area, after padding)
      * @param childY     panel-local Y
@@ -89,7 +89,7 @@ public final class SlotElement implements PanelElement {
         this.childY = childY;
     }
 
-    /** The grafted slot's panel id this element presents (its registry key). */
+    /** The registered slot's panel id this element presents (its registry key). */
     public String panelId() { return panelId; }
 
     @Override public int getChildX() { return childX; }
@@ -100,7 +100,7 @@ public final class SlotElement implements PanelElement {
     /**
      * A slot is a click-through hole (see class javadoc): vanilla's slot-click
      * machinery owns the interaction, so the panel must let the click pass
-     * rather than eat it. The covered vanilla slot is made inert by the graft
+     * rather than eat it. The covered vanilla slot is made inert by the slot
      * {@code getHoveredSlot} resolution, not by panel opacity.
      */
     @Override public boolean isElementOpaque() { return false; }
@@ -108,27 +108,27 @@ public final class SlotElement implements PanelElement {
     /** Hidden when the slot can't be resolved on this screen, or its panel is hidden. */
     @Override
     public boolean isVisible() {
-        MenuKitSlot slot = resolve();
+        MKCSlot slot = resolve();
         return slot != null && !slot.isInert();
     }
 
     @Override
     public void render(RenderContext ctx) {
-        MenuKitSlot slot = resolve();
+        MKCSlot slot = resolve();
         if (slot == null || slot.isInert()) return;
 
         int screenX = ctx.originX() + childX;
         int screenY = ctx.originY() + childY;
 
-        // Keep the slot's presentation position current, in the graft coordinate
+        // Keep the slot's presentation position current, in the slot coordinate
         // space (leftPos-relative), so the library's getHoveredSlot resolution
-        // ({@link MenuKitGraftInput}) hit-tests it where the panel actually drew
+        // ({@link MKCSlotInput}) hit-tests it where the panel actually drew
         // it. This is the per-frame positioning that used to be an onPrepare
         // callback — now it's just "an element rides its panel".
         Screen screen = Minecraft.getInstance().screen;
         if (screen instanceof AbstractContainerScreen<?> acs) {
             AbstractContainerScreenAccessor acc = (AbstractContainerScreenAccessor) acs;
-            slot.setGraftPosition(screenX - acc.menuKit$getLeftPos(),
+            slot.setRenderPosition(screenX - acc.menuKit$getLeftPos(),
                     screenY - acc.menuKit$getTopPos());
         }
 
@@ -144,18 +144,18 @@ public final class SlotElement implements PanelElement {
     }
 
     /**
-     * Resolves the live {@link MenuKitSlot} for this element's identity from the
+     * Resolves the live {@link MKCSlot} for this element's identity from the
      * current screen's menu (unwrapping a creative {@code SlotWrapper} via
-     * {@link GraftSlots#asGraft}). Returns {@code null} when the screen isn't a
-     * container screen or the slot isn't present (e.g. a screen the graft doesn't
+     * {@link Slots#asMKCSlot}). Returns {@code null} when the screen isn't a
+     * container screen or the slot isn't present (e.g. a screen the slot doesn't
      * apply to).
      */
-    private @Nullable MenuKitSlot resolve() {
+    private @Nullable MKCSlot resolve() {
         Screen screen = Minecraft.getInstance().screen;
         if (!(screen instanceof AbstractContainerScreen<?> acs)) return null;
         AbstractContainerMenu menu = acs.getMenu();
         for (Slot slot : menu.slots) {
-            MenuKitSlot mk = GraftSlots.asGraft(slot);
+            MKCSlot mk = MKCSlotAccess.asMKCSlot(slot);
             if (mk == null) continue;
             if (mk.getLocalIndex() == localIndex
                     && groupId.equals(mk.getGroupId())

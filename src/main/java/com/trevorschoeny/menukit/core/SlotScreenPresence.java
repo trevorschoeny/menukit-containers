@@ -7,8 +7,8 @@ import net.minecraft.client.gui.GuiGraphics;
 import org.jspecify.annotations.Nullable;
 
 /**
- * A consumer's declaration that a graft should manifest on a family of screens —
- * the public face of inventory-screen parity. Register one of these per graft and
+ * A consumer's declaration that a slot should manifest on a family of screens —
+ * the public face of inventory-screen parity. Register one of these per slot and
  * MenuKit drives its draw, hover, click, and reveal on <b>every</b> matching
  * inventory-bearing screen, by default, with no per-screen consumer mixin.
  *
@@ -19,17 +19,17 @@ import org.jspecify.annotations.Nullable;
  * <ol>
  *   <li>fires {@link #onPrepare} (update hover-reveal, reposition slots for this
  *       screen) before the slots draw / hit-test;</li>
- *   <li>draws your {@link #background} decoration, then the grafted slot frames +
+ *   <li>draws your {@link #background} decoration, then the registered slot frames +
  *       items + hover (the library's own render), then your {@link #foreground}
  *       decoration (icons, buttons) — in that z-order;</li>
- *   <li>routes hover + click to the grafted slot it covers, and eats clicks in the
+ *   <li>routes hover + click to the registered slot it covers, and eats clicks in the
  *       panel's empty space so a carried item can't fall through;</li>
  *   <li>offers your {@link #onClick} / {@link #onScroll} the event first, so your
  *       interactive decoration (resize buttons, etc.) can consume it.</li>
  * </ol>
  *
  * Creative is included for free — the library parks the creative slot wrappers and
- * draws/hit-tests the graft itself, so the same registration covers survival and
+ * draws/hit-tests the slot itself, so the same registration covers survival and
  * creative without the consumer hand-wiring either.
  *
  * <h3>Default-on, opt-out per screen</h3>
@@ -42,8 +42,8 @@ import org.jspecify.annotations.Nullable;
  * <h3>Recipe</h3>
  *
  * <pre>{@code
- * // After grafting (client init), register the presence once:
- * GraftScreenPresence.forGraft(pockets)
+ * // After registering (client init), register the presence once:
+ * SlotScreenPresence.forSlots(pockets)
  *     .onPrepare(ctx -> { PocketHover.update(ctx); PocketRow.reposition(ctx.menu()); })
  *     .background((ctx, g) -> PocketPanelRender.drawBackground(g, ctx.leftPos(), ctx.topPos()))
  *     .foreground((ctx, g) -> PocketPanelRender.drawButtons(g, ctx.leftPos(), ctx.topPos(),
@@ -52,42 +52,42 @@ import org.jspecify.annotations.Nullable;
  *     .register();
  * }</pre>
  *
- * <p>The grafted slot draw / hover / click themselves are <em>not</em> your
- * concern — they are the library's. You supply only what is yours: where the graft
+ * <p>The registered slot draw / hover / click themselves are <em>not</em> your
+ * concern — they are the library's. You supply only what is yours: where the slot
  * sits on each screen (prepare), and its decoration.
  */
-public final class GraftScreenPresence {
+public final class SlotScreenPresence {
 
     // ── Consumer callbacks ──────────────────────────────────────────────────
 
-    /** Per-frame prepare: update reveal state + reposition grafted slots for this screen. */
+    /** Per-frame prepare: update reveal state + reposition registered slots for this screen. */
     @FunctionalInterface
     public interface Prepare {
-        void prepare(GraftScreenContext ctx);
+        void prepare(SlotScreenContext ctx);
     }
 
     /** Draws decoration (a panel background, empty-slot icons, buttons, …). */
     @FunctionalInterface
     public interface Decorator {
-        void draw(GraftScreenContext ctx, GuiGraphics graphics);
+        void draw(SlotScreenContext ctx, GuiGraphics graphics);
     }
 
-    /** Handles a click over the graft region. Return true to consume it. */
+    /** Handles a click over the slot region. Return true to consume it. */
     @FunctionalInterface
     public interface Click {
-        boolean click(GraftScreenContext ctx, int button);
+        boolean click(SlotScreenContext ctx, int button);
     }
 
-    /** Handles a scroll over the graft region. Return true to consume it. */
+    /** Handles a scroll over the slot region. Return true to consume it. */
     @FunctionalInterface
     public interface Scroll {
-        boolean scroll(GraftScreenContext ctx, double scrollX, double scrollY);
+        boolean scroll(SlotScreenContext ctx, double scrollX, double scrollY);
     }
 
-    /** Handles a mouse release over the graft region (e.g. finishing a drag). Return true to consume. */
+    /** Handles a mouse release over the slot region (e.g. finishing a drag). Return true to consume. */
     @FunctionalInterface
     public interface Release {
-        boolean release(GraftScreenContext ctx, int button);
+        boolean release(SlotScreenContext ctx, int button);
     }
 
     // ── Configuration ───────────────────────────────────────────────────────
@@ -102,68 +102,68 @@ public final class GraftScreenPresence {
     private @Nullable Release release;
     private boolean registered = false;
 
-    private GraftScreenPresence(String panelId) {
+    private SlotScreenPresence(String panelId) {
         this.panelId = panelId;
     }
 
-    /** Begins a presence for the graft with the given panel id. */
-    public static GraftScreenPresence forPanel(String panelId) {
-        return new GraftScreenPresence(panelId);
+    /** Begins a presence for the slot with the given panel id. */
+    public static SlotScreenPresence forPanel(String panelId) {
+        return new SlotScreenPresence(panelId);
     }
 
-    /** Begins a presence for a {@link MenuKitGraft.Grafted} handle (reads its panel id). */
-    public static GraftScreenPresence forGraft(MenuKitGraft.Grafted grafted) {
-        return new GraftScreenPresence(grafted.panel().getId());
+    /** Begins a presence for a {@link MKCSlots.RegisteredSlots} handle (reads its panel id). */
+    public static SlotScreenPresence forSlots(MKCSlots.RegisteredSlots registered) {
+        return new SlotScreenPresence(registered.panel().getId());
     }
 
     // ── Targeting (default-on, opt-out) ─────────────────────────────────────
 
     /** Sets an explicit screen matcher. Default is {@link ScreenMatcher#all()}. */
-    public GraftScreenPresence on(ScreenMatcher matcher) {
+    public SlotScreenPresence on(ScreenMatcher matcher) {
         this.matcher = matcher;
         return this;
     }
 
     /** Everywhere except the named screens (and subclasses) — a deliberate opt-out. */
-    public GraftScreenPresence exceptScreens(Class<?>... screens) {
+    public SlotScreenPresence exceptScreens(Class<?>... screens) {
         this.matcher = ScreenMatcher.allExcept(screens);
         return this;
     }
 
     /** Only the named screens (and subclasses) — full narrowing. */
-    public GraftScreenPresence onlyScreens(Class<?>... screens) {
+    public SlotScreenPresence onlyScreens(Class<?>... screens) {
         this.matcher = ScreenMatcher.only(screens);
         return this;
     }
 
     // ── Callbacks ───────────────────────────────────────────────────────────
 
-    public GraftScreenPresence onPrepare(Prepare prepare) {
+    public SlotScreenPresence onPrepare(Prepare prepare) {
         this.prepare = prepare;
         return this;
     }
 
-    public GraftScreenPresence background(Decorator background) {
+    public SlotScreenPresence background(Decorator background) {
         this.background = background;
         return this;
     }
 
-    public GraftScreenPresence foreground(Decorator foreground) {
+    public SlotScreenPresence foreground(Decorator foreground) {
         this.foreground = foreground;
         return this;
     }
 
-    public GraftScreenPresence onClick(Click click) {
+    public SlotScreenPresence onClick(Click click) {
         this.click = click;
         return this;
     }
 
-    public GraftScreenPresence onScroll(Scroll scroll) {
+    public SlotScreenPresence onScroll(Scroll scroll) {
         this.scroll = scroll;
         return this;
     }
 
-    public GraftScreenPresence onRelease(Release release) {
+    public SlotScreenPresence onRelease(Release release) {
         this.release = release;
         return this;
     }
@@ -171,19 +171,19 @@ public final class GraftScreenPresence {
     // ── Lifecycle ───────────────────────────────────────────────────────────
 
     /** Registers this presence with the screen dispatch. Call once. */
-    public GraftScreenPresence register() {
+    public SlotScreenPresence register() {
         if (registered) {
             throw new IllegalStateException(
-                    "GraftScreenPresence for panel '" + panelId + "' is already registered.");
+                    "SlotScreenPresence for panel '" + panelId + "' is already registered.");
         }
         registered = true;
-        MenuKitGraftScreenHook.register(this);
+        MKCSlotScreenHook.register(this);
         return this;
     }
 
     /** Removes this presence from the screen dispatch. Idempotent. */
     public void unregister() {
-        MenuKitGraftScreenHook.unregister(this);
+        MKCSlotScreenHook.unregister(this);
         registered = false;
     }
 

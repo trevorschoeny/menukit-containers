@@ -14,13 +14,13 @@
     "M7BlockDropMixin",
     "PlayerDeathDropMixin",
     "ShulkerBoxPortableStateMixin",
-    "CreativeSetSlotGraftMixin",
+    "CreativeSetSlotMixin",
     "ExperienceOrbMendMixin"
   ],
   "client": [
-    "MenuKitGraftCreativeParkMixin",
-    "MenuKitGraftCreativeItemPickerMixin",
-    "MenuKitGraftCreativeClickRouteMixin"
+    "MenuKitCreativeSlotParkMixin",
+    "MenuKitCreativeSlotItemPickerMixin",
+    "MenuKitCreativeSlotClickRouteMixin"
   ],
   "injectors": {
     "defaultRequire": 1

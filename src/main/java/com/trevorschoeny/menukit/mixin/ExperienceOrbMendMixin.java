@@ -1,7 +1,7 @@
 package com.trevorschoeny.menukit.mixin;
 
 import com.trevorschoeny.menukit.core.MendingCandidates;
-import com.trevorschoeny.menukit.core.MenuKitSlot;
+import com.trevorschoeny.menukit.core.MKCSlot;
 
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.server.level.ServerPlayer;
@@ -29,9 +29,9 @@ import java.util.function.Predicate;
 
 /**
  * The mending primitive's <b>intercept</b> — widens vanilla's XP-orb repair pool
- * so a damaged Mending item in an opted-in grafted slot ({@code SlotGroup.mendsFromXp})
+ * so a damaged Mending item in an opted-in registered slot ({@code SlotGroup.mendsFromXp})
  * or a consumer-contributed source ({@link MendingCandidates}) repairs from XP
- * exactly like worn armor does. Library-owned grafted-slot vanilla mechanic, the
+ * exactly like worn armor does. Library-owned registered-slot vanilla mechanic, the
  * same line as death-drop (§0052) and binding (§0053).
  *
  * <h3>One unified pool, once</h3>
@@ -39,13 +39,13 @@ import java.util.function.Predicate;
  * {@code EnchantmentHelper.getRandomItemWith(REPAIR_WITH_XP, …)}, repairs it,
  * consumes proportional XP, and recurses with the leftover. We {@link Redirect}
  * that one pick so the pool is unified in a single place:
- * <pre>  vanilla equipped (preserved) ∪ opted-in grafted slots ∪ consumer candidates</pre>
+ * <pre>  vanilla equipped (preserved) ∪ opted-in registered slots ∪ consumer candidates</pre>
  * then repair runs with vanilla's own math. Unifying at the pick site means one
  * orb repairs one item across all sources — no double-dipping, and no second
  * {@code ExperienceOrb} mixin needed consumer-side.
  *
  * <h3>Vanilla is untouched when nobody opts in</h3>
- * If the entity isn't a server player, or no grafted slot opts in and no consumer
+ * If the entity isn't a server player, or no registered slot opts in and no consumer
  * registers a candidate, the redirect returns vanilla's result verbatim — identical
  * behavior. Vanilla equipped items keep their exact selection + break semantics
  * (via the original {@code getRandomItemWith} call).
@@ -54,13 +54,13 @@ import java.util.function.Predicate;
  * Uniform random pick across the unified pool — matching vanilla's per-orb
  * randomness. Each equipped mendable item is expanded into its own pool entry
  * (rather than vanilla's single pre-collapsed {@code getRandomItemWith} pick), so a
- * uniform draw weights every mendable item equally and the opted-in grafted /
+ * uniform draw weights every mendable item equally and the opted-in registered /
  * consumer candidates are no longer over-represented versus equipped-as-a-group.
  *
  * <h3>Sync (the load-bearing subtlety)</h3>
  * Vanilla repairs the chosen stack <em>in place</em> AFTER this redirect returns,
  * and {@code repairPlayerItems} recurses — so we can't persist at pick time. For a
- * non-vanilla candidate we queue a commit (grafted: {@code slot.set} → storage
+ * non-vanilla candidate we queue a commit (registered: {@code slot.set} → storage
  * {@code markDirty}; consumer: its {@code onRepaired}) on the orb instance and
  * drain it at {@code playerTouch} TAIL, once the whole repair has finished. An
  * in-place durability change alone may not round-trip an attachment-backed slot to
@@ -108,9 +108,9 @@ public class ExperienceOrbMendMixin {
         List<Runnable> commits = new ArrayList<>();
         int extras = 0;
 
-        // Opted-in grafted slots on the player's own inventory menu.
+        // Opted-in registered slots on the player's own inventory menu.
         for (Slot slot : player.inventoryMenu.slots) {
-            if (slot instanceof MenuKitSlot mk && mk.getGroup().mendsFromXp()) {
+            if (slot instanceof MKCSlot mk && mk.getGroup().mendsFromXp()) {
                 ItemStack stack = mk.getItem();
                 if (menukit$mendable(stack)) {
                     pool.add(new EnchantedItemInUse(stack, null, player, item -> {}));
@@ -133,7 +133,7 @@ public class ExperienceOrbMendMixin {
         if (extras == 0) return vanilla;
 
         // §0053 fair weighting: add EVERY equipped mendable item as its own pool
-        // entry — not vanilla's single pre-collapsed pick — so the opted-in grafted /
+        // entry — not vanilla's single pre-collapsed pick — so the opted-in registered /
         // consumer candidates aren't over-represented versus equipped-as-a-group.
         // (Vanilla's getRandomItemWith collapses all equipped matches to one entry;
         // we expand them so a uniform pick weights every mendable item equally.)

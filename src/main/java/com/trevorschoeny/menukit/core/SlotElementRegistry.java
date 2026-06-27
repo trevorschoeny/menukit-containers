@@ -9,16 +9,16 @@ import java.util.Set;
  * The set of {@link SlotElement}s currently attached to an open screen — the
  * bridge that lets MenuKit's library-owned screen hook resolve hover/click for
  * panel-hosted slots, not just slots registered through the old
- * {@link GraftScreenPresence} world.
+ * {@link SlotScreenPresence} world.
  *
  * <h3>Why this is needed</h3>
  *
- * The {@code getHoveredSlot} interception fans through {@link MenuKitGraftScreenHook}.
+ * The {@code getHoveredSlot} interception fans through {@link MKCSlotScreenHook}.
  * That hook historically only knew about slots whose panel had a registered
- * {@code GraftScreenPresence}; a panel-hosted {@link SlotElement} has no presence.
+ * {@code SlotScreenPresence}; a panel-hosted {@link SlotElement} has no presence.
  * This registry tells the hook which panels currently have live SlotElements, so
  * it resolves them through the same creative-aware
- * {@link MenuKitGraftInput#resolveHoveredSlot} path — and a slot in a panel
+ * {@link MKCSlotInput#resolveHoveredSlot} path — and a slot in a panel
  * becomes clickable and hover-correct with zero presence boilerplate.
  *
  * <h3>Lifecycle</h3>
@@ -59,7 +59,7 @@ public final class SlotElementRegistry {
      * The panel ids that currently have at least one attached {@link SlotElement}.
      * The screen hook unions these with its presence panel ids and passes the
      * result as the resolution filter, so panel-hosted slots resolve alongside
-     * (or instead of) presence-registered grafts.
+     * (or instead of) presence-registered slots.
      */
     public static Set<String> activePanelIds() {
         synchronized (ACTIVE) {

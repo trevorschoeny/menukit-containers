@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * <p>Targets {@link Player#dropEquipment(net.minecraft.server.level.ServerLevel)}
  * at TAIL. In 1.21.11 this method is exactly where vanilla, gated on
  * {@code keepInventory}, runs {@code destroyVanishingCursedItems()} +
- * {@code inventory.dropAll()} (JAR-confirmed). Running the grafted-attachment
+ * {@code inventory.dropAll()} (JAR-confirmed). Running the registered-attachment
  * drop at TAIL means MKC content drops alongside the vanilla inventory — same
  * death, same frame, same gamerule timing — for vanilla-identical parity. This
  * is the §0051 lineage: absorb the vanilla mechanic at the faithful upstream

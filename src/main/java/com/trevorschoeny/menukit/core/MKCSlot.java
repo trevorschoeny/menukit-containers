@@ -29,9 +29,9 @@ import net.minecraft.world.item.enchantment.EnchantmentHelper;
  * MenuKit slots as empty, which is a valid state for any slot.
  *
  * <p>Part of the canonical MenuKit hierarchy:
- * Screen → Panel → SlotGroup → MenuKitSlot
+ * Screen → Panel → SlotGroup → MKCSlot
  */
-public class MenuKitSlot extends Slot {
+public class MKCSlot extends Slot {
 
     // ── Coordinates in the hierarchy (final — never desync) ─────────────
     private final String panelId;
@@ -45,12 +45,12 @@ public class MenuKitSlot extends Slot {
     private final Panel panel;
 
     // ── Presentation position (§0047 — mutable; identity stays frozen) ──
-    // The graft render + input helpers read these instead of the final vanilla
-    // Slot.x/y, so a grafted panel can move at runtime. They default to the
-    // constructed coords; for vanilla-rendered (non-graft) MenuKitSlots they
+    // The slot render + input helpers read these instead of the final vanilla
+    // Slot.x/y, so a registered panel can move at runtime. They default to the
+    // constructed coords; for vanilla-rendered (non-slot) MKCSlots they
     // stay equal to Slot.x/y and are dormant.
-    private int graftX;
-    private int graftY;
+    private int renderX;
+    private int renderY;
 
     /**
      * @param container      vanilla Container adapter (from handler construction)
@@ -62,12 +62,12 @@ public class MenuKitSlot extends Slot {
      * @param groupId        group identifier within the panel
      * @param localIndex     slot index within the group (0-based)
      */
-    public MenuKitSlot(Container container, int containerIndex, int x, int y,
+    public MKCSlot(Container container, int containerIndex, int x, int y,
                        SlotGroup group, Panel panel, String groupId,
                        int localIndex) {
         super(container, containerIndex, x, y);
-        this.graftX = x;
-        this.graftY = y;
+        this.renderX = x;
+        this.renderY = y;
         this.group = group;
         this.panel = panel;
         this.panelId = panel.getId();
@@ -92,25 +92,25 @@ public class MenuKitSlot extends Slot {
     // ── Presentation position (§0047) ───────────────────────────────────
 
     /**
-     * Current presentation x — where the graft render + input helpers draw and
-     * hit-test this slot. Equals the constructed x until {@link #setGraftPosition}.
+     * Current presentation x — where the slot render + input helpers draw and
+     * hit-test this slot. Equals the constructed x until {@link #setRenderPosition}.
      */
-    public int graftX() { return graftX; }
+    public int renderX() { return renderX; }
 
-    /** Current presentation y. @see #graftX() */
-    public int graftY() { return graftY; }
+    /** Current presentation y. @see #renderX() */
+    public int renderY() { return renderY; }
 
     /**
      * Moves this slot's presentation position at runtime (§0047 — position is
      * mutable presentation; the slot's vanilla {@code Slot.x/y} identity and its
-     * sync are untouched). Client-side: the graft render + input helpers follow
+     * sync are untouched). Client-side: the slot render + input helpers follow
      * this immediately. Call per frame to drive a layout that depends on runtime
      * state — e.g. a row that re-centers as its count changes. The server neither
      * renders nor needs it.
      */
-    public void setGraftPosition(int x, int y) {
-        this.graftX = x;
-        this.graftY = y;
+    public void setRenderPosition(int x, int y) {
+        this.renderX = x;
+        this.renderY = y;
     }
 
     // ── Inertness ───────────────────────────────────────────────────────
