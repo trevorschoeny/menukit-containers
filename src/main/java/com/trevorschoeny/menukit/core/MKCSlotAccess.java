@@ -18,8 +18,12 @@ import org.jspecify.annotations.Nullable;
  * slots — so there is one unwrap path for slots and non-slots alike. This asks
  * only the containers-specific question on top: is the unwrapped target a slot?
  *
- * <p>Client-only: the creative wrapper is a client type. Only the render + input
- * helpers (themselves client-only) call this.
+ * <p>Universal (both sides). The creative {@code SlotWrapper} it unwraps is a
+ * client type, but {@link Slots#target} tests an interface in MenuKit's own jar
+ * and never class-loads that client type — server-side no slot is a wrapper, so
+ * it returns the slot unchanged. THE ONE WINDOW's server enforcement
+ * ({@link SlotAddresses}/{@link WindowGating}) calls this on the logical server
+ * to detect a created slot; the render + input helpers call it on the client.
  */
 public final class MKCSlotAccess {
 
