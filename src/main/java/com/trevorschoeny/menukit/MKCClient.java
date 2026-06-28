@@ -53,6 +53,12 @@ public class MKCClient implements ClientModInitializer {
         com.trevorschoeny.menukit.window.SlotWindowResolver.setCreatedSlotResolver(
                 com.trevorschoeny.menukit.core.CreatedSlotAdapter.INSTANCE);
 
+        // THE ONE WINDOW — kind-aware addressing for the client-observed reaction
+        // detector, so a created slot's synced change fires at its CREATED address
+        // (not a vanilla-style one). MK-alone falls back to vanilla addressing.
+        com.trevorschoeny.menukit.window.ObservedReactions.installAddressing(
+                com.trevorschoeny.menukit.core.SlotAddresses::of);
+
         // Container-parity chrome. Build each MKCContainerPanel's display panel
         // (chrome + slot presentation) and wire its ScreenPanelAdapter, scoped by
         // the registered parity matcher. Runs now (in the library's client init,
