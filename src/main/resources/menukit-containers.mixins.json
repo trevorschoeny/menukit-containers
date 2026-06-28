@@ -18,6 +18,7 @@
     "CreativeSetSlotMixin",
     "ExperienceOrbMendMixin",
     "MKCGatingMixin",
+    "MKCVanillaSlotGatingMixin",
     "MKCActingPlayerMixin",
     "MKCHopperGatingMixin",
     "MKCDispenserGatingMixin"

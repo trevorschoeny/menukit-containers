@@ -1,8 +1,11 @@
 package com.trevorschoeny.menukit.mixin;
 
+import com.trevorschoeny.menukit.core.BehaviorBindingTable;
 import com.trevorschoeny.menukit.core.MendingCandidates;
 import com.trevorschoeny.menukit.core.MKCBehaviorKeys;
 import com.trevorschoeny.menukit.core.MKCSlot;
+import com.trevorschoeny.menukit.window.Address;
+import com.trevorschoeny.menukit.window.VanillaAddressing;
 import com.trevorschoeny.menukit.window.WindowEngine;
 
 import net.minecraft.core.component.DataComponentType;
@@ -72,22 +75,40 @@ import java.util.function.Predicate;
 @Mixin(ExperienceOrb.class)
 public class ExperienceOrbMendMixin {
 
-    // Commits for the non-vanilla candidates actually picked + repaired this orb.
-    // Lives on the orb instance (stable across playerTouch → repairPlayerItems
-    // recursion); lazy-init at playerTouch HEAD so it cannot leak across orbs.
+    // The persist actions (write-back + mark-dirty) for the non-vanilla candidate
+    // picked on the PREVIOUS recursion level, not yet flushed to live storage. Lives
+    // on the orb instance (stable across playerTouch → repairPlayerItems recursion);
+    // lazy-init at playerTouch HEAD so it cannot leak across orbs.
+    //
+    // Why "previous level": vanilla repairs the picked stack IN PLACE only AFTER this
+    // redirect returns, then recurses. So at the next redirect call the prior pick is
+    // freshly repaired — we flush it (write the repaired copy back to the live
+    // attachment) BEFORE re-scanning. Without this flush, an attachment-backed slot's
+    // getStack rebuilds a fresh STILL-DAMAGED copy every call (the live attachment was
+    // never updated), so the same item is re-offered every recursion and vanilla's
+    // per-step XP consumption eventually integer-floors to zero → infinite recursion
+    // (StackOverflowError). Flushing makes a repaired created/consumer item leave the
+    // pool exactly as vanilla's live equipment does once mended.
     @Unique
-    private List<Runnable> mk$mendCommits;
+    private List<Runnable> mk$pendingCommits;
 
     @Inject(method = "playerTouch", at = @At("HEAD"))
     private void mk$mendBegin(Player player, CallbackInfo ci) {
-        this.mk$mendCommits = new ArrayList<>();
+        this.mk$pendingCommits = new ArrayList<>();
     }
 
     @Inject(method = "playerTouch", at = @At("TAIL"))
     private void mk$mendDrain(Player player, CallbackInfo ci) {
-        if (this.mk$mendCommits != null) {
-            for (Runnable commit : this.mk$mendCommits) commit.run();
-            this.mk$mendCommits = null;
+        mk$flushPending();          // persist the final pick
+        this.mk$pendingCommits = null;
+    }
+
+    /** Run + clear the queued persist actions — write picked repairs to live storage. */
+    @Unique
+    private void mk$flushPending() {
+        if (this.mk$pendingCommits != null && !this.mk$pendingCommits.isEmpty()) {
+            for (Runnable commit : this.mk$pendingCommits) commit.run();
+            this.mk$pendingCommits.clear();
         }
     }
 
@@ -100,6 +121,11 @@ public class ExperienceOrbMendMixin {
                             + "Ljava/util/Optional;"))
     private Optional<EnchantedItemInUse> mk$widenMendPool(
             DataComponentType<?> effect, LivingEntity entity, Predicate<ItemStack> isDamaged) {
+        // Persist the PRIOR recursion level's pick to live storage before re-scanning,
+        // so a now-repaired created/consumer item is no longer offered (see the field
+        // doc — this is what terminates the recursion).
+        mk$flushPending();
+
         Optional<EnchantedItemInUse> vanilla =
                 EnchantmentHelper.getRandomItemWith(effect, entity, isDamaged);
         if (!(entity instanceof ServerPlayer player)) return vanilla;
@@ -110,16 +136,35 @@ public class ExperienceOrbMendMixin {
         List<Runnable> commits = new ArrayList<>();
         int extras = 0;
 
-        // Opted-in registered slots on the player's own inventory menu — MENDING
-        // resolved from the engine by the slot's address (not the retired knob).
-        for (Slot slot : player.inventoryMenu.slots) {
-            if (slot instanceof MKCSlot mk
-                    && WindowEngine.resolve(mk.address(), MKCBehaviorKeys.MENDING).asBoolean()) {
-                ItemStack stack = mk.getItem();
-                if (mk$mendable(stack)) {
-                    pool.add(new EnchantedItemInUse(stack, null, player, item -> {}));
-                    commits.add(() -> mk.set(stack));   // write back + markDirty
-                    extras++;
+        // Opted-in slots on the player's own inventory menu — MENDING resolved from the
+        // engine by the slot's address. Two flavors:
+        //  - created slot (MKCSlot): address by id; its storage returns a COPY, so we
+        //    queue a write-back commit (flushed before the next scan / at drain).
+        //  - vanilla inventory slot: opted in by its container address; the item is the
+        //    REAL inventory stack, so vanilla's in-place repair persists + syncs natively
+        //    (commit = null, exactly like equipped gear).
+        // Skip the per-slot scan entirely when no behavior is set anywhere — keeps
+        // normal XP pickup (the overwhelming common case) zero-cost.
+        for (Slot slot : BehaviorBindingTable.INSTANCE.isEmpty() ? List.<Slot>of() : player.inventoryMenu.slots) {
+            if (slot instanceof MKCSlot mk) {
+                if (WindowEngine.resolve(mk.address(), MKCBehaviorKeys.MENDING).asBoolean()) {
+                    ItemStack stack = mk.getItem();
+                    if (mk$mendable(stack)) {
+                        pool.add(new EnchantedItemInUse(stack, null, player, item -> {}));
+                        commits.add(() -> mk.set(stack));   // write back + markDirty
+                        extras++;
+                    }
+                }
+            } else {
+                Address a = VanillaAddressing.addressOf(slot.container, slot.getContainerSlot())
+                        .orElse(null);
+                if (a != null && WindowEngine.resolve(a, MKCBehaviorKeys.MENDING).asBoolean()) {
+                    ItemStack stack = slot.getItem();
+                    if (mk$mendable(stack)) {
+                        pool.add(new EnchantedItemInUse(stack, null, player, item -> {}));
+                        commits.add(null);   // real inventory stack — repairs in place
+                        extras++;
+                    }
                 }
             }
         }
@@ -154,8 +199,10 @@ public class ExperienceOrbMendMixin {
 
         int index = player.getRandom().nextInt(pool.size());
         Runnable commit = commits.get(index);
-        if (commit != null && this.mk$mendCommits != null) {
-            this.mk$mendCommits.add(commit);
+        if (commit != null && this.mk$pendingCommits != null) {
+            // Queue (don't run yet): vanilla repairs this pick in place right after we
+            // return; the next redirect call (or the TAIL drain) flushes it to live storage.
+            this.mk$pendingCommits.add(commit);
         }
         return Optional.of(pool.get(index));
     }

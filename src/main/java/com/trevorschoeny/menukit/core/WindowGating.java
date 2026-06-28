@@ -9,6 +9,8 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.EnchantmentEffectComponents;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
 
 /**
  * The reusable gating decision every server seam calls — resolve the
@@ -61,6 +63,55 @@ public final class WindowGating {
         // null player: automation. A gate that bypasses for non-capable players
         // (a lock) still enforces here, because automation has no player to exempt.
         return gate == SlotGate.OPEN || gate.mayPickup(null, GatingContext.current());
+    }
+
+    // ── slot-level seams (no menu): the direct-click path gates here ─────────────
+    // Slot.mayPlace/mayPickup/getMaxStackSize have no menu in hand, only the slot.
+    // A vanilla slot's gate is found from its CONTAINER address (the same §0050
+    // address the set-time path mints via VanillaAddressing.addressOf(container,
+    // index)), so a gate set on the player inventory by index is found here. Used by
+    // MKCVanillaSlotGatingMixin; created slots gate in MKCSlot itself (skipped there).
+
+    /** Whether {@code stack} may be placed into {@code slot} (gating), by container address. */
+    public static boolean mayPlaceAt(Slot slot, ItemStack stack) {
+        if (BehaviorBindingTable.INSTANCE.isEmpty()) return true;
+        SlotGate gate = slotGate(slot);
+        return gate == SlotGate.OPEN || gate.mayPlace(stack, GatingContext.current());
+    }
+
+    /** Whether {@code player} may take from {@code slot} (gating), by container address. */
+    public static boolean mayPickupAt(Slot slot, Player player) {
+        if (BehaviorBindingTable.INSTANCE.isEmpty()) return true;
+        SlotGate gate = slotGate(slot);
+        return gate == SlotGate.OPEN || gate.mayPickup(player, GatingContext.current());
+    }
+
+    /** The per-item stack cap for {@code slot} (gating), clamped to {@code vanillaMax}. */
+    public static int maxStackAt(Slot slot, ItemStack stack, int vanillaMax) {
+        if (BehaviorBindingTable.INSTANCE.isEmpty()) return vanillaMax;
+        SlotGate gate = slotGate(slot);
+        return gate == SlotGate.OPEN ? vanillaMax
+                : Math.min(gate.maxStackSize(stack, vanillaMax), vanillaMax);
+    }
+
+    private static SlotGate slotGate(Slot slot) {
+        return VanillaAddressing.addressOf(slot.container, slot.getContainerSlot())
+                .map(addr -> WindowEngine.resolve(addr, MKCBehaviorKeys.GATING))
+                .orElse(SlotGate.OPEN); // unidentifiable container => vanilla
+    }
+
+    /**
+     * Whether Curse of Binding (BINDING set on this slot) blocks taking the item out —
+     * a bound item ({@code PREVENT_ARMOR_CHANGE}) can't be removed while the player is
+     * alive, survival only (creative bypasses). The vanilla-slot twin of
+     * {@code MKCSlot.mayPickup}'s binding check, addressed by container.
+     */
+    public static boolean bindingDeniesPickup(Slot slot, Player player) {
+        if (BehaviorBindingTable.INSTANCE.isEmpty()) return false;
+        Address a = VanillaAddressing.addressOf(slot.container, slot.getContainerSlot()).orElse(null);
+        if (a == null || !WindowEngine.resolve(a, MKCBehaviorKeys.BINDING).asBoolean()) return false;
+        if (player == null || player.hasInfiniteMaterials()) return false; // creative bypass (§0051)
+        return EnchantmentHelper.has(slot.getItem(), EnchantmentEffectComponents.PREVENT_ARMOR_CHANGE);
     }
 
     private static SlotGate gateFor(AbstractContainerMenu menu, Slot slot) {

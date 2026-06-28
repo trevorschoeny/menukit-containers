@@ -76,5 +76,13 @@ public class MKCGatingMixin {
             cir.setReturnValue(false);
         }
     }
+
+    // NOTE: the plain left/right-click path is gated at the Slot level instead
+    // (MKCVanillaSlotGatingMixin gates Slot.mayPlace/mayPickup/getMaxStackSize), NOT
+    // here in doClick: the actual mutation runs through Slot.safeInsert/safeTake/
+    // tryRemove, which consult mayPlace/mayPickup INTERNALLY — a doClick-level wrap
+    // on those calls never sees them, and max-stack isn't a mayPlace concern at all.
+    // Gating the Slot predicates covers every path (direct, shift, automation) the
+    // way MKCSlot already does for created slots.
 }
 

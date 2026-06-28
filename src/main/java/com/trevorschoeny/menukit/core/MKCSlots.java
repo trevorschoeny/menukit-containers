@@ -1,6 +1,7 @@
 package com.trevorschoeny.menukit.core;
 
 import com.trevorschoeny.menukit.mixin.AbstractContainerMenuInvoker;
+import com.trevorschoeny.menukit.window.SlotNames;
 
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -113,6 +114,12 @@ public final class MKCSlots {
 
     private MKCSlots() {}
 
+    /** Capitalizes the first letter for a default display label from a group id. */
+    private static String capitalize(String s) {
+        if (s == null || s.isEmpty()) return "Slot";
+        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
     /**
      * The result of a slot: the live {@link Panel} and {@link SlotGroup} that
      * were created, plus the flat slot-index range appended to the menu (for
@@ -143,6 +150,7 @@ public final class MKCSlots {
         private int originX = 0;
         private int originY = 0;
         private BooleanSupplier revealWhen = null;            // null => always client-visible
+        private String displayLabel = null;                  // null => capitalized groupId
 
         Builder(AbstractContainerMenu menu, Player player) {
             this.menu = menu;
@@ -184,6 +192,19 @@ public final class MKCSlots {
          */
         public Builder revealWhen(BooleanSupplier clientReveal) {
             this.revealWhen = clientReveal;
+            return this;
+        }
+
+        /**
+         * Display label for these slots' names (a window-display concern, §0042 MK-side).
+         * Each slot is named {@code "<label> <ordinal>"} (or just {@code "<label>"} for a
+         * single slot), registered against the slot's address so {@code WindowSignals
+         * .hoveredName()} / a consumer's {@code SlotNames} lookup returns it. Defaults to
+         * the capitalized {@code groupId}. A consumer wanting a specific per-slot name can
+         * still call {@code SlotNames.override(address, name)} afterward.
+         */
+        public Builder label(String displayLabel) {
+            this.displayLabel = displayLabel;
             return this;
         }
 
@@ -251,6 +272,21 @@ public final class MKCSlots {
             }
             int flatEnd = menu.slots.size();
             group.setFlatIndexRange(flatStart, flatEnd);
+
+            // Display names — client-only (naming is a window-display concern; the
+            // server never reads them, and this keeps MK display types off the server
+            // path). Keyed by the SAME address minter the window uses to resolve a
+            // created slot, so WindowSignals.hoveredName() matches. §0042: MK never
+            // sees MKCSlot — CreatedSlotAdapter maps (panel,group,index) → Address.
+            if (player.level().isClientSide()) {
+                String label = displayLabel != null ? displayLabel : capitalize(groupId);
+                int size = storage.size();
+                for (int local = 0; local < size; local++) {
+                    SlotNames.override(
+                            CreatedSlotAdapter.addressOf(panelId, groupId, local),
+                            size <= 1 ? label : label + " " + (local + 1));
+                }
+            }
 
             return new RegisteredSlots(panel, group, flatStart, flatEnd, List.copyOf(mkSlots));
         }

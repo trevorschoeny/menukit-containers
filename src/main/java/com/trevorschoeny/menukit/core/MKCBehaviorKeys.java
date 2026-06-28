@@ -55,16 +55,23 @@ public final class MKCBehaviorKeys {
      * Whether Curse of Binding is enforced on this slot — a bound item
      * ({@code PREVENT_ARMOR_CHANGE}) can't be taken out while the player is alive,
      * survival only (creative bypasses, matching vanilla armor slots; §0051).
-     * Server-tier, created slots. Default {@link TriBool#FALSE} (off).
+     * Server-tier. Applies to created slots (enforced in {@code MKCSlot.mayPickup})
+     * and vanilla slots (enforced in {@code MKCVanillaSlotGatingMixin.mayPickup}) —
+     * a generic slot can opt a bound item into the no-remove rule vanilla otherwise
+     * only gives armor slots. Default {@link TriBool#FALSE} (off).
      */
     public static final BehaviorKey<TriBool> BINDING = BehaviorKey.of(
-            id("binding"), TriBool.class, TriBool.FALSE, Tier.SERVER, KindTag.CREATED_SLOT);
+            id("binding"), TriBool.class, TriBool.FALSE, Tier.SERVER,
+            KindTag.CREATED_SLOT, KindTag.VANILLA_SLOT);
 
     /**
      * Whether items in this slot participate in XP-orb Mending — an opted-in slot
      * joins the unified, fairly-weighted repair pool (§0053) when a mending orb is
-     * absorbed. Server-tier, created slots. Default {@link TriBool#FALSE} (off).
+     * absorbed. Server-tier. Applies to created slots and vanilla slots (the mend
+     * mixin scans both on the player inventory menu) — so an inventory slot's mending
+     * item can repair from XP even when it isn't held/worn. Default {@link TriBool#FALSE}.
      */
     public static final BehaviorKey<TriBool> MENDING = BehaviorKey.of(
-            id("mending"), TriBool.class, TriBool.FALSE, Tier.SERVER, KindTag.CREATED_SLOT);
+            id("mending"), TriBool.class, TriBool.FALSE, Tier.SERVER,
+            KindTag.CREATED_SLOT, KindTag.VANILLA_SLOT);
 }
