@@ -72,6 +72,10 @@ public class MKC implements ModInitializer {
         com.trevorschoeny.menukit.window.ServerTier.install(
                 com.trevorschoeny.menukit.core.BehaviorBindingTable.INSTANCE,
                 com.trevorschoeny.menukit.core.BehaviorBindingTable.INSTANCE);
+        // §0050-backed menu-independent vanilla-slot identity (so a chest slot
+        // gates the same via menu or hopper, both sides).
+        com.trevorschoeny.menukit.window.ServerTier.installIdentity(
+                com.trevorschoeny.menukit.core.MKCVanillaSlotIdentity.INSTANCE);
         // M1 per-slot state — attachments + shared networking types register
         // here (attachment registration must run on both sides; networking
         // payload-type registration is also symmetric).
