@@ -1,6 +1,7 @@
 package com.trevorschoeny.menukit.core;
 
 import com.trevorschoeny.menukit.mixin.AbstractContainerMenuInvoker;
+import com.trevorschoeny.menukit.window.WindowEngine;
 
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -8,9 +9,9 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 /**
  * Library-owned shift-click (quick-move) routing for registered slots on a
@@ -56,23 +57,30 @@ public final class MKCSlotQuickMove {
     public static ItemStack route(AbstractContainerMenu menu, Player player, int index) {
         if (index < 0 || index >= menu.slots.size()) return ItemStack.EMPTY;
 
-        // Discover the slot groups present on this menu + where the slot tail
-        // block begins (everything before it is the menu's own vanilla slots).
-        Set<SlotGroup> slotGroups = new LinkedHashSet<>();
+        // Discover the slot groups present on this menu, one representative live
+        // MKCSlot per group (its address is how QUICK_MOVE/GATING are resolved from
+        // the engine), + where the slot tail block begins (everything before it is
+        // the menu's own vanilla slots).
+        Map<SlotGroup, MKCSlot> groupReps = new LinkedHashMap<>();
         int firstSlotIndex = menu.slots.size();
         for (int i = 0; i < menu.slots.size(); i++) {
             if (menu.slots.get(i) instanceof MKCSlot mk) {
-                slotGroups.add(mk.getGroup());
+                groupReps.putIfAbsent(mk.getGroup(), mk);
                 if (i < firstSlotIndex) firstSlotIndex = i;
             }
         }
-        if (slotGroups.isEmpty()) return ItemStack.EMPTY; // no slots here — vanilla's job
+        if (groupReps.isEmpty()) return ItemStack.EMPTY; // no slots here — vanilla's job
 
         Slot source = menu.slots.get(index);
         if (source instanceof MKCSlot mkSource) {
-            return routeOutOfSlot(menu, player, mkSource, slotGroups, firstSlotIndex);
+            return routeOutOfSlot(menu, player, mkSource, groupReps, firstSlotIndex);
         }
-        return routeIntoSlots(menu, player, source, slotGroups);
+        return routeIntoSlots(menu, player, source, groupReps);
+    }
+
+    /** A created slot's quick-move participation, resolved from the engine by its address. */
+    private static QuickMoveParticipation qmpOf(MKCSlot slot) {
+        return WindowEngine.resolve(slot.address(), MKCBehaviorKeys.QUICK_MOVE);
     }
 
     /**
@@ -80,18 +88,18 @@ public final class MKCSlotQuickMove {
      * groups (declarative priority) first, then the menu's vanilla slots.
      */
     private static ItemStack routeOutOfSlot(AbstractContainerMenu menu, Player player,
-                                             MKCSlot source, Set<SlotGroup> slotGroups,
+                                             MKCSlot source, Map<SlotGroup, MKCSlot> groupReps,
                                              int firstSlotIndex) {
         SlotGroup sourceGroup = source.getGroup();
         if (source.isInert() || !source.hasItem()) return ItemStack.EMPTY;
-        if (!sourceGroup.getQmp().exports()) return ItemStack.EMPTY;
+        if (!qmpOf(source).exports()) return ItemStack.EMPTY;
 
         ItemStack original = source.getItem().copy();
         ItemStack working = source.getItem();
         AbstractContainerMenuInvoker mover = (AbstractContainerMenuInvoker) menu;
 
         // 1. Other slot groups that import + accept, highest priority first.
-        for (SlotGroup candidate : sortedImporters(slotGroups, sourceGroup, working)) {
+        for (SlotGroup candidate : sortedImporters(groupReps, sourceGroup, working)) {
             if (working.isEmpty()) break;
             mover.mk$moveItemStackTo(working,
                     candidate.getFlatIndexStart(), candidate.getFlatIndexEnd(), false);
@@ -112,11 +120,11 @@ public final class MKCSlotQuickMove {
      * when no slot imports/accepts the stack or nothing actually moved.
      */
     private static ItemStack routeIntoSlots(AbstractContainerMenu menu, Player player,
-                                             Slot source, Set<SlotGroup> slotGroups) {
+                                             Slot source, Map<SlotGroup, MKCSlot> groupReps) {
         if (!source.hasItem() || !source.mayPickup(player)) return ItemStack.EMPTY;
 
         ItemStack working = source.getItem();
-        List<SlotGroup> importers = sortedImporters(slotGroups, null, working);
+        List<SlotGroup> importers = sortedImporters(groupReps, null, working);
         if (importers.isEmpty()) return ItemStack.EMPTY; // nothing wants it → vanilla's job
 
         ItemStack original = working.copy();
@@ -131,14 +139,24 @@ public final class MKCSlotQuickMove {
         return finishSource(player, source, original, working);
     }
 
-    /** Candidate slot groups that import + can accept the stack, sorted by priority desc. */
-    private static List<SlotGroup> sortedImporters(Set<SlotGroup> groups, SlotGroup exclude,
+    /**
+     * Candidate slot groups that import + can accept the stack, sorted by priority
+     * desc. Participation ({@code imports}) and acceptance are resolved from the
+     * engine via each group's representative slot — the slot's own
+     * {@link MKCSlot#mayPlace} (engine GATING + inertness + vanilla) is the accept
+     * test, so the pre-filter agrees with what the actual move will allow. Foreign-
+     * menu participation is group-granular (the representative); per-slot GATING is
+     * still enforced slot-by-slot inside the vanilla move.
+     */
+    private static List<SlotGroup> sortedImporters(Map<SlotGroup, MKCSlot> groupReps, SlotGroup exclude,
                                                    ItemStack stack) {
         List<SlotGroup> out = new ArrayList<>();
-        for (SlotGroup group : groups) {
+        for (Map.Entry<SlotGroup, MKCSlot> e : groupReps.entrySet()) {
+            SlotGroup group = e.getKey();
+            MKCSlot rep = e.getValue();
             if (group == exclude) continue;
-            if (!group.getQmp().imports()) continue;
-            if (!group.canAccept(stack)) continue;
+            if (!qmpOf(rep).imports()) continue;
+            if (!rep.mayPlace(stack)) continue;
             out.add(group);
         }
         out.sort((a, b) -> Integer.compare(b.getShiftClickPriority(), a.getShiftClickPriority()));

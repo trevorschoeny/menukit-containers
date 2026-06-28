@@ -1,6 +1,7 @@
 package com.trevorschoeny.menukit.screen;
 
 import com.trevorschoeny.menukit.core.*;
+import com.trevorschoeny.menukit.window.WindowEngine;
 
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Player;
@@ -264,11 +265,16 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
 
         SlotGroup sourceGroup = sourceSlot.getGroup();
 
-        // Source must export
-        if (!sourceGroup.getQmp().exports()) return ItemStack.EMPTY;
+        // Source must export — QUICK_MOVE resolved from the engine by the source
+        // slot's address (no longer the group's retired qmp knob).
+        if (!qmpOf(sourceSlot).exports()) return ItemStack.EMPTY;
 
         ItemStack originalStack = sourceSlot.getItem().copy();
         ItemStack workingStack = sourceSlot.getItem();
+
+        // One representative live MKCSlot per group, for resolving QUICK_MOVE /
+        // GATING from the engine by address.
+        Map<SlotGroup, MKCSlot> reps = groupRepresentatives();
 
         // Collect candidate groups
         List<SlotGroup> candidates = new ArrayList<>();
@@ -276,8 +282,10 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
             if (!panel.isVisible()) continue; // skip inert panels
             for (SlotGroup group : getGroupsFor(panel.getId())) {
                 if (group == sourceGroup) continue; // don't route to self
-                if (!group.getQmp().imports()) continue; // must import
-                if (!group.canAccept(workingStack)) continue; // policy filter
+                MKCSlot rep = reps.get(group);
+                if (rep == null) continue;                       // no live slot — can't resolve
+                if (!qmpOf(rep).imports()) continue;             // must import (engine)
+                if (!rep.mayPlace(workingStack)) continue;       // accepts (engine GATING + inertness)
                 candidates.add(group);
             }
         }
@@ -333,6 +341,20 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
 
         // Return original if something moved, EMPTY if nothing changed
         return workingStack.getCount() < originalStack.getCount() ? originalStack : ItemStack.EMPTY;
+    }
+
+    /** A created slot's quick-move participation, resolved from the engine by its address. */
+    private static QuickMoveParticipation qmpOf(MKCSlot slot) {
+        return WindowEngine.resolve(slot.address(), MKCBehaviorKeys.QUICK_MOVE);
+    }
+
+    /** One representative live MKCSlot per group present in this menu (first wins). */
+    private Map<SlotGroup, MKCSlot> groupRepresentatives() {
+        Map<SlotGroup, MKCSlot> reps = new HashMap<>();
+        for (Slot s : this.slots) {
+            if (s instanceof MKCSlot mk) reps.putIfAbsent(mk.getGroup(), mk);
+        }
+        return reps;
     }
 
     @Override
