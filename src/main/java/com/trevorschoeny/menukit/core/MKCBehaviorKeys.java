@@ -15,8 +15,8 @@ import net.minecraft.resources.Identifier;
  *
  * <p><b>Phase 4</b> defines {@link #GATING}; <b>Phase 5</b> adds the rest of the
  * server slot behaviors as their creation knobs are retired: {@link #QUICK_MOVE}
- * (5b), {@link #BINDING} (5c). Still owed in later sub-phases: {@code MENDING},
- * {@code DROP_RULE}. ({@code ON_INSERT}/{@code ON_TAKE} live MK-side — their value
+ * (5b), {@link #BINDING} (5c), {@link #MENDING} (5d). Still owed: {@code DROP_RULE}
+ * (5e). ({@code ON_INSERT}/{@code ON_TAKE} live MK-side — their value
  * type {@code ReactiveHook} is an MK type; the reactive declarations ship in MK.)
  *
  * <p>Placement rule: a server slot-behavior key lives here (MKC) regardless of
@@ -59,4 +59,12 @@ public final class MKCBehaviorKeys {
      */
     public static final BehaviorKey<TriBool> BINDING = BehaviorKey.of(
             id("binding"), TriBool.class, TriBool.FALSE, Tier.SERVER, KindTag.CREATED_SLOT);
+
+    /**
+     * Whether items in this slot participate in XP-orb Mending — an opted-in slot
+     * joins the unified, fairly-weighted repair pool (§0053) when a mending orb is
+     * absorbed. Server-tier, created slots. Default {@link TriBool#FALSE} (off).
+     */
+    public static final BehaviorKey<TriBool> MENDING = BehaviorKey.of(
+            id("mending"), TriBool.class, TriBool.FALSE, Tier.SERVER, KindTag.CREATED_SLOT);
 }

@@ -1,7 +1,9 @@
 package com.trevorschoeny.menukit.mixin;
 
 import com.trevorschoeny.menukit.core.MendingCandidates;
+import com.trevorschoeny.menukit.core.MKCBehaviorKeys;
 import com.trevorschoeny.menukit.core.MKCSlot;
+import com.trevorschoeny.menukit.window.WindowEngine;
 
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.server.level.ServerPlayer;
@@ -108,9 +110,11 @@ public class ExperienceOrbMendMixin {
         List<Runnable> commits = new ArrayList<>();
         int extras = 0;
 
-        // Opted-in registered slots on the player's own inventory menu.
+        // Opted-in registered slots on the player's own inventory menu — MENDING
+        // resolved from the engine by the slot's address (not the retired knob).
         for (Slot slot : player.inventoryMenu.slots) {
-            if (slot instanceof MKCSlot mk && mk.getGroup().mendsFromXp()) {
+            if (slot instanceof MKCSlot mk
+                    && WindowEngine.resolve(mk.address(), MKCBehaviorKeys.MENDING).asBoolean()) {
                 ItemStack stack = mk.getItem();
                 if (mk$mendable(stack)) {
                     pool.add(new EnchantedItemInUse(stack, null, player, item -> {}));
