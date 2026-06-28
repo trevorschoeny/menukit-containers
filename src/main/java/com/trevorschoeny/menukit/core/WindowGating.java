@@ -64,7 +64,10 @@ public final class WindowGating {
     }
 
     private static SlotGate gateFor(AbstractContainerMenu menu, Slot slot) {
-        Address address = VanillaAddressing.addressOf(menu, slot);
+        // Kind-aware: a created slot resolves to its menu-independent created
+        // address, a vanilla slot to its container/menu address. Both via the one
+        // SlotAddresses entry, so a gate set on either is found here.
+        Address address = SlotAddresses.of(menu, slot);
         return WindowEngine.resolve(address, MKCBehaviorKeys.GATING);
     }
 

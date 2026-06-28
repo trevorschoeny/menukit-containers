@@ -30,10 +30,23 @@ public interface SlotGate {
     /** Whether {@code player} may take from the gated slot in this context. */
     boolean mayPickup(Player player, GatingContext context);
 
+    /**
+     * The per-item stack cap for this slot, given vanilla's own cap. This absorbs
+     * the old {@code InteractionPolicy.maxStackSize} dimension into gating — "what
+     * a slot accepts" includes "how much". The default imposes no extra limit
+     * (returns {@code vanillaMax}); a gate that wants single-item slots returns
+     * {@code Math.min(1, vanillaMax)}. The caller re-clamps to vanilla, so a gate
+     * can never raise the cap above what vanilla allows.
+     */
+    default int maxStackSize(ItemStack stack, int vanillaMax) {
+        return vanillaMax;
+    }
+
     /** The permissive default — vanilla behavior (allows everything). The library
      *  default for the {@code GATING} key, so an un-gated slot is exactly vanilla. */
     SlotGate OPEN = new SlotGate() {
         @Override public boolean mayPlace(ItemStack stack, GatingContext context) { return true; }
         @Override public boolean mayPickup(Player player, GatingContext context) { return true; }
+        // maxStackSize uses the no-extra-limit default.
     };
 }

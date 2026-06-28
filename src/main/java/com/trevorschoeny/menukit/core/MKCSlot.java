@@ -1,5 +1,8 @@
 package com.trevorschoeny.menukit.core;
 
+import com.trevorschoeny.menukit.window.Address;
+import com.trevorschoeny.menukit.window.WindowEngine;
+
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.Slot;
@@ -89,6 +92,22 @@ public class MKCSlot extends Slot {
     /** The SlotGroup that owns this slot's behavior. */
     public SlotGroup getGroup() { return group; }
 
+    // ── Address (the side-table key for ALL this slot's behavior) ────────
+    // THE ONE WINDOW: behavior lives in the engine keyed by this address, never
+    // on the slot. Identity fields are final, so the address is immutable — cache
+    // it lazily (a benign double-compute is harmless; the value is equal either way).
+    private Address cachedAddress;
+
+    /** This slot's menu-independent created {@link Address} — the key behavior is resolved by. */
+    public Address address() {
+        Address a = cachedAddress;
+        if (a == null) {
+            a = CreatedSlotAdapter.addressOf(this);
+            cachedAddress = a;
+        }
+        return a;
+    }
+
     // ── Presentation position (§0047) ───────────────────────────────────
 
     /**
@@ -136,50 +155,52 @@ public class MKCSlot extends Slot {
     /**
      * Can this stack be placed in this slot?
      *
-     * <p>Composes: group policy AND super. A mixin on {@code Slot.mayPlace}
-     * runs via the super call and its result is AND-composed with the
-     * group's policy. The most restrictive answer wins.
+     * <p>Resolves the {@code GATING} behavior from the engine by this slot's
+     * {@link #address()} and AND-composes with {@code super} — so a mixin on
+     * {@code Slot.mayPlace} still runs via the super call, and the most restrictive
+     * answer wins. The gate (not this slot) holds the behavior; an un-gated slot
+     * resolves to {@link SlotGate#OPEN} = pure vanilla. This is the direct-click
+     * insertion point for a created slot (the menu seams cover shift-click/automation).
      */
     @Override
     public boolean mayPlace(ItemStack stack) {
         if (isInert()) return false;
-        return group.canAccept(stack) && super.mayPlace(stack);
+        SlotGate gate = WindowEngine.resolve(address(), MKCBehaviorKeys.GATING);
+        return gate.mayPlace(stack, GatingContext.current()) && super.mayPlace(stack);
     }
 
     /**
      * Can items be taken from this slot?
      *
-     * <p>Composes: group policy AND super. Same composition pattern
-     * as mayPlace.
+     * <p>Resolves {@code GATING} from the engine and AND-composes with {@code super}.
      */
     @Override
     public boolean mayPickup(Player player) {
         if (isInert()) return false;
-        // canRemove checks the current item — get it from storage, not
-        // from getItem() which would return EMPTY if inert (but we already
-        // checked inertness above).
+        // Curse of Binding: still read from the group here; 5c moves it to the
+        // BINDING engine key. Survival only; creative bypasses (set-slot bridge
+        // never calls mayPickup). Mirrors vanilla's armor-slot binding check.
         ItemStack stack = super.getItem();
-        // Curse of Binding: when this group binds cursed items, a bound item
-        // (PREVENT_ARMOR_CHANGE) can't be taken out while alive — survival only.
-        // Creative bypasses (vanilla parity); creative removal also routes through
-        // the §0051 set-slot bridge, which never calls mayPickup. Mirrors vanilla's
-        // own armor-slot binding check.
         if (group.bindsCursedItems() && !player.hasInfiniteMaterials()
                 && EnchantmentHelper.has(stack, EnchantmentEffectComponents.PREVENT_ARMOR_CHANGE)) {
             return false;
         }
-        return group.canRemove(stack) && super.mayPickup(player);
+        SlotGate gate = WindowEngine.resolve(address(), MKCBehaviorKeys.GATING);
+        return gate.mayPickup(player, GatingContext.current()) && super.mayPickup(player);
     }
 
     /**
      * Max stack size for this slot, given a specific item.
      *
-     * <p>Takes the minimum of the group's policy limit and vanilla's limit
-     * (which includes any mixin modifications via super).
+     * <p>The {@code GATING} gate may cap it (absorbing the old policy stack limit);
+     * re-clamped to vanilla's own limit (including any mixin modifications via
+     * super), so a gate can lower but never raise the cap.
      */
     @Override
     public int getMaxStackSize(ItemStack stack) {
-        return Math.min(group.maxStackSize(stack), super.getMaxStackSize(stack));
+        int vanillaMax = super.getMaxStackSize(stack);
+        SlotGate gate = WindowEngine.resolve(address(), MKCBehaviorKeys.GATING);
+        return Math.min(gate.maxStackSize(stack, vanillaMax), vanillaMax);
     }
 
     // No override for getMaxStackSize() (no-arg). The policy's maxStackSize
