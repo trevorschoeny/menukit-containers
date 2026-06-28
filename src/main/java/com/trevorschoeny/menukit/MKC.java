@@ -76,6 +76,12 @@ public class MKC implements ModInitializer {
         // gates the same via menu or hopper, both sides).
         com.trevorschoeny.menukit.window.ServerTier.installIdentity(
                 com.trevorschoeny.menukit.core.MKCVanillaSlotIdentity.INSTANCE);
+        // Server-authoritative reactive firing (ON_INSERT/ON_TAKE). The firing
+        // seams that call WindowReactions.fireInsert/fireTake (server tier) are
+        // the named owed gap; this makes the dispatch real so wiring a seam later
+        // is a single call.
+        com.trevorschoeny.menukit.window.ServerTier.installDispatch(
+                com.trevorschoeny.menukit.core.ReactiveDispatchImpl.INSTANCE);
         // M1 per-slot state — attachments + shared networking types register
         // here (attachment registration must run on both sides; networking
         // payload-type registration is also symmetric).
