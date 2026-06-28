@@ -4,6 +4,7 @@ import com.trevorschoeny.menukit.window.Address;
 import com.trevorschoeny.menukit.window.VanillaAddressing;
 import com.trevorschoeny.menukit.window.WindowEngine;
 
+import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
@@ -44,8 +45,32 @@ public final class WindowGating {
         return gate == SlotGate.OPEN || gate.mayPickup(player, GatingContext.current());
     }
 
+    // ── automation seams (hopper/dispenser): (container, index), no menu/player ──
+
+    /** Whether automation may insert {@code stack} into a placed-container slot. */
+    public static boolean mayPlaceInto(Container container, int slotIndex, ItemStack stack) {
+        if (BehaviorBindingTable.INSTANCE.isEmpty()) return true;
+        SlotGate gate = automationGate(container, slotIndex);
+        return gate == SlotGate.OPEN || gate.mayPlace(stack, GatingContext.current());
+    }
+
+    /** Whether automation may extract from a placed-container slot (no player). */
+    public static boolean mayExtractFrom(Container container, int slotIndex) {
+        if (BehaviorBindingTable.INSTANCE.isEmpty()) return true;
+        SlotGate gate = automationGate(container, slotIndex);
+        // null player: automation. A gate that bypasses for non-capable players
+        // (a lock) still enforces here, because automation has no player to exempt.
+        return gate == SlotGate.OPEN || gate.mayPickup(null, GatingContext.current());
+    }
+
     private static SlotGate gateFor(AbstractContainerMenu menu, Slot slot) {
         Address address = VanillaAddressing.addressOf(menu, slot);
         return WindowEngine.resolve(address, MKCBehaviorKeys.GATING);
+    }
+
+    private static SlotGate automationGate(Container container, int slotIndex) {
+        return VanillaAddressing.addressOf(container, slotIndex)
+                .map(addr -> WindowEngine.resolve(addr, MKCBehaviorKeys.GATING))
+                .orElse(SlotGate.OPEN); // unidentifiable container => vanilla
     }
 }

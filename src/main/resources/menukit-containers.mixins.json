@@ -18,7 +18,9 @@
     "CreativeSetSlotMixin",
     "ExperienceOrbMendMixin",
     "MKCGatingMixin",
-    "MKCActingPlayerMixin"
+    "MKCActingPlayerMixin",
+    "MKCHopperGatingMixin",
+    "MKCDispenserGatingMixin"
   ],
   "client": [
     "MKCCreativeSlotParkMixin",
