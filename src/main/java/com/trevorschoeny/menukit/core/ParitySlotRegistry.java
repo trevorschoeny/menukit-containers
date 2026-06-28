@@ -95,14 +95,12 @@ public final class ParitySlotRegistry {
                     .panel(e.slotPanelId())
                     .group(spec.groupId())
                     .storage(storage)
-                    .policy(spec.policy())
-                    .quickMove(spec.qmp())
                     // Seed layout from the spec's panel-local origin; the SlotElement
                     // repositions per frame to its panel spot, so this is only the
                     // initial off-panel seed (it never shows).
                     .layout(spec.childX(), spec.childY(), spec.columns());
-            if (spec.bindsCursed()) b.bindsCursedItems();
-            if (spec.mends())       b.mendsFromXp();
+            // Behavior-free creation (Phase 5): gating/quick-move/binding/mending are
+            // set later through the window by the slot's address, not at creation.
             if (spec.revealWhen() != null) b.revealWhen(spec.revealWhen());
             b.register();
         }

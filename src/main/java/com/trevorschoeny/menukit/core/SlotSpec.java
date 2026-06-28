@@ -25,10 +25,12 @@ import java.util.function.Function;
  * sync-safety contract {@link MKCSlotProjection} documents).
  *
  * <p>It is the parity analogue of the per-call parameters on
- * {@link MKCSlots.Builder}: same knobs (storage, policy, quick-move, layout,
- * binding/mending, reveal), but expressed once as reusable data rather than
- * imperatively against a single menu. {@link MKCContainerPanel} turns each
- * {@code SlotSpec} into both the real slots (every menu, both sides) and the
+ * {@link MKCSlots.Builder} — and, post Phase 5, just as behavior-free: storage,
+ * layout, and the client reveal predicate, expressed once as reusable data rather
+ * than imperatively against a single menu. Gating, quick-move, binding, and
+ * mending are NOT set here; they're set later through the window by the slot's
+ * address (the same path a vanilla slot uses). {@link MKCContainerPanel} turns
+ * each {@code SlotSpec} into both the real slots (every menu, both sides) and the
  * {@link SlotElement}s that present them (client).
  *
  * <h3>Storage is a factory, not a bound storage</h3>
@@ -52,10 +54,6 @@ public final class SlotSpec {
     private int count = 1;                                // logical slots in this group
     private int columns = 1;                              // grid columns for multi-slot groups
     private @Nullable Function<Player, Storage> storageFactory;   // required
-    private InteractionPolicy policy = InteractionPolicy.free();
-    private QuickMoveParticipation qmp = QuickMoveParticipation.BOTH;
-    private boolean bindsCursedItems = false;
-    private boolean mendsFromXp = false;
     private @Nullable BooleanSupplier revealWhen = null;  // client-side reveal; null => always
 
     private SlotSpec(String groupId, int childX, int childY) {
@@ -101,30 +99,6 @@ public final class SlotSpec {
         return this;
     }
 
-    /** What operations are allowed. Default {@link InteractionPolicy#free()}. */
-    public SlotSpec policy(InteractionPolicy policy) {
-        this.policy = policy;
-        return this;
-    }
-
-    /** How this group participates in shift-click routing. Default {@link QuickMoveParticipation#BOTH}. */
-    public SlotSpec quickMove(QuickMoveParticipation qmp) {
-        this.qmp = qmp;
-        return this;
-    }
-
-    /** Enables Curse of Binding enforcement on these slots (survival only). Off by default. See {@link MKCSlots.Builder#bindsCursedItems}. */
-    public SlotSpec bindsCursedItems() {
-        this.bindsCursedItems = true;
-        return this;
-    }
-
-    /** Enables XP-orb Mending participation for items in these slots. Off by default. See {@link MKCSlots.Builder#mendsFromXp}. */
-    public SlotSpec mendsFromXp() {
-        this.mendsFromXp = true;
-        return this;
-    }
-
     /**
      * Client-side reveal predicate. The group is visible + interactive on the
      * client only while this returns true; the server keeps it syncing
@@ -143,10 +117,6 @@ public final class SlotSpec {
     int childY()           { return childY; }
     int count()            { return count; }
     int columns()          { return columns; }
-    InteractionPolicy policy()            { return policy; }
-    QuickMoveParticipation qmp()          { return qmp; }
-    boolean bindsCursed()                 { return bindsCursedItems; }
-    boolean mends()                       { return mendsFromXp; }
     @Nullable BooleanSupplier revealWhen() { return revealWhen; }
 
     @Nullable Function<Player, Storage> storageFactory() { return storageFactory; }

@@ -139,15 +139,10 @@ public final class MKCSlots {
         private String panelId = "menukit:slot";
         private String groupId = "slot";
         private Storage storage;                              // required
-        private InteractionPolicy policy = InteractionPolicy.free();
-        private QuickMoveParticipation qmp = QuickMoveParticipation.BOTH;
         private int columns = 9;
         private int originX = 0;
         private int originY = 0;
         private BooleanSupplier revealWhen = null;            // null => always client-visible
-        private boolean bindsCursedItems = false;             // Curse of Binding enforcement (opt-in)
-
-        private boolean mendsFromXp = false;                  // XP-orb repair participation (opt-in)
 
         Builder(AbstractContainerMenu menu, Player player) {
             this.menu = menu;
@@ -167,12 +162,6 @@ public final class MKCSlots {
          * metadata persistence on top.
          */
         public Builder storage(Storage storage) { this.storage = storage; return this; }
-
-        /** What operations are allowed. Default {@link InteractionPolicy#free()}. */
-        public Builder policy(InteractionPolicy policy) { this.policy = policy; return this; }
-
-        /** How the group participates in shift-click routing. Default BOTH. */
-        public Builder quickMove(QuickMoveParticipation qmp) { this.qmp = qmp; return this; }
 
         /**
          * Slot layout: screen-relative origin (added to the screen's
@@ -199,33 +188,6 @@ public final class MKCSlots {
         }
 
         /**
-         * Enables the vanilla Curse of Binding on the registered slots: an item
-         * carrying the binding curse ({@code PREVENT_ARMOR_CHANGE}) cannot be
-         * removed from the slot <em>while alive</em> — survival only; creative
-         * bypasses (matching vanilla, and creative removal routes through the
-         * §0051 set-slot bridge which never consults {@code mayPickup}). Off by
-         * default; opt in for equipment-semantic slots. Death is orthogonal: a
-         * bound item still drops/keeps at death per its {@code DropRule}.
-         */
-        public Builder bindsCursedItems() {
-            this.bindsCursedItems = true;
-            return this;
-        }
-
-        /**
-         * Enables vanilla Mending on the registered slots: a damaged item carrying
-         * the {@code REPAIR_WITH_XP} effect, sitting in one of these slots, joins
-         * the XP-orb repair pool — so it mends from collected XP exactly like a
-         * worn armor piece or held tool does. Off by default; opt in for
-         * equipment-semantic slots. Generic registered-slot vanilla mechanic
-         * (library-owned, same line as death-drop §0052 and binding §0053).
-         */
-        public Builder mendsFromXp() {
-            this.mendsFromXp = true;
-            return this;
-        }
-
-        /**
          * Builds the standalone {@link Panel}/{@link SlotGroup}, constructs the
          * inertness-aware {@link MKCSlot}s over a {@link StorageContainerAdapter},
          * and appends them to the menu (via the vanilla {@code addSlot} invoker,
@@ -237,12 +199,14 @@ public final class MKCSlots {
                         "MKCSlots: storage() is required before register()");
             }
 
-            // 1. Standalone SlotGroup — owns the behavioral policy for these slots.
+            // 1. Standalone SlotGroup — now storage + layout only. Behavior
+            //    (gating/quick-move/binding/mending) is no longer carried here; it
+            //    resolves from the engine by each slot's address. The SlotGroup
+            //    constructor still takes the legacy policy/qmp params (its fields go
+            //    in Phase 7) — pass the neutral defaults; they're inert.
             SlotGroup group = new SlotGroup(
-                    groupId, storage, policy, qmp, /*shiftClickPriority*/ 100,
-                    columns, /*rowGapAfter*/ -1, /*rowGapSize*/ 0);
-            group.setBindsCursedItems(bindsCursedItems);
-            group.setMendsFromXp(mendsFromXp);
+                    groupId, storage, InteractionPolicy.free(), QuickMoveParticipation.BOTH,
+                    /*shiftClickPriority*/ 100, columns, /*rowGapAfter*/ -1, /*rowGapSize*/ 0);
 
             // 2. Standalone Panel — no PanelOwner (this isn't a MKCScreenHandler).
             //    Style NONE: the consumer's render adapter draws the frame; the
