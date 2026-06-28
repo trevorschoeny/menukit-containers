@@ -102,10 +102,30 @@ public final class CreatedSlotAdapter implements CreatedSlotResolver {
      * The slot's {@code groupId + localIndex} is its durable declaration token.
      */
     public static Address addressOf(MKCSlot mk) {
+        return addressOf(mk.getPanelId(), mk.getGroupId(), mk.getLocalIndex());
+    }
+
+    /**
+     * The canonical {@link Address} of a created slot from its DECLARED IDENTITY —
+     * the created-slot counterpart to {@link PanelAddressing#ofPanel(String)} /
+     * {@link PanelAddressing#ofElement(String, String)}, needing NO live slot.
+     *
+     * <p>This is what lets a consumer name a created slot through the window before
+     * the menu (and the slot) exist — to set its server behavior (GATING, BINDING,
+     * MENDING, QUICK_MOVE) once at mod init, by identity, honoring THE ONE WINDOW
+     * thesis that behavior is keyed by address and independent of creation. The
+     * {@link #addressOf(MKCSlot) live overload} delegates here, so a slot born later
+     * resolves the init-declared behavior the moment it appears (identical address).
+     *
+     * @param panelId    the slot's panel id (as passed to {@code MKCSlots}/builder)
+     * @param groupId    the slot's group id within that panel
+     * @param localIndex the slot's index within its group
+     */
+    public static Address addressOf(String panelId, String groupId, int localIndex) {
         OwnerRef owner = OwnerRef.nested(
                 OwnerRef.root(PanelAddressing.PANEL_FAMILY, OwnerScope.primary()),
-                Token.reg(PanelAddressing.regKey(mk.getPanelId())));
-        String declId = mk.getGroupId() + SEP + mk.getLocalIndex();
+                Token.reg(PanelAddressing.regKey(panelId)));
+        String declId = groupId + SEP + localIndex;
         return new Address(owner, Token.decl(declId), KindTag.CREATED_SLOT);
     }
 
