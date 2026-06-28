@@ -16,7 +16,9 @@
     "PlayerDeathDropMixin",
     "ShulkerBoxPortableStateMixin",
     "CreativeSetSlotMixin",
-    "ExperienceOrbMendMixin"
+    "ExperienceOrbMendMixin",
+    "MKCGatingMixin",
+    "MKCActingPlayerMixin"
   ],
   "client": [
     "MKCCreativeSlotParkMixin",
