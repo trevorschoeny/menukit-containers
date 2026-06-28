@@ -5,17 +5,15 @@ import com.trevorschoeny.menukit.window.CreatedSlotResolver;
 import com.trevorschoeny.menukit.window.KindTag;
 import com.trevorschoeny.menukit.window.OwnerRef;
 import com.trevorschoeny.menukit.window.OwnerScope;
-import com.trevorschoeny.menukit.window.ScreenFamilyKey;
+import com.trevorschoeny.menukit.window.PanelAddressing;
 import com.trevorschoeny.menukit.window.Token;
 
-import net.minecraft.resources.Identifier;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 
 import org.jspecify.annotations.Nullable;
 
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.WeakHashMap;
 
@@ -54,10 +52,6 @@ public final class CreatedSlotAdapter implements CreatedSlotResolver {
     public static final CreatedSlotAdapter INSTANCE = new CreatedSlotAdapter();
 
     private CreatedSlotAdapter() {}
-
-    /** The constant root family of every created slot — see class doc (menu-independent). */
-    private static final ScreenFamilyKey CREATED_FAMILY =
-            ScreenFamilyKey.of(Identifier.fromNamespaceAndPath("menukit", "created"));
 
     // groupId<SEP>localIndex: a NUL separator a normal id never contains, so the
     // composite is injective over distinct (groupId, localIndex) pairs.
@@ -99,15 +93,18 @@ public final class CreatedSlotAdapter implements CreatedSlotResolver {
 
     /**
      * The canonical {@link Address} of a created slot — the single source of
-     * truth shared by resolution (here) and minting (Phase 5/6 creation). A pure
-     * function of the slot's identity, independent of any rendering menu: a
-     * constant root family, the slot's panel nested under it, and the slot's
-     * {@code groupId + localIndex} as the token.
+     * truth shared by resolution (here) and minting. A pure function of the slot's
+     * identity, independent of any rendering menu: it nests under its panel in the
+     * unified {@link PanelAddressing#PANEL_FAMILY} (same family + {@link
+     * PanelAddressing#regKey} encoding a panel element uses), so a created slot, a
+     * panel element, and the panel itself share one coherent owner chain — a
+     * panel-level default cascades to the created slot exactly as to an element.
+     * The slot's {@code groupId + localIndex} is its durable declaration token.
      */
     public static Address addressOf(MKCSlot mk) {
         OwnerRef owner = OwnerRef.nested(
-                OwnerRef.root(CREATED_FAMILY, OwnerScope.primary()),
-                Token.reg(panelKey(mk.getPanelId())));
+                OwnerRef.root(PanelAddressing.PANEL_FAMILY, OwnerScope.primary()),
+                Token.reg(PanelAddressing.regKey(mk.getPanelId())));
         String declId = mk.getGroupId() + SEP + mk.getLocalIndex();
         return new Address(owner, Token.decl(declId), KindTag.CREATED_SLOT);
     }
@@ -121,13 +118,5 @@ public final class CreatedSlotAdapter implements CreatedSlotResolver {
     private static @Nullable MKCSlot mkcAt(AbstractContainerMenu menu, int index) {
         if (index < 0 || index >= menu.slots.size()) return null;
         return MKCSlotAccess.asMKCSlot(menu.slots.get(index));
-    }
-
-    /** A panel's String id as a deterministic {@link Identifier} (parse if valid, else synthetic). */
-    private static Identifier panelKey(String panelId) {
-        Identifier parsed = Identifier.tryParse(panelId);
-        if (parsed != null) return parsed;
-        return Identifier.fromNamespaceAndPath("menukit",
-                "panel/" + panelId.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_.-]", "_"));
     }
 }
