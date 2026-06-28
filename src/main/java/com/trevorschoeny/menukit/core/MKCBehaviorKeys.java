@@ -3,6 +3,7 @@ package com.trevorschoeny.menukit.core;
 import com.trevorschoeny.menukit.window.BehaviorKey;
 import com.trevorschoeny.menukit.window.KindTag;
 import com.trevorschoeny.menukit.window.Tier;
+import com.trevorschoeny.menukit.window.TriBool;
 
 import net.minecraft.resources.Identifier;
 
@@ -14,9 +15,14 @@ import net.minecraft.resources.Identifier;
  *
  * <p><b>Phase 4</b> defines {@link #GATING}; <b>Phase 5</b> adds the rest of the
  * server slot behaviors as their creation knobs are retired: {@link #QUICK_MOVE}
- * (5b). Still owed in later sub-phases: {@code BINDING}, {@code MENDING},
+ * (5b), {@link #BINDING} (5c). Still owed in later sub-phases: {@code MENDING},
  * {@code DROP_RULE}. ({@code ON_INSERT}/{@code ON_TAKE} live MK-side — their value
- * type {@code ReactiveHook} is an MK type.)
+ * type {@code ReactiveHook} is an MK type; the reactive declarations ship in MK.)
+ *
+ * <p>Placement rule: a server slot-behavior key lives here (MKC) regardless of
+ * whether its value type is an MK type — {@code BINDING}/{@code MENDING} use the
+ * MK {@code TriBool}, but they are MKC-enforced server behaviors, so they group
+ * with their kin rather than with the client/reactive keys in MK's BehaviorKeys.
  */
 public final class MKCBehaviorKeys {
 
@@ -44,4 +50,13 @@ public final class MKCBehaviorKeys {
     public static final BehaviorKey<QuickMoveParticipation> QUICK_MOVE = BehaviorKey.of(
             id("quick_move"), QuickMoveParticipation.class, QuickMoveParticipation.BOTH,
             Tier.SERVER, KindTag.CREATED_SLOT);
+
+    /**
+     * Whether Curse of Binding is enforced on this slot — a bound item
+     * ({@code PREVENT_ARMOR_CHANGE}) can't be taken out while the player is alive,
+     * survival only (creative bypasses, matching vanilla armor slots; §0051).
+     * Server-tier, created slots. Default {@link TriBool#FALSE} (off).
+     */
+    public static final BehaviorKey<TriBool> BINDING = BehaviorKey.of(
+            id("binding"), TriBool.class, TriBool.FALSE, Tier.SERVER, KindTag.CREATED_SLOT);
 }

@@ -177,11 +177,12 @@ public class MKCSlot extends Slot {
     @Override
     public boolean mayPickup(Player player) {
         if (isInert()) return false;
-        // Curse of Binding: still read from the group here; 5c moves it to the
-        // BINDING engine key. Survival only; creative bypasses (set-slot bridge
-        // never calls mayPickup). Mirrors vanilla's armor-slot binding check.
+        // Curse of Binding (BINDING engine key): a bound item (PREVENT_ARMOR_CHANGE)
+        // can't be taken out while alive — survival only; creative bypasses (the
+        // set-slot bridge never calls mayPickup). Mirrors vanilla's armor-slot check.
         ItemStack stack = super.getItem();
-        if (group.bindsCursedItems() && !player.hasInfiniteMaterials()
+        if (WindowEngine.resolve(address(), MKCBehaviorKeys.BINDING).asBoolean()
+                && !player.hasInfiniteMaterials()
                 && EnchantmentHelper.has(stack, EnchantmentEffectComponents.PREVENT_ARMOR_CHANGE)) {
             return false;
         }
