@@ -1,5 +1,7 @@
 package com.trevorschoeny.menukit.mixin;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.trevorschoeny.menukit.core.WindowGating;
 
 import net.minecraft.core.Direction;
@@ -32,5 +34,15 @@ public class MKCHopperGatingMixin {
     private static void mkc$gateInsert(Container source, Container destination, ItemStack stack, int slot,
                                        Direction direction, CallbackInfoReturnable<ItemStack> cir) {
         if (!WindowGating.mayPlaceInto(destination, slot, stack)) cir.setReturnValue(stack);
+    }
+
+    /** A hopper ejecting its OWN gated slot: treat that slot as empty so it's skipped. */
+    @WrapOperation(
+            method = "ejectItems",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/world/level/block/entity/HopperBlockEntity;getItem(I)Lnet/minecraft/world/item/ItemStack;"))
+    private static ItemStack mkc$gateHopperEject(HopperBlockEntity hopper, int slot, Operation<ItemStack> original) {
+        if (!WindowGating.mayExtractFrom(hopper, slot)) return ItemStack.EMPTY;
+        return original.call(hopper, slot);
     }
 }
