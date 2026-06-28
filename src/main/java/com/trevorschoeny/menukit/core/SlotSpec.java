@@ -55,6 +55,7 @@ public final class SlotSpec {
     private int columns = 1;                              // grid columns for multi-slot groups
     private @Nullable Function<Player, Storage> storageFactory;   // required
     private @Nullable BooleanSupplier revealWhen = null;  // client-side reveal; null => always
+    private @Nullable String label = null;               // MK display name; null => capitalized groupId
 
     private SlotSpec(String groupId, int childX, int childY) {
         this.groupId = groupId;
@@ -110,6 +111,18 @@ public final class SlotSpec {
         return this;
     }
 
+    /**
+     * MK display name for the group's slots, applied through the naming layer like
+     * {@link MKCSlots.Builder#label}: each slot is named {@code "{label} {n}"}
+     * (1-based) for a multi-slot group, or just {@code "{label}"} for a single
+     * slot. If unset, the slots fall back to the capitalized group id. Naming is a
+     * client-side display concern (the build seam applies it client-guarded).
+     */
+    public SlotSpec label(String label) {
+        this.label = label;
+        return this;
+    }
+
     // ── Accessors (read by MKCContainerPanel / ParitySlotRegistry) ──────
 
     String groupId()       { return groupId; }
@@ -118,6 +131,7 @@ public final class SlotSpec {
     int count()            { return count; }
     int columns()          { return columns; }
     @Nullable BooleanSupplier revealWhen() { return revealWhen; }
+    @Nullable String label() { return label; }
 
     @Nullable Function<Player, Storage> storageFactory() { return storageFactory; }
 }

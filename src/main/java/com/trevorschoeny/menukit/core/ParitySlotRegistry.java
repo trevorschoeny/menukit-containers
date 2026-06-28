@@ -101,6 +101,7 @@ public final class ParitySlotRegistry {
                     .layout(spec.childX(), spec.childY(), spec.columns());
             // Behavior-free creation (Phase 5): gating/quick-move/binding/mending are
             // set later through the window by the slot's address, not at creation.
+            if (spec.label() != null) b.label(spec.label());     // MK naming (client-guarded in register)
             if (spec.revealWhen() != null) b.revealWhen(spec.revealWhen());
             b.register();
         }
