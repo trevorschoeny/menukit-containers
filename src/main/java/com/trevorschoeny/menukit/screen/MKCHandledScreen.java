@@ -3,6 +3,7 @@ package com.trevorschoeny.menukit.screen;
 import com.trevorschoeny.menukit.core.*;
 import com.trevorschoeny.menukit.mixin.SlotPositionAccessor;
 import com.trevorschoeny.menukit.core.PanelRendering;
+import com.trevorschoeny.menukit.window.ClientWindowVisibility;
 
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -348,7 +349,11 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
                             ? group.getRowGapSize() : 0;
 
                     Slot slot = menu.slots.get(s);
-                    if (bounds != null && panel.isVisible()) {
+                    // Client render positioning only — a window-hidden panel parks
+                    // its slots offscreen so vanilla doesn't draw them. The slot's
+                    // CONTENT keeps syncing server-side (MKCSlot.isInert reads the
+                    // panel's raw visibility, not the engine — sidedness preserved).
+                    if (bounds != null && ClientWindowVisibility.panelShown(panel)) {
                         // +1 offset: slot.x/y point to the 16x16 item area,
                         // which starts 1px inside the 18x18 slot background.
                         // Phase 18r — padding is style-conditional per
@@ -395,7 +400,7 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
 
         // ── Panel backgrounds (screen space) ───────────────────────────
         for (Panel panel : menu.getPanels()) {
-            if (!panel.isVisible()) continue;
+            if (!ClientWindowVisibility.panelShown(panel)) continue;
             PanelBounds bounds = panelBounds.get(panel.getId());
             if (bounds == null) continue;
 
@@ -418,7 +423,7 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
         // Buttons, text labels, and custom elements positioned within
         // each panel's content area (after PANEL_PADDING).
         for (Panel panel : menu.getPanels()) {
-            if (!panel.isVisible()) continue;
+            if (!ClientWindowVisibility.panelShown(panel)) continue;
             PanelBounds bounds = panelBounds.get(panel.getId());
             if (bounds == null) continue;
 
@@ -801,9 +806,9 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
         //   Pass 2: normal hit-test dispatch.
 
         for (Panel panel : menu.getPanels()) {
-            if (!panel.isVisible()) continue;
+            if (!ClientWindowVisibility.panelShown(panel)) continue;
             for (PanelElement element : panel.getElements()) {
-                if (!element.isVisible()) continue;
+                if (!ClientWindowVisibility.elementShown(panel, element)) continue;
                 int[] overlay = element.getActiveOverlayBounds();
                 if (overlay != null
                         && mouseX >= overlay[0] && mouseX < overlay[0] + overlay[2]
@@ -815,7 +820,7 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
         }
 
         for (Panel panel : menu.getPanels()) {
-            if (!panel.isVisible()) continue;
+            if (!ClientWindowVisibility.panelShown(panel)) continue;
             PanelBounds bounds = panelBounds.get(panel.getId());
             if (bounds == null) continue;
 
@@ -824,7 +829,7 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
             int contentY = topPos + bounds.y() + padding;
 
             for (PanelElement element : panel.getElements()) {
-                if (!element.isVisible()) continue;
+                if (!ClientWindowVisibility.elementShown(panel, element)) continue;
 
                 if (element.hitTest(mouseX, mouseY, contentX, contentY)) {
                     if (element.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) {
@@ -842,9 +847,9 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
      */
     private void dispatchElementRelease(double mouseX, double mouseY, int button) {
         for (Panel panel : menu.getPanels()) {
-            if (!panel.isVisible()) continue;
+            if (!ClientWindowVisibility.panelShown(panel)) continue;
             for (PanelElement element : panel.getElements()) {
-                if (!element.isVisible()) continue;
+                if (!ClientWindowVisibility.elementShown(panel, element)) continue;
                 element.mouseReleased(mouseX, mouseY, button);
             }
         }
@@ -874,9 +879,9 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
     private boolean dispatchElementClick(double mouseX, double mouseY, int button) {
         // Pass 1: active-overlay exclusive claims
         for (Panel panel : menu.getPanels()) {
-            if (!panel.isVisible()) continue;
+            if (!ClientWindowVisibility.panelShown(panel)) continue;
             for (PanelElement element : panel.getElements()) {
-                if (!element.isVisible()) continue;
+                if (!ClientWindowVisibility.elementShown(panel, element)) continue;
                 int[] overlay = element.getActiveOverlayBounds();
                 if (overlay != null
                         && mouseX >= overlay[0] && mouseX < overlay[0] + overlay[2]
@@ -889,7 +894,7 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
 
         // Pass 2: normal hit-test
         for (Panel panel : menu.getPanels()) {
-            if (!panel.isVisible()) continue;
+            if (!ClientWindowVisibility.panelShown(panel)) continue;
             PanelBounds bounds = panelBounds.get(panel.getId());
             if (bounds == null) continue;
 
@@ -898,7 +903,7 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
             int contentY = topPos + bounds.y() + padding;
 
             for (PanelElement element : panel.getElements()) {
-                if (!element.isVisible()) continue;
+                if (!ClientWindowVisibility.elementShown(panel, element)) continue;
 
                 if (element.hitTest(mouseX, mouseY, contentX, contentY)) {
                     if (element.mouseClicked(mouseX, mouseY, button)) {
