@@ -2,6 +2,8 @@ package com.trevorschoeny.menukit.core;
 
 import com.mojang.serialization.Codec;
 import com.trevorschoeny.menukit.mixin.CompoundContainerAccessor;
+import com.trevorschoeny.menukit.window.Address;
+import com.trevorschoeny.menukit.window.CreatedSlotResolver;
 import com.trevorschoeny.menukit.network.SlotStateSnapshotS2CPayload;
 import com.trevorschoeny.menukit.state.ResolvedSlot;
 import com.trevorschoeny.menukit.state.SlotStateClientCache;
@@ -188,6 +190,83 @@ public final class MKSlotState {
                                      PersistentContainerKey key, int containerSlotIndex, T value) {
         Tag encoded = SlotStateServer.encode(channel, value);
         SlotStateServer.writeTag(key, player, channel.id(), containerSlotIndex, encoded);
+    }
+
+    // ── Address-keyed read/write (THE ONE WINDOW twin) ──────────────────
+
+    /**
+     * Reads this channel's value at the slot named by {@code address}, resolving
+     * the address to a live slot through the same created-slot resolver THE ONE
+     * WINDOW uses, then delegating to the {@link Slot}-keyed read. Returns the
+     * channel default when the address resolves to no live slot in the (resolved)
+     * viewer's open menu.
+     *
+     * <p><b>Resolution boundary.</b> An {@link Address} names an identity, not a
+     * live slot — turning it into one requires the menu it currently appears in.
+     * This resolves that menu from the viewing player's {@code containerMenu}
+     * ({@code player} when given, else the client player), so an Address read/write
+     * is meaningful exactly where the addressed slot is open. Outside an open menu
+     * holding that slot (e.g. a pure server-automation context with no viewer),
+     * there is no live slot to resolve and this returns the default — use the
+     * {@code (Container, int)} / {@code (PersistentContainerKey, int)} overloads for
+     * menu-free server automation.
+     */
+    static <T> T readByAddress(SlotStateChannel<T> channel, @Nullable Player player, Address address) {
+        Slot slot = resolveSlotByAddress(player, address);
+        if (slot == null) return channel.defaultValue();
+        return read(channel, slot, player);
+    }
+
+    /**
+     * Writes this channel's value at the slot named by {@code address}. Resolves
+     * the address to a live slot exactly as {@link #readByAddress}; a no-op when
+     * the address resolves to no live slot in the viewer's open menu (see that
+     * method's resolution boundary).
+     */
+    static <T> void writeByAddress(SlotStateChannel<T> channel, @Nullable Player player,
+                                   Address address, T value) {
+        Slot slot = resolveSlotByAddress(player, address);
+        if (slot == null) return;
+        write(channel, slot, player, value);
+    }
+
+    /**
+     * The live in-menu {@link Slot} an {@link Address} names in the viewing
+     * player's open menu, or {@code null} if none. The viewer is {@code player}
+     * when given, else the client player (render thread); the menu is that player's
+     * {@code containerMenu}.
+     *
+     * <ul>
+     *   <li><b>Created slot</b> — resolved through {@link CreatedSlotAdapter}, the
+     *       engine's own {@code Address -> live MKCSlot} resolver (the in-menu slot,
+     *       so a creative wrapper still routes correctly).</li>
+     *   <li><b>Vanilla slot</b> — found by scanning the menu for the slot whose
+     *       minted address matches (the same {@link SlotAddresses#of} encoding the
+     *       engine mints with), so a vanilla-addressed slot resolves too.</li>
+     *   <li><b>Panel / element</b> — not a slot; no live slot to resolve.</li>
+     * </ul>
+     */
+    private static @Nullable Slot resolveSlotByAddress(@Nullable Player player, Address address) {
+        Player viewer = player != null ? player : tryClientPlayer();
+        if (viewer == null) return null;
+        net.minecraft.world.inventory.AbstractContainerMenu menu = viewer.containerMenu;
+        if (menu == null) return null;
+        switch (address.kind()) {
+            case CREATED_SLOT -> {
+                CreatedSlotResolver.CreatedResolution r =
+                        CreatedSlotAdapter.INSTANCE.resolve(menu, address);
+                return r != null ? r.slot() : null;
+            }
+            case VANILLA_SLOT -> {
+                for (Slot s : menu.slots) {
+                    if (SlotAddresses.of(menu, s).equals(address)) return s;
+                }
+                return null;
+            }
+            default -> { // PANEL / PANEL_ELEMENT — not a slot
+                return null;
+            }
+        }
     }
 
     // ── Menu-free shared read (§0050) ───────────────────────────────────

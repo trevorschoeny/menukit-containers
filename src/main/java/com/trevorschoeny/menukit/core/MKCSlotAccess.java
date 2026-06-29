@@ -4,6 +4,7 @@ import com.trevorschoeny.menukit.inject.Slots;
 
 import net.minecraft.world.inventory.Slot;
 
+import org.jetbrains.annotations.ApiStatus;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -24,7 +25,13 @@ import org.jspecify.annotations.Nullable;
  * it returns the slot unchanged. THE ONE WINDOW's server enforcement
  * ({@link SlotAddresses}/{@link WindowGating}) calls this on the logical server
  * to detect a created slot; the render + input helpers call it on the client.
+ *
+ * <p><b>Internal plumbing.</b> {@link #asMKCSlot(Slot)} is the engine's
+ * raw-{@code Slot}→{@code MKCSlot} detection primitive. Consumers never hand MK a
+ * raw vanilla {@code Slot}; they address created slots by their
+ * {@link com.trevorschoeny.menukit.window.Address}.
  */
+@ApiStatus.Internal
 public final class MKCSlotAccess {
 
     private MKCSlotAccess() {}

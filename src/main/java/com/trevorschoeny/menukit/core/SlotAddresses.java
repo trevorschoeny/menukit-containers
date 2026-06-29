@@ -6,6 +6,8 @@ import com.trevorschoeny.menukit.window.VanillaAddressing;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 
+import org.jetbrains.annotations.ApiStatus;
+
 /**
  * The one MKC-side entry that mints the {@link Address} of <em>any</em> live slot,
  * kind-dispatched — the server/enforcement counterpart of the client resolver.
@@ -31,7 +33,16 @@ public final class SlotAddresses {
 
     private SlotAddresses() {}
 
-    /** The {@link Address} of {@code slot} as it sits in {@code menu}, kind-dispatched. */
+    /**
+     * The {@link Address} of {@code slot} as it sits in {@code menu}, kind-dispatched.
+     *
+     * <p><b>Internal minter.</b> Live-{@code Slot}→{@code Address} mapping is the
+     * MKC enforcement/addressing-port plumbing (installed into
+     * {@link com.trevorschoeny.menukit.window.ClientSlotAddressing} + called by
+     * {@link WindowGating}). Consumers hold the created-slot address minted by
+     * identity ({@link CreatedSlotAdapter#addressOf}), not raw slots.
+     */
+    @ApiStatus.Internal
     public static Address of(AbstractContainerMenu menu, Slot slot) {
         MKCSlot created = MKCSlotAccess.asMKCSlot(slot);
         if (created != null) return CreatedSlotAdapter.addressOf(created);

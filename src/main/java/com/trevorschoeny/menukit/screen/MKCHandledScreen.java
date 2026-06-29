@@ -558,6 +558,12 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
     /**
      * Listener for events happening within a MenuKit screen.
      * All methods have default no-ops — override only what you need.
+     *
+     * <p>These callbacks carry {@link MKCSlot} — the library's own slot handle for
+     * a created slot, not a raw vanilla {@code Slot}. It is the right handle for
+     * own-slot event callbacks: it carries {@link MKCSlot#address()} (the slot's
+     * {@code Address} for the address world) plus {@code getGroupId()} /
+     * {@code getLocalIndex()} for display.
      */
     public interface ScreenEventListener {
         /** A MKCSlot was clicked. Button: 0=left, 1=right, 2=middle. */

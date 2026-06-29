@@ -3,6 +3,7 @@ package com.trevorschoeny.menukit.core;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
+import org.jetbrains.annotations.ApiStatus;
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -145,9 +146,13 @@ public class SlotGroup implements SlotGroupLike {
      * <p>Returns {@code List<MKCSlot>} — a valid covariant override of
      * {@link SlotGroupLike#getSlots}'s {@code List<? extends Slot>}.
      *
+     * <p><b>Internal plumbing</b> (see {@link SlotGroupLike#getSlots}) — returns
+     * live slots for the grouping engine, no consumer caller.
+     *
      * @param handler the handler whose slot list contains this group's slots
      * @return unmodifiable list of MKCSlots in this group
      */
+    @ApiStatus.Internal
     @Override
     public List<MKCSlot> getSlots(AbstractContainerMenu handler) {
         if (flatIndexStart < 0 || flatIndexEnd < 0) return List.of();

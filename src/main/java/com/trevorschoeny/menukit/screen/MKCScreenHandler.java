@@ -9,6 +9,7 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import org.jetbrains.annotations.ApiStatus;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -178,7 +179,14 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
      * @param slot the slot to look up
      * @return the owning group (owned fast-path or observed recognition), or
      *         empty if no group contains the slot
+     *
+     * @implNote <b>Internal plumbing.</b> Takes a raw vanilla {@link Slot}; its
+     *           only caller is the library's contract verification. Consumers
+     *           reach a group by panel id ({@link #getGroupsFor}) or by the stable
+     *           handler-local flat index ({@link #getGroupContaining}), not by
+     *           handing back a raw {@code Slot}.
      */
+    @ApiStatus.Internal
     public Optional<SlotGroupLike> findGroupForSlot(Slot slot) {
         if (slot instanceof MKCSlot mkSlot) {
             return Optional.of(mkSlot.getGroup());

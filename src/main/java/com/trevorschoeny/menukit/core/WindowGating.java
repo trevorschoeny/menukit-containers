@@ -12,6 +12,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.EnchantmentEffectComponents;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 
+import org.jetbrains.annotations.ApiStatus;
+
 /**
  * The reusable gating decision every server seam calls — resolve the
  * {@code GATING} {@link SlotGate} for a slot by its {@link Address} and apply it.
@@ -28,7 +30,13 @@ import net.minecraft.world.item.enchantment.EnchantmentHelper;
  * nobody touches stay exactly vanilla"). When some behavior exists, the per-slot
  * path resolves the gate (defaulting to {@link SlotGate#OPEN} = vanilla for an
  * un-gated slot).
+ *
+ * <p><b>Internal plumbing.</b> Every caller is a library gating mixin (hopper,
+ * dispenser, vanilla-slot, menu interaction). Consumers arm gating by
+ * {@link Address} via {@code Window.slot(address).set(GATING, ...)} and never call
+ * these raw-{@code Slot} decision methods directly.
  */
+@ApiStatus.Internal
 public final class WindowGating {
 
     private WindowGating() {}
