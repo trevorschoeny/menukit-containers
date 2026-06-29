@@ -23,8 +23,7 @@ import org.jetbrains.annotations.ApiStatus;
  * <ul>
  *   <li>M1 client-state init (delegated to
  *       {@link MKC#initClient}) — registers client-side
- *       networking handlers + verification client-side test-screen
- *       factory.</li>
+ *       networking handlers.</li>
  * </ul>
  *
  * <p>Post-§0043: {@code VanillaSlotGroupResolvers.registerAll()} and

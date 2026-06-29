@@ -18,7 +18,7 @@ import org.jetbrains.annotations.ApiStatus;
  *   <li><b>MenuKit: Containers</b> ({@code menukit-containers}, universal):
  *       custom container menus ({@code MKCScreenHandler}), per-slot
  *       state (M1), slot-group regions, custom payloads, server-coupled
- *       mixins, contract verification harness — the slot extension.</li>
+ *       mixins — the slot extension.</li>
  * </ul>
  *
  * <p>The story: <i>MenuKit is the UI library; MenuKit: Containers adds
@@ -29,9 +29,8 @@ import org.jetbrains.annotations.ApiStatus;
  * as {@code "environment": "client"}.
  *
  * <p>This class owns common-side init for slot-state machinery — M1
- * attachment registration, networking-payload registration, and the
- * verification harness's server-side init. The companion
- * {@link MKCClient} owns the client-side counterpart.
+ * attachment registration and networking-payload registration. The
+ * companion {@link MKCClient} owns the client-side counterpart.
  *
  * <p>The MenuKit: Containers canonical surface for consumers:
  * <ul>
@@ -43,8 +42,6 @@ import org.jetbrains.annotations.ApiStatus;
  *       {@code VirtualSlotGroup}</li>
  *   <li><b>State persistence:</b> {@code com.trevorschoeny.menukit.core.MKSlotState},
  *       {@code com.trevorschoeny.menukit.core.StorageAttachment}</li>
- *   <li><b>Verification:</b>
- *       {@code com.trevorschoeny.menukit.verification.ContractVerification}</li>
  * </ul>
  */
 @ApiStatus.Internal
@@ -91,9 +88,6 @@ public class MKC implements ModInitializer {
         com.trevorschoeny.menukit.state.SlotStateComponents.register();
         com.trevorschoeny.menukit.state.SlotStateHooks.registerCommon();
         com.trevorschoeny.menukit.state.SlotStateHooks.registerServer();
-        // Verification harness — registers /mkverify command suite + test
-        // MenuType so phase verification can be re-run at any time.
-        com.trevorschoeny.menukit.verification.ContractVerification.initServer();
 
         // MKCMenu turnkey open primitive — the ONE generic open payload + its
         // server receiver, registered once here. The receiver resolves the menu

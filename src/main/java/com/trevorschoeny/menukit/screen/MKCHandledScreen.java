@@ -499,7 +499,7 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
      */
     public void togglePanel(String panelId) {
         int buttonId = this.menu.getPanelButtonId(panelId);
-        if (buttonId >= 0 && this.minecraft != null
+        if (buttonId != MKCScreenHandler.PANEL_NOT_FOUND && this.minecraft != null
                 && this.minecraft.gameMode != null
                 && this.minecraft.player != null) {
             this.menu.clickMenuButton(this.minecraft.player, buttonId);

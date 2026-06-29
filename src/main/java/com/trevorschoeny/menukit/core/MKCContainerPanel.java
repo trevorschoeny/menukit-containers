@@ -6,7 +6,6 @@ import com.trevorschoeny.menukit.window.Address;
 import com.trevorschoeny.menukit.window.TriBool;
 import com.trevorschoeny.menukit.window.Window;
 
-import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.InventoryMenu;
 
 import org.jetbrains.annotations.ApiStatus;

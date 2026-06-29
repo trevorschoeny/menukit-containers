@@ -6,8 +6,6 @@
   "mixins": [
     "AbstractContainerMenuInvoker",
     "CompoundContainerAccessor",
-    "VerifyMayPlaceMixin",
-    "VerifyGetItemMixin",
     "PlayerOpenMenuMixin",
     "PlayerInitMenuProjectionMixin",
     "MKCInventoryMenuMixin",

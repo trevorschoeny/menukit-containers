@@ -10,7 +10,6 @@ import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.ApiStatus;
-import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -226,8 +225,18 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
     }
 
     /**
-     * Returns the button ID for toggling a panel by name. Returns -1 if
-     * the panel isn't found. Use with
+     * Sentinel returned by {@link #getPanelButtonId(String)} when no panel
+     * matches the requested id. Callers must guard against this before
+     * passing the result into {@code clickMenuButton} /
+     * {@code handleInventoryButtonClick} — a raw {@code -1} would send a
+     * bogus button id over the wire. Named so the not-found case is explicit
+     * at every call site rather than buried in an unexplained magic number.
+     */
+    public static final int PANEL_NOT_FOUND = -1;
+
+    /**
+     * Returns the button ID for toggling a panel by name. Returns
+     * {@link #PANEL_NOT_FOUND} if the panel isn't found. Use with
      * {@code gameMode.handleInventoryButtonClick(containerId, buttonId)}
      * on the client to send a C2S toggle.
      */
@@ -235,7 +244,7 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
         for (int i = 0; i < panels.size(); i++) {
             if (panels.get(i).getId().equals(panelId)) return i;
         }
-        return -1;
+        return PANEL_NOT_FOUND;
     }
 
     /**
