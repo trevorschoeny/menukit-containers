@@ -184,6 +184,16 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
      * be sized by the slot+element math, ignoring the consumer's pin.
      */
     private int[] computePanelSize(Panel panel) {
+        // Pass 3 — MKC panels are screen-centered (recenter()); feed the
+        // element content-width budget BEFORE reading getElements() so element
+        // text wraps to the screen edge instead of overflowing. NOTE: slot
+        // grids (maxCols*SLOT_SIZE) are author-fixed and are NOT reflowed by
+        // this — wrapping a slot grid means re-flowing its columns, a separate
+        // feature; validator slot grids are authored to fit on-screen.
+        panel.setAvailableContentWidth(
+                this.width - 2 * RegionConstants.SCREEN_EDGE_MARGIN
+                        - 2 * panel.interiorPadding());
+
         int maxCols = 0;
         int totalSlotHeight = 0;
 
