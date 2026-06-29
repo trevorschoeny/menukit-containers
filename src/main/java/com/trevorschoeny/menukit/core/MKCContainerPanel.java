@@ -257,18 +257,21 @@ public final class MKCContainerPanel {
      * panel id passed to {@link #define(String)} as its address panel id — it carries
      * the library-derived id {@code containerPanelId + ":" + groupId} (so each group
      * lives in its own collision-free address sub-space). That derivation is an
-     * internal rule; this method applies it for you. Passing the bare {@code define()}
-     * panel id straight to {@link CreatedSlotAdapter#addressOf(String, String, int)}
-     * yields a non-matching address whose behavior arming silently never resolves to a
-     * live slot. So:
+     * internal rule; this method applies it for you. The raw
+     * {@code CreatedSlotAdapter.addressOf} encoding is {@code @Internal} precisely so a
+     * consumer can't hand it the bare {@code define()} id and silently mint a
+     * non-resolving address — each slot-creation path has its own public minter
+     * ({@code MKCContainerPanel.address} for parity slots; {@code MKCScreenHandler.address}
+     * for custom-menu slots). So:
      *
      * <pre>{@code
-     * // Right — derived id applied internally:
+     * // Container-parity slot — derived id applied internally:
      * Window.slot(MKCContainerPanel.address("inventory-plus:pockets", "pockets", i))
      *       .set(MKCBehaviorKeys.GATING, gate);
      *
-     * // Wrong — bare panel id never resolves:
-     * Window.slot(CreatedSlotAdapter.addressOf("inventory-plus:pockets", "pockets", i)) ...
+     * // Custom-menu slot (different path) — bare declared id, its own minter:
+     * Window.slot(MKCScreenHandler.address("inventory-plus:menu:main", "main", i))
+     *       .set(MKCBehaviorKeys.GATING, gate);
      * }</pre>
      *
      * <p>For most consumers the {@link SlotSpec} inline verbs ({@code .gate(...)},

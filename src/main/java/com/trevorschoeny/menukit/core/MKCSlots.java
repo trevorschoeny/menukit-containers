@@ -72,6 +72,17 @@ import java.util.function.BooleanSupplier;
  * creative-set-slot bridge ({@code CreativeSetSlotMixin}). Direct
  * click-to-place works in both modes; per-slot metadata (M1) lands with it.
  *
+ * <h3>Scope — this menu only (use {@link MKCContainerPanel} for parity)</h3>
+ *
+ * {@code onto} adds slots to the <em>single</em> menu the consumer's mixin targets
+ * (e.g. {@code InventoryMenu}). It does <b>not</b> project onto other menus — open a
+ * chest and the slots are not there. That is by design: {@code onto} is the surgical,
+ * consumer-owns-the-mixin primitive for one menu. For container <em>parity</em> (the
+ * same slots on every container screen, plus the foreign-menu projection and creative
+ * wiring, all from one zero-mixin call) reach for {@link MKCContainerPanel#define}
+ * instead — it builds on this primitive and adds the projection + chrome. Pick
+ * {@code onto} only when you specifically want slots on one menu you mixin into.
+ *
  * <h3>Known limitation</h3>
  *
  * Shift-click (quick-move) <em>into</em> a registered slot is not free: vanilla's

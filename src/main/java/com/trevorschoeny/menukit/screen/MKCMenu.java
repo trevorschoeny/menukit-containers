@@ -195,7 +195,7 @@ public final class MKCMenu {
          *
          * <p>Arm slot behavior by {@link com.trevorschoeny.menukit.window.Address} here
          * — the menu's created slots are addressable as soon as it is registered
-         * ({@code Window.slot(CreatedSlotAdapter.addressOf(panelId, groupId, i)).set(...)}).
+         * ({@code Window.slot(MKCScreenHandler.address(panelId, groupId, i)).set(...)}).
          * Side-neutral: it runs at register() time on whichever side called it (the
          * engine declarations are pure data), exactly like arming behavior by hand in
          * common init.
@@ -205,7 +205,7 @@ public final class MKCMenu {
          *     .screen(MyScreen::new)
          *     .arm(() -> {
          *         for (int i = 0; i < 2; i++) {
-         *             Window.slot(CreatedSlotAdapter.addressOf("side", "filtered", i))
+         *             Window.slot(MKCScreenHandler.address("side", "filtered", i))
          *                   .set(MKCBehaviorKeys.GATING, diamondsOnly);
          *         }
          *     })

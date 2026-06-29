@@ -10,6 +10,7 @@ import com.trevorschoeny.menukit.window.Token;
 
 import net.minecraft.world.inventory.AbstractContainerMenu;
 
+import org.jetbrains.annotations.ApiStatus;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Collections;
@@ -117,10 +118,24 @@ public final class CreatedSlotAdapter implements CreatedSlotResolver {
      * {@link #addressOf(MKCSlot) live overload} delegates here, so a slot born later
      * resolves the init-declared behavior the moment it appears (identical address).
      *
+     * <p><b>Internal — consumers use a path-specific minter, not this raw encoding.</b>
+     * Each slot-creation path carries a different panel id encoding, so naming a slot
+     * goes through the minter that matches how the slot was created:
+     * <ul>
+     *   <li>container-parity {@code define()} slots → {@link MKCContainerPanel#address}
+     *       (it derives the {@code "panelId:groupId"} sub-space);</li>
+     *   <li>custom-menu {@code MKCScreenHandler} slots →
+     *       {@link com.trevorschoeny.menukit.screen.MKCScreenHandler#address} (the bare
+     *       declared panel id).</li>
+     * </ul>
+     * Calling this directly with the wrong id silently mints a non-resolving address —
+     * the footgun the two minters exist to prevent.
+     *
      * @param panelId    the slot's panel id (as passed to {@code MKCSlots}/builder)
      * @param groupId    the slot's group id within that panel
      * @param localIndex the slot's index within its group
      */
+    @ApiStatus.Internal
     public static Address addressOf(String panelId, String groupId, int localIndex) {
         OwnerRef owner = OwnerRef.nested(
                 OwnerRef.root(PanelAddressing.PANEL_FAMILY, OwnerScope.primary()),

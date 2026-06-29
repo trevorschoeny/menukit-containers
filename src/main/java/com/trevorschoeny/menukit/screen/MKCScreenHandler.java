@@ -1,6 +1,7 @@
 package com.trevorschoeny.menukit.screen;
 
 import com.trevorschoeny.menukit.core.*;
+import com.trevorschoeny.menukit.window.Address;
 import com.trevorschoeny.menukit.window.WindowEngine;
 
 import net.minecraft.world.Container;
@@ -419,11 +420,34 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
      * — e.g. {@code "mymod:menu:main"} — exactly as container-parity panel ids already
      * are. The same id is used both for layout references ({@code rightOf} / {@code below}
      * / {@code pairsWith}) and for addressing the panel's created slots
-     * ({@code CreatedSlotAdapter.addressOf(panelId, groupId, i)}), so one namespaced id
+     * ({@code MKCScreenHandler.address(panelId, groupId, i)}), so one namespaced id
      * covers both concerns.
      */
     public static Builder builder(MenuType<?> menuType) {
         return new Builder(menuType);
+    }
+
+    /**
+     * THE canonical {@link Address} of one slot in a custom-menu group declared on this
+     * handler's builder — use it to name a custom-menu slot when arming behavior or
+     * reading per-slot state by address. The custom-menu twin of
+     * {@link MKCContainerPanel#address} (which is for container-parity {@code define()}
+     * slots): a custom-menu slot carries the <b>bare</b> declared panel id (no
+     * {@code ":groupId"} derivation), so this applies the right encoding for you. Prefer
+     * it over the now-{@code @Internal} {@code CreatedSlotAdapter.addressOf}, which mints
+     * a non-resolving address if handed the wrong path's id.
+     *
+     * <pre>{@code
+     * Window.slot(MKCScreenHandler.address("mymod:menu:side", "filtered", i))
+     *       .set(MKCBehaviorKeys.GATING, gate);
+     * }</pre>
+     *
+     * @param panelId    the panel id declared on the builder ({@code .panel(panelId, ...)})
+     * @param groupId    the slot group id within that panel
+     * @param localIndex the slot's index within its group
+     */
+    public static Address address(String panelId, String groupId, int localIndex) {
+        return CreatedSlotAdapter.addressOf(panelId, groupId, localIndex);
     }
 
     public static class Builder {
@@ -573,7 +597,7 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
          * it is armed in THE ONE WINDOW engine by each built slot's
          * {@link com.trevorschoeny.menukit.core.MKCSlot#address()}, identically to a
          * vanilla slot. On the custom-menu path arm it via
-         * {@code Window.slot(CreatedSlotAdapter.addressOf(panelId, groupId, i)).set(KEY, value)}
+         * {@code Window.slot(MKCScreenHandler.address(panelId, groupId, i)).set(KEY, value)}
          * — ideally inside the {@link com.trevorschoeny.menukit.screen.MKCMenu.Builder#arm}
          * hook so it rides the same define chain. (On the container-parity path, the
          * {@link com.trevorschoeny.menukit.core.SlotSpec} inline verbs —
