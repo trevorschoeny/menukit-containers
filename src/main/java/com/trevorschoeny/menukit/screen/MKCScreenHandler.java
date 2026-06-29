@@ -860,6 +860,43 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
             return this;
         }
 
+        /**
+         * Attaches a hover tooltip to the MOST RECENTLY added element — the
+         * trailing-modifier pattern (mirrors {@code rightClick()}/{@code pairsWith()}
+         * for groups). Closes the gap where the element factories above discard
+         * the constructed element, leaving the call site no way to chain
+         * {@code .tooltip(...)}. Every factory builds a library element
+         * (an {@link com.trevorschoeny.menukit.core.AbstractPanelElement}), which
+         * carries the tooltip; a raw {@link #element(PanelElement)} drop-in that is
+         * NOT an AbstractPanelElement should set its tooltip in its own
+         * construction chain instead.
+         *
+         * @throws IllegalStateException if called before any element is added, or
+         *         if the most recent element doesn't support tooltips
+         */
+        public PanelBuilder tooltip(net.minecraft.network.chat.Component text) {
+            return tooltip(() -> text);
+        }
+
+        /** Supplier-driven variant of {@link #tooltip(net.minecraft.network.chat.Component)}. */
+        public PanelBuilder tooltip(
+                java.util.function.Supplier<net.minecraft.network.chat.Component> supplier) {
+            if (elements.isEmpty()) {
+                throw new IllegalStateException("MKC panel '" + id
+                        + "': .tooltip(...) must follow an element factory — no element to attach it to.");
+            }
+            PanelElement last = elements.get(elements.size() - 1);
+            if (last instanceof com.trevorschoeny.menukit.core.AbstractPanelElement<?> ape) {
+                ape.tooltip(supplier);
+            } else {
+                throw new IllegalStateException("MKC panel '" + id
+                        + "': .tooltip(...) requires the preceding element to be a library element; '"
+                        + last.getClass().getSimpleName()
+                        + "' is a raw PanelElement — set its tooltip in its own construction chain.");
+            }
+            return this;
+        }
+
         /** Marks this panel as hidden initially. */
         public PanelBuilder hidden() {
             this.visible = false;

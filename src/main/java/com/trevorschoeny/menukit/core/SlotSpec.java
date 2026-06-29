@@ -2,6 +2,7 @@ package com.trevorschoeny.menukit.core;
 
 import com.trevorschoeny.menukit.window.TriBool;
 
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
@@ -10,6 +11,7 @@ import org.jspecify.annotations.Nullable;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 /**
  * A side-neutral, declarative description of one registered-slot group that a
@@ -73,6 +75,7 @@ public final class SlotSpec {
     private @Nullable Function<Player, Storage> storageFactory;   // required
     private @Nullable BooleanSupplier revealWhen = null;  // client-side reveal; null => always
     private @Nullable String label = null;               // MK display name; null => capitalized groupId
+    private @Nullable Supplier<Component> tooltip = null; // hover tooltip on each slot in the group; null => none
 
     // ── Inline behavior intent (armed by Address in register(); null => default) ──
     // These hold the consumer's declared behavior so register() can arm the engine
@@ -147,6 +150,22 @@ public final class SlotSpec {
      */
     public SlotSpec label(String label) {
         this.label = label;
+        return this;
+    }
+
+    /**
+     * Attaches a hover tooltip to every slot in this group. The library applies
+     * it to each {@link SlotElement} it builds (the consumer never touches those
+     * instances). Fires only over an EMPTY slot — a slot holding an item shows
+     * vanilla's item tooltip instead. Chainable.
+     */
+    public SlotSpec tooltip(Component text) {
+        return tooltip(() -> text);
+    }
+
+    /** Supplier-driven variant of {@link #tooltip(Component)}. */
+    public SlotSpec tooltip(@Nullable Supplier<Component> supplier) {
+        this.tooltip = supplier;
         return this;
     }
 
@@ -233,6 +252,7 @@ public final class SlotSpec {
     int columns()          { return columns; }
     @Nullable BooleanSupplier revealWhen() { return revealWhen; }
     @Nullable String label() { return label; }
+    @Nullable Supplier<Component> tooltip() { return tooltip; }
 
     @Nullable Function<Player, Storage> storageFactory() { return storageFactory; }
 

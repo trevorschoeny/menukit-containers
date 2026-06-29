@@ -5,11 +5,14 @@ import com.trevorschoeny.menukit.mixin.AbstractContainerScreenAccessor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
 import org.jspecify.annotations.Nullable;
+
+import java.util.function.Supplier;
 
 /**
  * A registered MKC slot presented as a {@link PanelElement} — the keystone of
@@ -72,6 +75,10 @@ public final class SlotElement implements PanelElement {
     private final int childX;
     private final int childY;
 
+    /** Optional hover tooltip — slots are direct PanelElement implementors,
+     *  so they carry their own supplier rather than inheriting one. */
+    private @Nullable Supplier<Component> tooltipSupplier;
+
     /**
      * @param panelId    the registered slot's panel id (as given to
      *                   {@link MKCSlots.Builder#panel})
@@ -91,6 +98,24 @@ public final class SlotElement implements PanelElement {
 
     /** The registered slot's panel id this element presents (its registry key). */
     public String panelId() { return panelId; }
+
+    /** Attaches a hover tooltip with fixed text to this slot. Chainable. */
+    public SlotElement tooltip(Component text) {
+        return tooltip(() -> text);
+    }
+
+    /** Attaches a hover tooltip with supplier-driven text to this slot. Chainable. */
+    public SlotElement tooltip(@Nullable Supplier<Component> supplier) {
+        this.tooltipSupplier = supplier;
+        return this;
+    }
+
+    /** The universal {@link PanelElement} tooltip contract — slots are first-class
+     *  tooltip citizens via their own supplier field. */
+    @Override
+    public @Nullable Supplier<Component> tooltipSupplier() {
+        return tooltipSupplier;
+    }
 
     @Override public int getChildX() { return childX; }
     @Override public int getChildY() { return childY; }
@@ -140,6 +165,14 @@ public final class SlotElement implements PanelElement {
         }
         if (ctx.isHovered(childX, childY, size, size)) {
             SlotRendering.drawHoverHighlight(ctx.graphics(), screenX, screenY, size);
+        }
+
+        // Plain-English hover tooltip (tester-aid / consumer disclosure), routed
+        // through the shared queueTooltip so it inherits the library max-width.
+        // Only queued when the slot is EMPTY — when it holds an item, vanilla's
+        // own item-stack tooltip is the useful one and should win the frame.
+        if (stack.isEmpty()) {
+            queueTooltip(ctx);
         }
     }
 

@@ -90,6 +90,7 @@ public final class MKCContainerPanel {
                               ScreenMatcher parityScope,
                               Supplier<List<PanelElement>> chrome,
                               @Nullable BooleanSupplier visibleWhen,
+                              int pinnedHeight,
                               List<SlotSpec> slots) {}
 
     /** Begins a container-parity panel registration with the given panel id. */
@@ -107,6 +108,7 @@ public final class MKCContainerPanel {
         private ScreenMatcher parityScope = ScreenMatcher.all();       // default-on everywhere
         private Supplier<List<PanelElement>> chrome = List::of;        // no chrome by default
         private @Nullable BooleanSupplier visibleWhen = null;          // null = always visible
+        private int pinnedHeight = -1;                                 // -1 = auto-size to visible content
         private final List<SlotSpec> slots = new ArrayList<>();
 
         Builder(String panelId) {
@@ -185,6 +187,25 @@ public final class MKCContainerPanel {
         }
 
         /**
+         * Pins the panel's height to a fixed pixel extent (default: auto-size to
+         * visible content). Use when the panel is bottom/right-anchored AND its
+         * visible content fluctuates between frames — e.g. a group revealed by a
+         * per-frame {@code revealWhen} predicate. Without a pin, an anchored
+         * panel's auto-size changes when a group reveals, which moves the
+         * already-visible slots; if a reveal predicate reads cursor-over-slot
+         * state, that motion can un-trigger the reveal and oscillate (a flash).
+         * Pinning the height reserves the panel's full extent so reveals never
+         * shift existing slots. Mirrors {@link Panel#pinnedHeight(int)}; width
+         * stays adaptive.
+         *
+         * @param h pinned content height in pixels
+         */
+        public Builder pinnedHeight(int h) {
+            this.pinnedHeight = h;
+            return this;
+        }
+
+        /**
          * Finalises the registration. Side-neutral: registers each slot recipe,
          * ensures the foreign-menu projection source exists, and stores the
          * definition for client chrome wiring. Call once at mod init (common
@@ -223,7 +244,7 @@ public final class MKCContainerPanel {
 
             // 3. Stash for client chrome wiring (read in MKCClient).
             DEFINITIONS.add(new Definition(panelId, placement, padding, style, opaque,
-                    parityScope, chrome, visibleWhen, List.copyOf(slots)));
+                    parityScope, chrome, visibleWhen, pinnedHeight, List.copyOf(slots)));
         }
     }
 
@@ -329,7 +350,13 @@ public final class MKCContainerPanel {
                 for (int i = 0; i < spec.count(); i++) {
                     int ex = spec.childX() + (i % spec.columns()) * MKCSlots.SLOT_PITCH;
                     int ey = spec.childY() + (i / spec.columns()) * MKCSlots.SLOT_PITCH;
-                    elements.add(new SlotElement(sid, spec.groupId(), i, ex, ey));
+                    SlotElement el = new SlotElement(sid, spec.groupId(), i, ex, ey);
+                    // Group-level hover tooltip flows from the spec onto each built
+                    // SlotElement (the consumer can't reach these library-built instances).
+                    if (spec.tooltip() != null) {
+                        el.tooltip(spec.tooltip());
+                    }
+                    elements.add(el);
                 }
             }
 
@@ -343,6 +370,10 @@ public final class MKCContainerPanel {
             // Whole-panel visibility gate (chrome + slots toggle as one).
             if (def.visibleWhen() != null) {
                 panel.showWhen(def.visibleWhen());
+            }
+            // Pinned height (anchored-panel reveal stability) when declared.
+            if (def.pinnedHeight() >= 0) {
+                panel.pinnedHeight(def.pinnedHeight());
             }
 
             new ScreenPanelAdapter(panel, def.placement(), def.padding())

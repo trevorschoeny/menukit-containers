@@ -5,8 +5,11 @@ import com.trevorschoeny.menukit.inject.ScreenPanelAdapter;
 import com.trevorschoeny.menukit.mixin.AbstractContainerMenuInvoker;
 import com.trevorschoeny.menukit.window.SlotNames;
 
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -174,6 +177,21 @@ public final class MKCSlots {
      */
     public static void renderGroup(String panelId, String groupId, int count, int columns,
             RegionAnchor<MenuRegion> anchor, int padding, ScreenMatcher screens) {
+        renderGroup(panelId, groupId, count, columns, anchor, padding, screens, /*tooltip*/ null);
+    }
+
+    /**
+     * Tooltip-carrying overload of
+     * {@link #renderGroup(String, String, int, int, RegionAnchor, int, ScreenMatcher)} —
+     * attaches the given hover tooltip to every {@link SlotElement} it builds (the
+     * consumer never holds those instances on this path, so the tooltip flows through
+     * here, mirroring {@code SlotSpec.tooltip} on the container-parity path). Fires only
+     * over an EMPTY slot; a slot holding an item shows vanilla's item tooltip. Pass
+     * {@code null} for no tooltip.
+     */
+    public static void renderGroup(String panelId, String groupId, int count, int columns,
+            RegionAnchor<MenuRegion> anchor, int padding, ScreenMatcher screens,
+            @Nullable Component tooltip) {
         // One SlotElement per logical slot, laid out from the panel origin on the
         // standard 18px pitch — matching the seed layout register() handed each
         // MKCSlot, so element and slot agree on where the slot sits. Mirrors
@@ -185,7 +203,11 @@ public final class MKCSlots {
         for (int i = 0; i < count; i++) {
             int ex = (i % cols) * SLOT_PITCH;
             int ey = (i / cols) * SLOT_PITCH;
-            elements.add(new SlotElement(panelId, groupId, i, ex, ey));
+            SlotElement el = new SlotElement(panelId, groupId, i, ex, ey);
+            if (tooltip != null) {
+                el.tooltip(tooltip);
+            }
+            elements.add(el);
         }
 
         // A presentation-only panel: its id is suffixed (":present") so it never
@@ -220,6 +242,13 @@ public final class MKCSlots {
             MenuRegion region, int padding, ScreenMatcher screens) {
         renderGroup(panelId, groupId, count, columns,
                 new RegionAnchor<>(region, RegionAnchor.DEFAULT_PRIORITY), padding, screens);
+    }
+
+    /** Bare-{@link MenuRegion} convenience overload that also carries a per-slot tooltip. */
+    public static void renderGroup(String panelId, String groupId, int count, int columns,
+            MenuRegion region, int padding, ScreenMatcher screens, @Nullable Component tooltip) {
+        renderGroup(panelId, groupId, count, columns,
+                new RegionAnchor<>(region, RegionAnchor.DEFAULT_PRIORITY), padding, screens, tooltip);
     }
 
     /** Fluent configuration for a single slot. Terminates in {@link #register()}. */
