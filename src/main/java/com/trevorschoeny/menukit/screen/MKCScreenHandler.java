@@ -748,12 +748,14 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
 
         /**
          * Adds a progress bar with a supplier-driven value, left-to-right
-         * direction, and default colors. For direction, custom colors, or a
-         * label, use {@code .element(new ProgressBar(...))} with the full
-         * constructor.
+         * direction, and default colors. {@code value} is a {@code DoubleSupplier}
+         * returning a normalized {@code 0.0–1.0} progress — the canonical
+         * numeric-supplier shape, so a {@code double}-valued source feeds it with
+         * no box-and-cast. For direction, custom colors, or a label, use
+         * {@code .element(new ProgressBar(...))} with the full constructor.
          */
         public PanelBuilder progressBar(int childX, int childY, int width, int height,
-                                        java.util.function.Supplier<Float> value) {
+                                        java.util.function.DoubleSupplier value) {
             elements.add(new ProgressBar(childX, childY, width, height, value));
             return this;
         }

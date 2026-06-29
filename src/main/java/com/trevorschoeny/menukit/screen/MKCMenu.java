@@ -21,7 +21,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.BiFunction;
 
 /**
  * The turnkey custom-menu primitive — one {@code define(...).register()} chain
@@ -41,10 +40,32 @@ import java.util.function.BiFunction;
  *     .arm(MyMenu::armBehaviors)                     // optional; arm slot behavior by Address, same chain
  *     .register();
  *
+ * // The handler factory receives the menu's own MenuType (no reach-back to the
+ * // CUSTOM handle being assigned above — see HandlerFactory):
+ * public static MKCScreenHandler buildHandler(
+ *         MenuType<MKCScreenHandler> type, int syncId, Inventory inv) {
+ *     return MKCScreenHandler.builder(type)        // type handed in, never CUSTOM.getType()
+ *             .panel("mymod:menu:main", p -> p.group("items", storage))
+ *             .build(syncId);
+ * }
+ *
  * // Open it:
  * CUSTOM.requestOpen();        // client → sends the one generic open payload
  * CUSTOM.open(serverPlayer);   // server-side direct (no networking)
  * }</pre>
+ *
+ * <h3>Why the factory takes the MenuType</h3>
+ *
+ * A handler must call {@link MKCScreenHandler#builder(MenuType)} with this menu's
+ * {@code MenuType}, but that type is built <em>inside</em> {@link #register()}. If
+ * the factory had to reach back to the static handle the {@code define(...).register()}
+ * chain is still mid-assigning (e.g. {@code CUSTOM.getType()}), it would work only
+ * because the factory runs lazily — a consumer who evaluates the type eagerly or
+ * inlines the define call hits a forward-reference / null trap. So the factory is a
+ * {@link HandlerFactory} that is <em>handed</em> the freshly-built type: both the
+ * {@link MenuType}'s own client-side factory lambda and the server-side
+ * {@link SimpleMenuProvider} in {@link #open(ServerPlayer)} pass {@code type} in. The
+ * consumer never names the handle.
  *
  * <h3>The client/server split</h3>
  *
@@ -70,6 +91,28 @@ import java.util.function.BiFunction;
  */
 public final class MKCMenu {
 
+    // ── Handler factory ─────────────────────────────────────────────────
+
+    /**
+     * Builds the menu's {@link MKCScreenHandler}, handed the menu's own
+     * {@link MenuType} so the consumer never reaches back to the static handle
+     * the {@code define(...).register()} chain is still mid-assigning. Runs
+     * identically on both sides — server via the {@link SimpleMenuProvider} in
+     * {@link #open(ServerPlayer)}, client via the {@link MenuType} factory — so
+     * its storages must be same-size for sync. The {@code type} passed in is the
+     * exact type to feed {@link MKCScreenHandler#builder(MenuType)}.
+     */
+    @FunctionalInterface
+    public interface HandlerFactory {
+        /**
+         * @param type    this menu's freshly-built {@link MenuType} — pass it
+         *                straight to {@link MKCScreenHandler#builder(MenuType)}
+         * @param syncId  the menu's sync id (server-assigned)
+         * @param inv     the opening player's inventory
+         */
+        MKCScreenHandler build(MenuType<MKCScreenHandler> type, int syncId, Inventory inv);
+    }
+
     // ── Registered definitions ──────────────────────────────────────────
     // DEFINITIONS: drained client-side to register screens (mirror
     // MKCContainerPanel.DEFINITIONS). BY_ID: resolved server-side by the
@@ -79,13 +122,13 @@ public final class MKCMenu {
 
     // ── Handle state (frozen after register()) ──────────────────────────
     private final Identifier id;
-    private final BiFunction<Integer, Inventory, MKCScreenHandler> handlerFactory;
+    private final HandlerFactory handlerFactory;
     private final Component title;
     private final MKCMenuScreenFactory screenFactory;
     private final MenuType<MKCScreenHandler> type;
 
     private MKCMenu(Identifier id,
-                    BiFunction<Integer, Inventory, MKCScreenHandler> handlerFactory,
+                    HandlerFactory handlerFactory,
                     Component title,
                     MKCMenuScreenFactory screenFactory,
                     MenuType<MKCScreenHandler> type) {
@@ -104,24 +147,25 @@ public final class MKCMenu {
      * @param id             the registry id for the menu's {@link MenuType} (also
      *                       the key the generic open payload carries)
      * @param handlerFactory builds the {@link MKCScreenHandler} from
-     *                       {@code (syncId, playerInventory)} — runs identically on
-     *                       both sides (server via the menu provider, client via the
+     *                       {@code (type, syncId, playerInventory)} — handed the
+     *                       menu's own {@link MenuType} so it never reaches back to
+     *                       the handle being assigned; runs identically on both
+     *                       sides (server via the menu provider, client via the
      *                       MenuType factory), so storages must be same-size for sync
      */
-    public static Builder define(Identifier id,
-                                 BiFunction<Integer, Inventory, MKCScreenHandler> handlerFactory) {
+    public static Builder define(Identifier id, HandlerFactory handlerFactory) {
         return new Builder(id, handlerFactory);
     }
 
     /** Fluent configuration; terminates in {@link #register()}. */
     public static final class Builder {
         private final Identifier id;
-        private final BiFunction<Integer, Inventory, MKCScreenHandler> handlerFactory;
+        private final HandlerFactory handlerFactory;
         private Component title;                                        // null => default translation key
         private MKCMenuScreenFactory screenFactory = MKCHandledScreen::new;
         private @org.jspecify.annotations.Nullable Runnable arm = null; // behavior-arming; run by register()
 
-        Builder(Identifier id, BiFunction<Integer, Inventory, MKCScreenHandler> handlerFactory) {
+        Builder(Identifier id, HandlerFactory handlerFactory) {
             this.id = id;
             this.handlerFactory = handlerFactory;
         }
@@ -181,10 +225,17 @@ public final class MKCMenu {
          */
         public MKCMenu register() {
             // The MenuType factory: (syncId, inv) -> handler. Used by the client to
-            // reconstruct the menu from the server's open packet.
+            // reconstruct the menu from the server's open packet. The consumer's
+            // factory is handed the menu's own MenuType — but the type isn't built
+            // until the line below, and the factory lambda needs it. A one-element
+            // holder breaks the self-reference: the lambda captures the (effectively
+            // final) holder and reads holder[0] at invocation time, after assignment.
+            @SuppressWarnings("unchecked")
+            final MenuType<MKCScreenHandler>[] holder = new MenuType[1];
             MenuType<MKCScreenHandler> type = new MenuType<>(
-                    (syncId, inv) -> handlerFactory.apply(syncId, inv),
+                    (syncId, inv) -> handlerFactory.build(holder[0], syncId, inv),
                     FeatureFlagSet.of());
+            holder[0] = type;
             Registry.register(BuiltInRegistries.MENU, id, type);
 
             Component resolvedTitle = (title != null)
@@ -224,8 +275,11 @@ public final class MKCMenu {
      * through this menu's {@link MenuType} and shows the registered screen.
      */
     public void open(ServerPlayer player) {
+        // The handle's `type` is fully assigned by register() before open() can run,
+        // so the server-side provider hands the consumer's factory the same MenuType
+        // the client-side factory gets — no reach-back to the static handle.
         player.openMenu(new SimpleMenuProvider(
-                (syncId, inv, p) -> handlerFactory.apply(syncId, inv),
+                (syncId, inv, p) -> handlerFactory.build(type, syncId, inv),
                 title));
     }
 
