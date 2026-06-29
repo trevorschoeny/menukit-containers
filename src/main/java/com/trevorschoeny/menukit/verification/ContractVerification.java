@@ -591,11 +591,8 @@ public final class ContractVerification {
             String implKind = group instanceof SlotGroup ? "native SlotGroup"
                     : group instanceof VirtualSlotGroup ? "observed VirtualSlotGroup"
                     : "custom impl: " + group.getClass().getSimpleName();
-            LOGGER.info("[Verify.Uniform] {} — findGroup(slot 0) → SlotGroupLike ({}) id='{}' "
-                            + "canAccept(DIAMOND)={} qmp={}",
-                    phase, implKind, group.getId(),
-                    group.canAccept(new ItemStack(Items.DIAMOND)),
-                    group.getQmp());
+            LOGGER.info("[Verify.Uniform] {} — findGroup(slot 0) → SlotGroupLike ({}) id='{}'",
+                    phase, implKind, group.getId());
         } else {
             LOGGER.info("[Verify.Uniform] {} — findGroup(slot 0) → Optional.empty (not in any recognized group)",
                     phase);
@@ -609,9 +606,8 @@ public final class ContractVerification {
         LOGGER.info("[Verify.Uniform] {} — recognize() → {} VirtualSlotGroup(s)",
                 phase, recognized.size());
         for (VirtualSlotGroup g : recognized) {
-            LOGGER.info("[Verify.Uniform] {}   group id='{}' size={} policy-accepts-diamond={}",
-                    phase, g.getId(), g.size(),
-                    g.canAccept(new ItemStack(Items.DIAMOND)));
+            LOGGER.info("[Verify.Uniform] {}   group id='{}' size={}",
+                    phase, g.getId(), g.size());
         }
     }
 

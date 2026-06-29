@@ -220,13 +220,12 @@ public final class MKCSlots {
                         "MKCSlots: storage() is required before register()");
             }
 
-            // 1. Standalone SlotGroup — now storage + layout only. Behavior
-            //    (gating/quick-move/binding/mending) is no longer carried here; it
-            //    resolves from the engine by each slot's address. The SlotGroup
-            //    constructor still takes the legacy policy/qmp params (its fields go
-            //    in Phase 7) — pass the neutral defaults; they're inert.
+            // 1. Standalone SlotGroup — storage + layout only. Behavior
+            //    (gating/quick-move/binding/mending) is not carried here; it
+            //    resolves from the engine by each slot's address (default = vanilla),
+            //    armed by the consumer via Window.slot(address).set(...).
             SlotGroup group = new SlotGroup(
-                    groupId, storage, InteractionPolicy.free(), QuickMoveParticipation.BOTH,
+                    groupId, storage,
                     /*shiftClickPriority*/ 100, columns, /*rowGapAfter*/ -1, /*rowGapSize*/ 0);
 
             // 2. Standalone Panel — no PanelOwner (this isn't a MKCScreenHandler).

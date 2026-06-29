@@ -3,7 +3,6 @@ package com.trevorschoeny.menukit.core;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
-import net.minecraft.world.item.ItemStack;
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -12,14 +11,15 @@ import java.util.List;
 import java.util.function.BiConsumer;
 
 /**
- * Where behavior lives. A SlotGroup is the composition of five orthogonal
- * axes: {@link Storage}, {@link InteractionPolicy}, {@link QuickMoveParticipation},
- * capabilities, and layout metadata.
+ * Where structure lives. A SlotGroup is the composition of {@link Storage},
+ * shift-click priority, capabilities (right-click), and layout metadata.
  *
- * <p>The group owns the behavioral contract for its slots. When a slot
- * asks "can this stack go in me?", it delegates up to its group's policy.
- * This keeps slots thin (identity only) and makes group-level changes
- * (swap policy, flip inertness) take effect across all slots immediately.
+ * <p>The group owns its slots' <em>structure</em> — storage, layout, pairing,
+ * priority. It no longer owns the behavioral contract (accept/remove/stack-cap,
+ * quick-move, binding, mending): under THE ONE WINDOW those all resolve from
+ * the {@code WindowEngine} keyed by each slot's {@link MKCSlot#address()}, so a
+ * group declares structure once and behavior is armed by Address (default = pure
+ * vanilla). This keeps slots thin (identity only) and the group structure-only.
  *
  * <p>Implements {@link SlotGroupLike} so consumer code can program against
  * a uniform interface shared with {@link VirtualSlotGroup} (observed screens).
@@ -31,8 +31,6 @@ public class SlotGroup implements SlotGroupLike {
 
     private final String id;
     private final Storage storage;
-    private final InteractionPolicy policy;
-    private final QuickMoveParticipation qmp;
     private final int shiftClickPriority;
 
     // ── Layout metadata (declarative, read by the screen) ──────────────
@@ -55,24 +53,19 @@ public class SlotGroup implements SlotGroupLike {
     private final List<SlotGroup> pairedWith = new ArrayList<>();
 
     /**
-     * Full constructor with all axes including layout metadata.
+     * Full constructor with layout metadata.
      *
      * @param id                  unique identifier within the panel
      * @param storage             where items live
-     * @param policy              what operations are allowed
-     * @param qmp                 how this group participates in shift-click
      * @param shiftClickPriority  numeric priority (higher = tried first)
      * @param columns             grid columns for slot layout (-1 = auto)
      * @param rowGapAfter         0-indexed row after which to insert a gap (-1 = none)
      * @param rowGapSize          gap size in pixels (only used if rowGapAfter >= 0)
      */
-    public SlotGroup(String id, Storage storage, InteractionPolicy policy,
-                     QuickMoveParticipation qmp, int shiftClickPriority,
+    public SlotGroup(String id, Storage storage, int shiftClickPriority,
                      int columns, int rowGapAfter, int rowGapSize) {
         this.id = id;
         this.storage = storage;
-        this.policy = policy;
-        this.qmp = qmp;
         this.shiftClickPriority = shiftClickPriority;
         // Auto-compute columns: min(9, storage size) if not specified
         this.columns = columns > 0 ? columns : Math.min(9, storage.size());
@@ -83,18 +76,15 @@ public class SlotGroup implements SlotGroupLike {
     /**
      * @param id                  unique identifier within the panel
      * @param storage             where items live
-     * @param policy              what operations are allowed
-     * @param qmp                 how this group participates in shift-click
      * @param shiftClickPriority  numeric priority (higher = tried first)
      */
-    public SlotGroup(String id, Storage storage, InteractionPolicy policy,
-                     QuickMoveParticipation qmp, int shiftClickPriority) {
-        this(id, storage, policy, qmp, shiftClickPriority, -1, -1, 0);
+    public SlotGroup(String id, Storage storage, int shiftClickPriority) {
+        this(id, storage, shiftClickPriority, -1, -1, 0);
     }
 
-    /** Convenience: BOTH participation, default priority (100). */
-    public SlotGroup(String id, Storage storage, InteractionPolicy policy) {
-        this(id, storage, policy, QuickMoveParticipation.BOTH, 100);
+    /** Convenience: default priority (100). */
+    public SlotGroup(String id, Storage storage) {
+        this(id, storage, 100);
     }
 
     // ── Identity ────────────────────────────────────────────────────────
@@ -106,12 +96,6 @@ public class SlotGroup implements SlotGroupLike {
 
     /** Returns where items live. */
     @Override public Storage getStorage() { return storage; }
-
-    /** Returns what operations are allowed. */
-    @Override public InteractionPolicy getPolicy() { return policy; }
-
-    /** Returns how this group participates in shift-click routing. */
-    @Override public QuickMoveParticipation getQmp() { return qmp; }
 
     /** Returns the numeric shift-click priority (higher = tried first). */
     @Override public int getShiftClickPriority() { return shiftClickPriority; }
@@ -137,40 +121,6 @@ public class SlotGroup implements SlotGroupLike {
     /** Sets the right-click handler. Called during builder construction. */
     public void setRightClickHandler(@Nullable BiConsumer<Player, MKCSlot> handler) {
         this.rightClickHandler = handler;
-    }
-
-    // ── Behavioral Delegation ───────────────────────────────────────────
-    // Slots delegate to these methods. The policy is the source of truth.
-
-    /**
-     * Can this group accept the given stack? Delegates to the policy's
-     * {@code canAccept} predicate.
-     *
-     * <p>When a MKCSlot calls {@code mayPlace}, it calls this AND
-     * {@code super.mayPlace} — the mixin chain composes, and the most
-     * restrictive answer wins.
-     */
-    @Override
-    public boolean canAccept(ItemStack stack) {
-        return policy.canAccept().test(stack);
-    }
-
-    /**
-     * Can items be removed from this group? Delegates to the policy's
-     * {@code canRemove} predicate.
-     */
-    @Override
-    public boolean canRemove(ItemStack stack) {
-        return policy.canRemove().test(stack);
-    }
-
-    /**
-     * Maximum stack size for the given item in this group.
-     * Delegates to the policy's {@code maxStackSize} function.
-     */
-    @Override
-    public int maxStackSize(ItemStack stack) {
-        return policy.maxStackSize().applyAsInt(stack);
     }
 
     // ── Flat Index Range ───────────────────────────────────────────────

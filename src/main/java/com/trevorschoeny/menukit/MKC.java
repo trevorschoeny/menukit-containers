@@ -95,6 +95,31 @@ public class MKC implements ModInitializer {
         // MenuType so phase verification can be re-run at any time.
         com.trevorschoeny.menukit.verification.ContractVerification.initServer();
 
+        // MKCMenu turnkey open primitive — the ONE generic open payload + its
+        // server receiver, registered once here. The receiver resolves the menu
+        // by the id the client sent, hops to the main thread, and opens it. An
+        // unknown id is a fail-loud log, never an NPE. This serves every MKCMenu
+        // a consumer defines, keyed by the menu's registered id.
+        net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playC2S().register(
+                com.trevorschoeny.menukit.network.MKCOpenMenuC2SPayload.TYPE,
+                com.trevorschoeny.menukit.network.MKCOpenMenuC2SPayload.STREAM_CODEC);
+        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
+                com.trevorschoeny.menukit.network.MKCOpenMenuC2SPayload.TYPE,
+                (payload, context) -> {
+                    net.minecraft.server.level.ServerPlayer player = context.player();
+                    com.trevorschoeny.menukit.screen.MKCMenu handle =
+                            com.trevorschoeny.menukit.screen.MKCMenu.byId(payload.menuId());
+                    if (handle == null) {
+                        LOGGER.warn("[MenuKit-Containers] MKCOpenMenu: no MKCMenu registered "
+                                + "under id '{}' — ignoring open request from {}",
+                                payload.menuId(), player.getName().getString());
+                        return;
+                    }
+                    // Central main-thread hop — menu open must run on the server thread.
+                    net.minecraft.server.MinecraftServer srv = player.level().getServer();
+                    if (srv != null) srv.execute(() -> handle.open(player));
+                });
+
         // §0052 Phase 2 — grave-mod compat. OPTIONAL: register a capture adapter
         // only when the grave mod is present; MKC hard-depends on none. The
         // adapter class is referenced ONLY inside the guard, so its grave-mod

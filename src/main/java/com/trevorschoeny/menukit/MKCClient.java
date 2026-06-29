@@ -69,6 +69,11 @@ public class MKCClient implements ClientModInitializer {
         // so no GUI object was ever constructed on a dedicated server.
         MKCContainerPanel.wireRegisteredChrome();
 
+        // MKCMenu turnkey screens. Register each defined custom menu's screen with
+        // MenuScreens (default MKCHandledScreen, or the consumer's .screen(...) factory).
+        // Same client-only, definitions-already-populated timing as the chrome above.
+        com.trevorschoeny.menukit.screen.MKCMenu.registerScreens();
+
         // Slot projection — client seam. Append a player's registered projected
         // slots onto a foreign container menu (chest/furnace/donkey) at screen
         // init, which fires synchronously inside handleOpenScreen BEFORE the

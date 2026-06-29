@@ -1,8 +1,6 @@
 package com.trevorschoeny.menukit.verification;
 
 import com.trevorschoeny.menukit.core.EphemeralStorage;
-import com.trevorschoeny.menukit.core.InteractionPolicy;
-import com.trevorschoeny.menukit.core.QuickMoveParticipation;
 import com.trevorschoeny.menukit.core.VirtualStorage;
 import com.trevorschoeny.menukit.screen.MKCScreenHandler;
 
@@ -72,19 +70,20 @@ public final class TestContractHandler {
                 },
                 playerInventory::setChanged);
 
+        // Groups are structure-only — slot behavior (e.g. the hidden panel's
+        // diamond gate) is armed by Address via Window.slot(addr).set(GATING, ...)
+        // in the harness's server init; the inertness/sync probes here exercise
+        // the structural contract, not gating.
         return MKCScreenHandler.builder(menuType)
                 .panel("main", p -> p
-                        .group("container", mainStorage, InteractionPolicy.free()))
+                        .group("container", mainStorage))
                 .panel("hidden", p -> p
                         .rightOf("main")
                         .toggleKey(GLFW.GLFW_KEY_T)
-                        .group("filtered", hiddenStorage,
-                                InteractionPolicy.input(
-                                        stack -> stack.is(Items.DIAMOND)))
+                        .group("filtered", hiddenStorage)
                         .hidden())
                 .panel("player", p -> p
-                        .group("inventory", playerInv, InteractionPolicy.free(),
-                                QuickMoveParticipation.BOTH, 0, 9, 2, 4))
+                        .group("inventory", playerInv, 0, 9, 2, 4))
                 .build(syncId);
     }
 }

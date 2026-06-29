@@ -379,13 +379,15 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
      * public static final StorageAttachment<Player, NonNullList<ItemStack>> POCKETS =
      *     StorageAttachment.playerAttached("my-mod", "pockets", 27);
      *
-     * // Menu construction: bind attachments to owner instances.
+     * // Menu construction: bind attachments to owner instances. Groups are
+     * // structure-only; arm any slot behavior (e.g. an upgrade-only gate) by
+     * // Address at init via Window.slot(address).set(MKCBehaviorKeys.GATING, gate).
      * MKCScreenHandler.builder(MY_MENU_TYPE)
      *     .panel("main", p -> p
-     *         .group("container", CHEST_EXTRA.bind(blockEntity), InteractionPolicy.free())
-     *         .group("player", POCKETS.bind(player), InteractionPolicy.free()))
+     *         .group("container", CHEST_EXTRA.bind(blockEntity))
+     *         .group("player", POCKETS.bind(player)))
      *     .panel("upgrades", p -> p
-     *         .group("slots", EphemeralStorage.of(4), InteractionPolicy.input(isUpgrade))
+     *         .group("slots", EphemeralStorage.of(4))
      *         .hidden())
      *     .build(syncId)
      * }</pre>
@@ -421,7 +423,7 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
                 List<SlotGroup> groups = new ArrayList<>();
                 for (GroupConfig gc : pc.groups) {
                     SlotGroup group = new SlotGroup(
-                            gc.id, gc.storage, gc.policy, gc.qmp, gc.priority,
+                            gc.id, gc.storage, gc.priority,
                             gc.columns, gc.rowGapAfter, gc.rowGapSize
                     );
                     if (gc.rightClickHandler != null) {
@@ -508,35 +510,38 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
             return this;
         }
 
-        /** Adds a slot group with default QMP (BOTH), priority (100), auto columns. */
-        public PanelBuilder group(String id, Storage storage, InteractionPolicy policy) {
-            groups.add(new GroupConfig(id, storage, policy,
-                    QuickMoveParticipation.BOTH, 100, -1, -1, 0));
+        /**
+         * Adds a structure-only slot group (default priority 100, auto columns).
+         *
+         * <p>The group declares only structure — storage + layout. All slot
+         * <em>behavior</em> (gating/accept/remove/stack-cap, quick-move, binding,
+         * mending) resolves from the {@code WindowEngine} keyed by each built slot's
+         * {@link com.trevorschoeny.menukit.core.MKCSlot#address()} — armed by the
+         * consumer at init via {@code Window.slot(address).set(...)}. An un-armed
+         * slot is pure vanilla (the engine defaults: gating OPEN, quick-move BOTH,
+         * binding/mending off). See {@code MKCBehaviorKeys}.
+         */
+        public PanelBuilder group(String id, Storage storage) {
+            groups.add(new GroupConfig(id, storage, 100, -1, -1, 0));
             return this;
         }
 
-        /** Adds a slot group with explicit QMP, priority, and auto columns. */
-        public PanelBuilder group(String id, Storage storage, InteractionPolicy policy,
-                                  QuickMoveParticipation qmp, int priority) {
-            groups.add(new GroupConfig(id, storage, policy, qmp, priority,
-                    -1, -1, 0));
+        /** Adds a slot group with explicit priority, auto columns. (Structure-only — see {@link #group(String, Storage)}.) */
+        public PanelBuilder group(String id, Storage storage, int priority) {
+            groups.add(new GroupConfig(id, storage, priority, -1, -1, 0));
             return this;
         }
 
-        /** Adds a slot group with explicit QMP, priority, and column count. */
-        public PanelBuilder group(String id, Storage storage, InteractionPolicy policy,
-                                  QuickMoveParticipation qmp, int priority, int columns) {
-            groups.add(new GroupConfig(id, storage, policy, qmp, priority,
-                    columns, -1, 0));
+        /** Adds a slot group with explicit priority + column count. (Structure-only — see {@link #group(String, Storage)}.) */
+        public PanelBuilder group(String id, Storage storage, int priority, int columns) {
+            groups.add(new GroupConfig(id, storage, priority, columns, -1, 0));
             return this;
         }
 
-        /** Adds a slot group with full layout control including row gap. */
-        public PanelBuilder group(String id, Storage storage, InteractionPolicy policy,
-                                  QuickMoveParticipation qmp, int priority, int columns,
+        /** Adds a slot group with full layout control including row gap. (Structure-only — see {@link #group(String, Storage)}.) */
+        public PanelBuilder group(String id, Storage storage, int priority, int columns,
                                   int rowGapAfter, int rowGapSize) {
-            groups.add(new GroupConfig(id, storage, policy, qmp, priority,
-                    columns, rowGapAfter, rowGapSize));
+            groups.add(new GroupConfig(id, storage, priority, columns, rowGapAfter, rowGapSize));
             return this;
         }
 
@@ -549,8 +554,8 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
             if (!groups.isEmpty()) {
                 // Replace last group config with one that includes the handler
                 GroupConfig last = groups.remove(groups.size() - 1);
-                groups.add(new GroupConfig(last.id, last.storage, last.policy,
-                        last.qmp, last.priority, last.columns, last.rowGapAfter,
+                groups.add(new GroupConfig(last.id, last.storage,
+                        last.priority, last.columns, last.rowGapAfter,
                         last.rowGapSize, last.pairingTargets, handler));
             }
             return this;
@@ -578,8 +583,8 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
                 GroupConfig last = groups.remove(groups.size() - 1);
                 List<String> newTargets = new ArrayList<>(last.pairingTargets);
                 newTargets.add(targetPanelId + "." + targetGroupId);
-                groups.add(new GroupConfig(last.id, last.storage, last.policy,
-                        last.qmp, last.priority, last.columns, last.rowGapAfter,
+                groups.add(new GroupConfig(last.id, last.storage,
+                        last.priority, last.columns, last.rowGapAfter,
                         last.rowGapSize, newTargets, last.rightClickHandler));
             }
             return this;
@@ -786,16 +791,14 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
                                PanelStyle style, PanelPosition position, int toggleKey) {}
 
     private record GroupConfig(
-            String id, Storage storage, InteractionPolicy policy,
-            QuickMoveParticipation qmp, int priority,
+            String id, Storage storage, int priority,
             int columns, int rowGapAfter, int rowGapSize,
             List<String> pairingTargets,
             java.util.function.BiConsumer<net.minecraft.world.entity.player.Player, MKCSlot> rightClickHandler
     ) {
-        GroupConfig(String id, Storage storage, InteractionPolicy policy,
-                    QuickMoveParticipation qmp, int priority,
+        GroupConfig(String id, Storage storage, int priority,
                     int columns, int rowGapAfter, int rowGapSize) {
-            this(id, storage, policy, qmp, priority, columns, rowGapAfter, rowGapSize, List.of(), null);
+            this(id, storage, priority, columns, rowGapAfter, rowGapSize, List.of(), null);
         }
     }
 }
