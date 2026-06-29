@@ -1,5 +1,7 @@
 package com.trevorschoeny.menukit.core;
 
+import com.trevorschoeny.menukit.inject.ScreenMatcher;
+import com.trevorschoeny.menukit.inject.ScreenPanelAdapter;
 import com.trevorschoeny.menukit.mixin.AbstractContainerMenuInvoker;
 import com.trevorschoeny.menukit.window.SlotNames;
 
@@ -94,7 +96,12 @@ import java.util.function.BooleanSupplier;
  *     .layout(originX, originY, 3)                      // screen-relative origin + columns
  *     .revealWhen(() -> PocketHoverState.isRevealed())  // client-side predicate
  *     .register();
- * // Stash `pockets` (panel + group) so the client render adapter can draw it.
+ *
+ * // Client init (ONCE, NOT per menu construction) — wire the PRESENTATION half.
+ * // register() above added the synced slot data; this draws the slots:
+ * MKCSlots.renderGroup("inventory-plus:pockets", "pockets", 3, 3,
+ *         MenuRegion.RIGHT_ALIGN_TOP, ScreenPanelAdapter.DEFAULT_PADDING,
+ *         ScreenMatcher.all());
  * }</pre>
  */
 public final class MKCSlots {
@@ -123,8 +130,13 @@ public final class MKCSlots {
     /**
      * The result of a slot: the live {@link Panel} and {@link SlotGroup} that
      * were created, plus the flat slot-index range appended to the menu (for
-     * consumers that need to walk the registered slots directly). The consumer
-     * wires the client render adapter against {@code panel} / {@code group}.
+     * consumers that need to walk the registered slots directly).
+     *
+     * <p>{@code register()} adds only the synced slot DATA. To make the slots
+     * actually draw + take input, call
+     * {@link MKCSlots#renderGroup(String, String, int, int, MenuRegion, int, ScreenMatcher)}
+     * ONCE at client init with the same {@code panelId} / {@code groupId} —
+     * that is the PRESENTATION half this handle's {@code register()} omits.
      */
     public record RegisteredSlots(Panel panel, SlotGroup group, int flatStart, int flatEnd,
                           List<MKCSlot> slots) {}
@@ -136,6 +148,67 @@ public final class MKCSlots {
      */
     public static Builder onto(AbstractContainerMenu menu, Player player) {
         return new Builder(menu, player);
+    }
+
+    /**
+     * Turnkey rendering for a registered {@code .onto} slot group — call ONCE at
+     * client init (not per menu construction). {@link Builder#register()} adds the
+     * synced slot DATA; this adds the PRESENTATION: a panel of {@link SlotElement}s
+     * for the group, wired through a {@link ScreenPanelAdapter} so the slots actually
+     * draw + take input on every matching screen. Reveal is already gated by the
+     * {@code .onto} {@code revealWhen} predicate (each SlotElement self-hides while its
+     * slot is inert), so it is not repeated here. The panel id is the SAME id passed to
+     * {@link Builder#panel}; the SlotElements resolve the live MKCSlots by identity each
+     * frame, so one registration works on every screen the slots appear on.
+     */
+    public static void renderGroup(String panelId, String groupId, int count, int columns,
+            RegionAnchor<MenuRegion> anchor, int padding, ScreenMatcher screens) {
+        // One SlotElement per logical slot, laid out from the panel origin on the
+        // standard 18px pitch — matching the seed layout register() handed each
+        // MKCSlot, so element and slot agree on where the slot sits. Mirrors
+        // MKCContainerPanel.wireRegisteredChrome's element-build loop (the
+        // container-parity path), which is the same data→presentation split done
+        // here for the lower-level .onto path.
+        int cols = Math.max(1, columns);
+        List<PanelElement> elements = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            int ex = (i % cols) * SLOT_PITCH;
+            int ey = (i / cols) * SLOT_PITCH;
+            elements.add(new SlotElement(panelId, groupId, i, ex, ey));
+        }
+
+        // A presentation-only panel: its id is suffixed (":present") so it never
+        // collides with the .onto panel that drives slot inertness — that panel is
+        // a data/visibility carrier with no elements; this one carries the
+        // SlotElements. Style NONE + opaque(false): the slots are click-through
+        // holes (vanilla owns the slot click; see SlotElement), so the panel must
+        // not eat input over them.
+        Panel panel = Panel.builder(panelId + ":present")
+                .elements(elements)
+                .visible(true)
+                .style(PanelStyle.NONE)
+                .position(PanelPosition.BODY)
+                .build()
+                .opaque(false);
+
+        // The ScreenPanelAdapter is the presentation half register() omits: it
+        // anchors the panel to a screen region and draws it on every screen the
+        // matcher accepts. SlotElements resolve their live MKCSlot by identity
+        // each frame, so this single registration covers every screen the slots
+        // appear on (survival inventory, creative, etc.).
+        new ScreenPanelAdapter(panel, anchor, padding).onMatching(screens);
+    }
+
+    /**
+     * Bare-{@link MenuRegion} convenience overload of
+     * {@link #renderGroup(String, String, int, int, RegionAnchor, int, ScreenMatcher)} —
+     * wraps the region in a {@link RegionAnchor} at {@link RegionAnchor#DEFAULT_PRIORITY}
+     * for consumers who don't care about sibling stacking order within the region.
+     */
+    public static void renderGroup(String panelId, String groupId, int count, int columns,
+            MenuRegion region, int padding, ScreenMatcher screens) {
+        renderGroup(panelId, groupId, count, columns,
+                new RegionAnchor<>(region, RegionAnchor.DEFAULT_PRIORITY), padding, screens);
     }
 
     /** Fluent configuration for a single slot. Terminates in {@link #register()}. */

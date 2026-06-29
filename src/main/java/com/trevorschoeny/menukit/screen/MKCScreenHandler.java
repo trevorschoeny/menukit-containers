@@ -486,6 +486,18 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
                             SlotGroup target = groupById.get(targetRef);
                             if (target != null) {
                                 source.pairsWith(target);
+                            } else {
+                                // Footgun guard: a typo in the .pairsWith(panelId, groupId)
+                                // target ref resolves to null here and would otherwise be
+                                // silently dropped — the consumer's directional shift-click
+                                // pairing just never happens, with no clue why. Warn loudly
+                                // (named ref + source group) so the misspelling is findable.
+                                // A warn, not a throw: a missing pairing degrades shift-click
+                                // ordering, it doesn't break the menu — a build-time exception
+                                // would be too disruptive for a non-fatal config slip.
+                                LOGGER.warn("[MKCScreenHandler] pairsWith target '{}' not found "
+                                        + "for group '{}' — check panelId/groupId spelling; "
+                                        + "pairing skipped", targetRef, pc.id + "." + gc.id);
                             }
                         }
                     }
