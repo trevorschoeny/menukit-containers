@@ -14,6 +14,7 @@ import org.jspecify.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -88,6 +89,7 @@ public final class MKCContainerPanel {
                               boolean opaque,
                               ScreenMatcher parityScope,
                               Supplier<List<PanelElement>> chrome,
+                              @Nullable BooleanSupplier visibleWhen,
                               List<SlotSpec> slots) {}
 
     /** Begins a container-parity panel registration with the given panel id. */
@@ -104,6 +106,7 @@ public final class MKCContainerPanel {
         private boolean opaque = true;
         private ScreenMatcher parityScope = ScreenMatcher.all();       // default-on everywhere
         private Supplier<List<PanelElement>> chrome = List::of;        // no chrome by default
+        private @Nullable BooleanSupplier visibleWhen = null;          // null = always visible
         private final List<SlotSpec> slots = new ArrayList<>();
 
         Builder(String panelId) {
@@ -159,6 +162,22 @@ public final class MKCContainerPanel {
             return this;
         }
 
+        /**
+         * Gates the WHOLE panel's visibility (chrome + slot presentation) on a
+         * client-side predicate — the entire parity panel appears/disappears as
+         * one. Default (unset): always visible. When the supplier returns false,
+         * the chrome, background, and slot elements all stop rendering together;
+         * per-group {@code revealWhen} still applies on top when the panel is
+         * shown. Client-side presentation gate (the underlying
+         * {@link Panel#showWhen}); does not by itself drive server slot-sync, so
+         * pair it with per-group {@code revealWhen} when the slots are
+         * sync-critical (as the validator pool does).
+         */
+        public Builder showWhen(BooleanSupplier visibleWhen) {
+            this.visibleWhen = visibleWhen;
+            return this;
+        }
+
         /** Adds a slot group to this panel (its recipe + its on-screen presentation). */
         public Builder addSlot(SlotSpec spec) {
             this.slots.add(spec);
@@ -204,7 +223,7 @@ public final class MKCContainerPanel {
 
             // 3. Stash for client chrome wiring (read in MKCClient).
             DEFINITIONS.add(new Definition(panelId, placement, padding, style, opaque,
-                    parityScope, chrome, List.copyOf(slots)));
+                    parityScope, chrome, visibleWhen, List.copyOf(slots)));
         }
     }
 
@@ -321,6 +340,10 @@ public final class MKCContainerPanel {
                     .position(PanelPosition.BODY)
                     .build()
                     .opaque(def.opaque());
+            // Whole-panel visibility gate (chrome + slots toggle as one).
+            if (def.visibleWhen() != null) {
+                panel.showWhen(def.visibleWhen());
+            }
 
             new ScreenPanelAdapter(panel, def.placement(), def.padding())
                     .onMatching(def.parityScope());
