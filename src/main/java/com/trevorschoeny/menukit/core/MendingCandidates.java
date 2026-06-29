@@ -9,8 +9,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * The mending primitive's <b>consumer candidate hook</b> — lets a consumer
- * contribute EXTRA items into MKC's unified XP-repair pool, beyond the opt-in
- * registered slots ({@code SlotGroup.mendsFromXp}).
+ * contribute EXTRA items into MKC's unified XP-repair pool, beyond the registered
+ * slots opted in by Address via the engine {@code MKCBehaviorKeys.MENDING} key.
  *
  * <p>Why it exists: a consumer like Inventory Max wants a "mend any item in the
  * inventory" feature. Without this hook it would need its <em>own</em>

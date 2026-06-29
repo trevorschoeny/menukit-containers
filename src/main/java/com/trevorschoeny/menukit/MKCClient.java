@@ -39,12 +39,13 @@ public class MKCClient implements ClientModInitializer {
         // Delegate to MenuKit: Containers' client-state init.
         MKC.initClient();
 
-        // Inventory-screen parity: plug the registered-slot draw/input/reveal work
-        // into MenuKit's library-owned screen dispatch (§0042 — MK exposes the
-        // neutral hook + the per-screen mixins; MKC implements the registered-slot
-        // half here). After this, any SlotScreenPresence a consumer registers
-        // manifests on every matching inventory-bearing screen, creative
-        // included, with no per-screen consumer mixin.
+        // Inventory-screen parity: plug the registered-slot input resolution into
+        // MenuKit's library-owned screen dispatch (§0042 — MK exposes the neutral
+        // hook + the per-screen mixins; MKC implements the registered-slot half
+        // here). After this, a panel-hosted registered slot (a SlotElement) resolves
+        // hover/click on every matching inventory-bearing screen, creative included,
+        // with no per-screen consumer mixin. Drawing the slot is the panel pipeline's
+        // job; this hook is the input limb only.
         SlotScreenDispatcher.setHook(new MKCSlotScreenHook());
 
         // THE ONE WINDOW — created-slot resolution port (§0042). MK resolves

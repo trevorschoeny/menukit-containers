@@ -34,10 +34,11 @@ import java.util.function.Predicate;
 
 /**
  * The mending primitive's <b>intercept</b> — widens vanilla's XP-orb repair pool
- * so a damaged Mending item in an opted-in registered slot ({@code SlotGroup.mendsFromXp})
- * or a consumer-contributed source ({@link MendingCandidates}) repairs from XP
- * exactly like worn armor does. Library-owned registered-slot vanilla mechanic, the
- * same line as death-drop (§0052) and binding (§0053).
+ * so a damaged Mending item in a registered slot opted in by Address via the engine
+ * {@code MKCBehaviorKeys.MENDING} key, or a consumer-contributed source
+ * ({@link MendingCandidates}), repairs from XP exactly like worn armor does.
+ * Library-owned registered-slot vanilla mechanic, the same line as death-drop (§0052)
+ * and binding (§0053).
  *
  * <h3>One unified pool, once</h3>
  * Vanilla's {@code repairPlayerItems} picks a single damaged Mending item via

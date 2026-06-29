@@ -25,8 +25,8 @@ import org.jspecify.annotations.Nullable;
  *       {@code menu.slots} (JEI/EMI see a normal slot). Built at menu-construction
  *       time via {@link MKCSlots}; <em>untouched by this class</em>.</li>
  *   <li><b>Presentation</b> — where it sits on screen, and its frame/item/hover
- *       draw. Historically a per-slot {@code onPrepare} reposition callback plus
- *       {@link MKCSlotRender}, both inside the slot overlay world. <em>This
+ *       draw. Historically a per-slot {@code onPrepare} reposition callback plus a
+ *       standalone render helper, both inside the slot overlay world. <em>This
  *       is what {@code SlotElement} takes over.</em></li>
  * </ul>
  *
@@ -60,9 +60,9 @@ import org.jspecify.annotations.Nullable;
  * click reaches vanilla. The "block what's behind" is done by that hover
  * resolution, exactly as slots have always worked — the panel here owns only
  * position + render. {@link #render} keeps the slot's presentation position
- * current so the hover resolution finds it; {@link SlotElementRegistry} lets the
- * library's screen hook resolve panel-hosted slots even with no
- * {@code SlotScreenPresence} registered.
+ * current so the hover resolution finds it; {@link SlotElementRegistry} tells the
+ * library's screen hook which panels currently host a {@code SlotElement}, so it
+ * resolves them through {@link MKCSlotInput}.
  */
 public final class SlotElement implements PanelElement {
 

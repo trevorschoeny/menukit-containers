@@ -6,6 +6,7 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 
+import org.jetbrains.annotations.ApiStatus;
 import org.jspecify.annotations.Nullable;
 
 import java.util.HashMap;
@@ -13,19 +14,22 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Client-side input-resolution helper for registered slots — the input
- * counterpart to {@link MKCSlotRender}, and the slot-context enforcement
- * of §0046 (a panel makes what it covers inert, in every context).
+ * Internal client-side input resolver for panel-hosted registered slots — the
+ * hover/click half of the panel-unified {@code SlotElement} path, and the
+ * slot-context enforcement of §0046 (a panel makes what it covers inert, in every
+ * context). Driven from {@link MKCSlotScreenHook}, which feeds it the active panel
+ * ids from {@link SlotElementRegistry}; not a consumer surface.
  *
  * <h3>The gap this closes</h3>
  *
- * RegisteredSlots {@link MKCSlot}s are appended <em>last</em> to {@code menu.slots},
+ * Registered {@link MKCSlot}s are appended <em>last</em> to {@code menu.slots},
  * so vanilla's {@code getHoveredSlot} — which returns the first hovering slot —
  * resolves to the <em>vanilla</em> slot beneath a slot, not the slot itself.
- * A revealed pocket is then visually on top (via {@link MKCSlotRender}) but
- * click-through: §0037's "everything behind a panel is inert" never reached it,
- * because §0037's enforcement keys off MenuKit's panel registry and a registered
- * panel isn't in it. This helper supplies the slot-context resolution.
+ * A revealed slot is then visually on top (its {@code SlotElement} renders it inline)
+ * but would be click-through: §0037's "everything behind a panel is inert" never
+ * reached it, because §0037's enforcement keys off MenuKit's panel registry and a
+ * registered slot's hover resolution is keyed off the slot, not the panel box. This
+ * helper supplies the slot-context resolution.
  *
  * <h3>What it does</h3>
  *
@@ -41,37 +45,24 @@ import java.util.Set;
  * Hidden (inert) registered panels contribute nothing — they neither win nor
  * block, matching their inertness (§0021).
  *
- * <h3>Consumer wiring (§0045 — the consumer owns the mixins)</h3>
+ * <h3>How it is wired (library-owned)</h3>
  *
- * Wire this from your own client mixins, exactly as you wire
- * {@link MKCSlotRender} for render:
- * <pre>{@code
- * // @Mixin(AbstractContainerScreen.class)
- * @Inject(method = "getHoveredSlot", at = @At("HEAD"), cancellable = true)
- * void preferSlot(double mx, double my, CallbackInfoReturnable<Slot> cir) {
- *     var r = MKCSlotInput.resolveHoveredSlot((AbstractContainerScreen<?>)(Object)this, mx, my);
- *     if (r.handled()) cir.setReturnValue(r.slot());   // registered slot, or null for a gap
- * }
- *
- * @Inject(method = "mouseClicked(...)", at = @At("HEAD"), cancellable = true)
- * void blockCoveredClick(MouseButtonEvent e, boolean dbl, CallbackInfoReturnable<Boolean> cir) {
- *     // ...handle your own panel widgets (resize buttons, etc.) first, returning early...
- *     var r = MKCSlotInput.resolveHoveredSlot((AbstractContainerScreen<?>)(Object)this, e.x(), e.y());
- *     if (r.handled() && r.slot() == null) cir.setReturnValue(true);  // eat gap clicks → no item drop
- * }
- * }</pre>
- *
- * The {@code getHoveredSlot} hook makes the registered slot win hover, tooltip and
- * the click target (vanilla routes the click to whatever {@code getHoveredSlot}
- * returns); the {@code mouseClicked} hook makes the panel's empty space inert
- * so a click in a gap can't fall through and drop a carried item.
+ * MenuKit's {@code AbstractContainerScreen} mixins ({@code getHoveredSlot} /
+ * {@code mouseClicked}) fire the neutral {@link SlotScreenHook} dispatch, which
+ * MKC fulfils with {@link MKCSlotScreenHook}. That hook calls
+ * {@link #resolveHoveredSlot} with the panel ids that currently host a
+ * {@code SlotElement}: the {@code getHoveredSlot} hook makes the registered slot win
+ * hover, tooltip and the click target (vanilla routes the click to whatever
+ * {@code getHoveredSlot} returns); the {@code mouseClicked} hook makes the panel's
+ * empty space inert so a click in a gap can't fall through and drop a carried item.
+ * No consumer mixin is involved.
  *
  * <h3>Client-only</h3>
  *
- * References client screen types; only ever loaded client-side, like
- * {@link MKCSlotRender}. The slot itself ({@link MKCSlots}) carries no
- * client types and runs on both sides.
+ * References client screen types; only ever loaded client-side. The slot itself
+ * ({@link MKCSlots}) carries no client types and runs on both sides.
  */
+@ApiStatus.Internal
 public final class MKCSlotInput {
 
     private MKCSlotInput() {}

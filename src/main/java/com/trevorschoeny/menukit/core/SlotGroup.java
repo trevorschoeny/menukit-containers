@@ -54,18 +54,6 @@ public class SlotGroup implements SlotGroupLike {
     // Directional pairing for shift-click routing
     private final List<SlotGroup> pairedWith = new ArrayList<>();
 
-    // Curse of Binding toggle: when set, a bound item (carrying the vanilla
-    // PREVENT_ARMOR_CHANGE component) can't be removed from this group's slots
-    // while alive — enforced in MKCSlot.mayPickup, survival only (creative
-    // bypasses). Off by default; equipment-semantic, opt-in per group.
-    private boolean bindsCursedItems = false;
-
-    // Mending toggle: when set, a damaged item carrying the vanilla REPAIR_WITH_XP
-    // effect (Mending) in this group's slots joins the XP-orb repair pool — so a
-    // mending item in a registered equip slot repairs from XP like worn armor does.
-    // Read by the ExperienceOrb intercept. Off by default; equipment-semantic, opt-in.
-    private boolean mendsFromXp = false;
-
     /**
      * Full constructor with all axes including layout metadata.
      *
@@ -150,22 +138,6 @@ public class SlotGroup implements SlotGroupLike {
     public void setRightClickHandler(@Nullable BiConsumer<Player, MKCSlot> handler) {
         this.rightClickHandler = handler;
     }
-
-    // ── Curse of Binding ───────────────────────────────────────────────
-
-    /** Whether this group enforces the vanilla Curse of Binding on its slots. */
-    public boolean bindsCursedItems() { return bindsCursedItems; }
-
-    /** Enables/disables Curse-of-Binding enforcement. Set during slot/builder construction. */
-    public void setBindsCursedItems(boolean binds) { this.bindsCursedItems = binds; }
-
-    // ── Mending (XP repair) ─────────────────────────────────────────────
-
-    /** Whether a damaged Mending item in this group's slots repairs from XP orbs. */
-    public boolean mendsFromXp() { return mendsFromXp; }
-
-    /** Enables/disables XP-repair participation. Set during slot/builder construction. */
-    public void setMendsFromXp(boolean mends) { this.mendsFromXp = mends; }
 
     // ── Behavioral Delegation ───────────────────────────────────────────
     // Slots delegate to these methods. The policy is the source of truth.

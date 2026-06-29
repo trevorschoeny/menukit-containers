@@ -249,9 +249,10 @@ public final class MKCSlots {
 
             // 3. Build + append the registered slots.
             //
-            // §0047: registered slots are helper-rendered (MKCSlotRender /
-            // MKCSlotInput own their presentation), and their position is
-            // mutable presentation, not frozen structure. The vanilla Slot.x/y
+            // §0047: registered slots are presented by their SlotElement on the
+            // panel pipeline (which renders the slot inline and keeps its
+            // presentation position current), so their position is mutable
+            // presentation, not frozen structure. The vanilla Slot.x/y
             // are parked OFF-SCREEN so vanilla never draws or hit-tests them at a
             // fixed spot (which would double-render once a slot moves); the real,
             // runtime-movable position lives in the slot's renderX/renderY — seeded

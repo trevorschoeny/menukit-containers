@@ -8,18 +8,15 @@ import java.util.Set;
 /**
  * The set of {@link SlotElement}s currently attached to an open screen — the
  * bridge that lets MenuKit's library-owned screen hook resolve hover/click for
- * panel-hosted slots, not just slots registered through the old
- * {@link SlotScreenPresence} world.
+ * panel-hosted slots.
  *
  * <h3>Why this is needed</h3>
  *
- * The {@code getHoveredSlot} interception fans through {@link MKCSlotScreenHook}.
- * That hook historically only knew about slots whose panel had a registered
- * {@code SlotScreenPresence}; a panel-hosted {@link SlotElement} has no presence.
- * This registry tells the hook which panels currently have live SlotElements, so
- * it resolves them through the same creative-aware
- * {@link MKCSlotInput#resolveHoveredSlot} path — and a slot in a panel
- * becomes clickable and hover-correct with zero presence boilerplate.
+ * The {@code getHoveredSlot} interception fans through {@link MKCSlotScreenHook},
+ * which needs to know which panels currently host a live {@link SlotElement} so it
+ * can resolve only those. This registry supplies that set, and the hook resolves
+ * them through the creative-aware {@link MKCSlotInput#resolveHoveredSlot} path — so
+ * a slot in a panel becomes clickable and hover-correct with zero boilerplate.
  *
  * <h3>Lifecycle</h3>
  *
