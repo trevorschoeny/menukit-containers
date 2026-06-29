@@ -239,8 +239,12 @@ public final class MKCContainerPanel {
                 }
             }
 
-            Panel panel = new Panel(def.panelId(), elements, /*visible=*/ true,
-                    def.style(), PanelPosition.BODY, /*toggleKey=*/ -1)
+            Panel panel = Panel.builder(def.panelId())
+                    .elements(elements)
+                    .visible(true)
+                    .style(def.style())
+                    .position(PanelPosition.BODY)
+                    .build()
                     .opaque(def.opaque());
 
             new ScreenPanelAdapter(panel, def.placement(), def.padding())

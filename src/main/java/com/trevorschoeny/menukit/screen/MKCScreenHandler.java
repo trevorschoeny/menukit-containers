@@ -432,8 +432,13 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
                     groups.add(group);
                 }
                 groupsByPanel.put(pc.id, groups);
-                panels.add(new Panel(pc.id, pc.elements,
-                        pc.visible, pc.style, pc.position, pc.toggleKey));
+                panels.add(Panel.builder(pc.id)
+                        .elements(pc.elements)
+                        .visible(pc.visible)
+                        .style(pc.style)
+                        .position(pc.position)
+                        .toggleKey(pc.toggleKey)
+                        .build());
             }
 
             // Apply directional pairings (by ID reference)
@@ -754,15 +759,16 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
         }
 
         /**
-         * Adds a standalone Tooltip element — a persistent info box rendered
-         * at the declared position with a RAISED panel background. Distinct
-         * from hover-triggered tooltips attached to interactive elements via
-         * their {@code .tooltip(...)} setters. For supplier-based text, use
-         * {@code .element(new Tooltip(x, y, supplier))}.
+         * Adds a standalone {@link com.trevorschoeny.menukit.core.InfoBox}
+         * element — a persistent info box rendered at the declared position
+         * with a RAISED panel background. Distinct from hover-triggered
+         * tooltips attached to interactive elements via their
+         * {@code .tooltip(...)} setters. For supplier-based text, use
+         * {@code .element(new InfoBox(x, y, supplier))}.
          */
-        public PanelBuilder tooltip(int childX, int childY,
+        public PanelBuilder infoBox(int childX, int childY,
                                     net.minecraft.network.chat.Component text) {
-            elements.add(new Tooltip(childX, childY, text));
+            elements.add(new InfoBox(childX, childY, text));
             return this;
         }
 

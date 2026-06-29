@@ -232,8 +232,11 @@ public final class MKCSlots {
             //    Style NONE: the consumer's render adapter draws the frame; the
             //    Panel itself carries no elements, only the visibility flag the
             //    slots read for inertness.
-            Panel panel = new Panel(panelId, List.of(), /*visible*/ true,
-                    PanelStyle.NONE, PanelPosition.BODY, /*toggleKey*/ -1);
+            Panel panel = Panel.builder(panelId)
+                    .visible(true)
+                    .style(PanelStyle.NONE)
+                    .position(PanelPosition.BODY)
+                    .build();
 
             // Side-aware reveal: server always visible (so getItem returns real
             // content and broadcastChanges syncs it); client gates on the
