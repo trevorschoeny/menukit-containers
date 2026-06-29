@@ -111,6 +111,44 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
                 ? previouslyHoveredMkSlot.getGroup() : null;
     }
 
+    /**
+     * Captures a "return to this container" action for the currently-displayed
+     * MKC container screen, or {@code null} if the current screen is not one.
+     *
+     * <p>Use when opening a transient client {@link net.minecraft.client.gui.screens.Screen}
+     * OVER a live MKC container: pass the captured action to
+     * {@code MKScreen.setReturnAction} so the transient screen's Back/Escape
+     * RE-OPENS the container. Re-open (not a client-only screen restore) is
+     * required because vanilla closes the server-synced menu when you
+     * {@code setScreen} away from a container — so coming back means re-issuing
+     * the open request, which is exactly what the returned {@link Runnable}
+     * does (it resolves this menu's {@link MKCMenu} handle and calls
+     * {@link MKCMenu#requestOpen()}).
+     *
+     * <p>Returns {@code null} when there is nothing to return to (not in an MKC
+     * container, or the menu's type doesn't resolve to a registered handle), so
+     * callers fall back to their default navigation. Honest limit: this only
+     * restores MKC-backed containers — a vanilla container can't be cleanly
+     * re-opened client-side after the close packet.
+     */
+    public static @Nullable Runnable captureReturnAction() {
+        net.minecraft.client.gui.screens.Screen current =
+                net.minecraft.client.Minecraft.getInstance().screen;
+        if (!(current instanceof MKCHandledScreen mkc)) return null;
+        net.minecraft.world.inventory.MenuType<?> type;
+        try {
+            type = mkc.getMenu().getType();
+        } catch (UnsupportedOperationException e) {
+            return null;  // a menu with no registered type (e.g. the inventory menu)
+        }
+        net.minecraft.resources.Identifier id =
+                net.minecraft.core.registries.BuiltInRegistries.MENU.getKey(type);
+        if (id == null) return null;
+        MKCMenu handle = MKCMenu.byId(id);
+        if (handle == null) return null;
+        return handle::requestOpen;
+    }
+
     // ── Construction ───────────────────────────────────────────────────
 
     public MKCHandledScreen(MKCScreenHandler handler, Inventory inventory,
@@ -712,6 +750,14 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
      */
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean flag) {
+        // Dismiss-on-outside-click janitor — notify every visible element whose
+        // transient overlay/trigger the click fell OUTSIDE of, so open popovers
+        // (Dropdown/DropdownMulti) close when you click away, even if a slot or
+        // another element consumes the click. Self-guarding, so safe on every
+        // click. Mirrors MKScreen / the vanilla-screen adapter (one rule, every
+        // render context).
+        notifyOutsideClickDismiss(event.x(), event.y());
+
         // Element click — buttons and custom elements get first crack.
         // A button returning false from mouseClicked lets the click fall
         // through to drag modes and vanilla handling.
@@ -892,6 +938,24 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
      *       fall through to standard hit-test dispatch.</li>
      * </ol>
      */
+    /**
+     * Notifies every visible element of an outside click so popover-like
+     * elements (Dropdown/DropdownMulti) dismiss. Each element self-guards via
+     * {@link PanelElement#notifyClickOutsideOverlay}, so calling it
+     * unconditionally on every element is safe. Runs on every click (before
+     * dispatch) so an open popover closes even when a slot or another element
+     * consumes the click. The MKC-container twin of MKScreen's dismiss janitor.
+     */
+    private void notifyOutsideClickDismiss(double mouseX, double mouseY) {
+        for (Panel panel : menu.getPanels()) {
+            if (!ClientWindowVisibility.panelShown(panel)) continue;
+            for (PanelElement element : panel.getElements()) {
+                if (!ClientWindowVisibility.elementShown(panel, element)) continue;
+                element.notifyClickOutsideOverlay(mouseX, mouseY);
+            }
+        }
+    }
+
     private boolean dispatchElementClick(double mouseX, double mouseY, int button) {
         // Pass 1: active-overlay exclusive claims
         for (Panel panel : menu.getPanels()) {
