@@ -399,6 +399,19 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
      *         .hidden())
      *     .build(syncId)
      * }</pre>
+     *
+     * <h3>Namespace your panel ids</h3>
+     *
+     * A created slot's {@link com.trevorschoeny.menukit.window.Address} is global, keyed
+     * by {@code (panelId, groupId, localIndex)} — NOT scoped by the owning
+     * {@link com.trevorschoeny.menukit.screen.MKCMenu}'s {@code Identifier}. So two
+     * mods (or two menus) that both name a panel {@code "main"} share an address
+     * sub-space and would arm each other's slots. <b>Namespace each panel id per-mod</b>
+     * — e.g. {@code "mymod:menu:main"} — exactly as container-parity panel ids already
+     * are. The same id is used both for layout references ({@code rightOf} / {@code below}
+     * / {@code pairsWith}) and for addressing the panel's created slots
+     * ({@code CreatedSlotAdapter.addressOf(panelId, groupId, i)}), so one namespaced id
+     * covers both concerns.
      */
     public static Builder builder(MenuType<?> menuType) {
         return new Builder(menuType);
@@ -526,13 +539,27 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
         /**
          * Adds a structure-only slot group (default priority 100, auto columns).
          *
-         * <p>The group declares only structure — storage + layout. All slot
-         * <em>behavior</em> (gating/accept/remove/stack-cap, quick-move, binding,
-         * mending) resolves from the {@code WindowEngine} keyed by each built slot's
-         * {@link com.trevorschoeny.menukit.core.MKCSlot#address()} — armed by the
-         * consumer at init via {@code Window.slot(address).set(...)}. An un-armed
-         * slot is pure vanilla (the engine defaults: gating OPEN, quick-move BOTH,
-         * binding/mending off). See {@code MKCBehaviorKeys}.
+         * <h4>Where each kind of "slot behavior" lives</h4>
+         *
+         * The group config carries <b>structural</b> behavior — the parts that are a
+         * property of the group's place in the menu, not of an individual slot:
+         * {@link #rightClick} (group-level right-click handler), {@link #pairsWith}
+         * (directional shift-click routing between groups), and the layout knobs
+         * (priority / columns / row gap). These stay on the builder because they are
+         * group structure.
+         *
+         * <p>Per-slot <b>gating / binding / mending / quick-move</b> is NOT set here —
+         * it is armed in THE ONE WINDOW engine by each built slot's
+         * {@link com.trevorschoeny.menukit.core.MKCSlot#address()}, identically to a
+         * vanilla slot. On the custom-menu path arm it via
+         * {@code Window.slot(CreatedSlotAdapter.addressOf(panelId, groupId, i)).set(KEY, value)}
+         * — ideally inside the {@link com.trevorschoeny.menukit.screen.MKCMenu.Builder#arm}
+         * hook so it rides the same define chain. (On the container-parity path, the
+         * {@link com.trevorschoeny.menukit.core.SlotSpec} inline verbs —
+         * {@code .gate(...)}, {@code .binding()}, {@code .mending()}, {@code .quickMove(...)}
+         * — arm the same keys for you.) An un-armed slot is pure vanilla (engine
+         * defaults: gating OPEN, quick-move BOTH, binding/mending off). See
+         * {@code MKCBehaviorKeys}.
          */
         public PanelBuilder group(String id, Storage storage) {
             groups.add(new GroupConfig(id, storage, 100, -1, -1, 0));

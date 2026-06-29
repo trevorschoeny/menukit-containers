@@ -22,6 +22,38 @@ import org.jetbrains.annotations.ApiStatus;
  * {@link #streamCodec} is binary for wire transport. Persisted values are
  * legible via vanilla's {@code /data get}; wire traffic stays lightweight.
  *
+ * <h2>State is MENU-RESIDENT — unlike behavior</h2>
+ *
+ * The by-{@link Address} surface here ({@link #get(Address)} / {@link #set(Address, Object)}
+ * and their explicit-viewer twins) is a deliberate asymmetry with how slot
+ * <em>behavior</em> is armed, and the boundary matters:
+ *
+ * <ul>
+ *   <li><b>Behavior</b> (gating, binding, mending, quick-move) is declared by
+ *       Address <em>at init</em> and resolves the moment a slot with that address
+ *       appears — it lives in the engine, independent of any open menu.</li>
+ *   <li><b>State</b> read/written by Address resolves against the <em>viewer's
+ *       currently-open menu</em>. If the address names no live slot in that open
+ *       menu, a read returns {@link #defaultValue} and a write is a no-op. There is
+ *       NO by-Address path for init-time or menu-free state.</li>
+ * </ul>
+ *
+ * <p><b>For menu-free / server-automation / init-time created-slot state</b>, use the
+ * persistent-key overloads instead of an Address — they name storage directly with no
+ * open menu and no live slot:
+ *
+ * <ul>
+ *   <li>{@link #get(Player, PersistentContainerKey, int)} /
+ *       {@link #set(Player, PersistentContainerKey, int, Object)} — player- or
+ *       BE/entity-scoped state via a {@link PersistentContainerKey} + container-slot
+ *       index (server-only).</li>
+ *   <li>{@link #get(Container, int)} — a SHARED value at a placed container by index,
+ *       with no viewer, for hopper/dropper-style automation (§0050).</li>
+ * </ul>
+ *
+ * <p>So: address slots for behavior and for in-menu state; reach for the
+ * persistent-key recipe whenever there is no open menu to resolve against.
+ *
  * <p>See {@code menukit/Design Docs/Phase 12/M1_PER_SLOT_STATE.md} §4.4.
  */
 public record SlotStateChannel<T>(

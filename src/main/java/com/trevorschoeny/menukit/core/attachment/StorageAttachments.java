@@ -169,11 +169,10 @@ public final class StorageAttachments {
     /**
      * Enroll a player-anchored custom spec for death handling at {@code rule}
      * (or override the rule for an already-enrolled spec). Called by
-     * {@code StorageAttachment.custom(spec).dropsOnDeath(rule)}. Valid only when
-     * the spec's owner type is {@code Player} — the caller asserts that by
-     * calling {@code dropsOnDeath} (see the custom-wrapper override). The
-     * library owns the gamerule-gated DROP/DESTROY; the consumer's storage owns
-     * KEEP-across-respawn survival.
+     * {@code StorageAttachment.customPlayerAttached(spec).dropsOnDeath(rule)}. The
+     * owner type is statically {@code Player} (the typed factory enforces it), so a
+     * non-player spec can never reach this. The library owns the gamerule-gated
+     * DROP/DESTROY; the consumer's storage owns KEEP-across-respawn survival.
      */
     public static void registerCustomPlayerDeathSpec(CustomAttachmentSpec<?, ?> spec, DropRule rule) {
         CUSTOM_PLAYER_DEATH_DROP.put(spec, rule);

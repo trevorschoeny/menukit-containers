@@ -1,11 +1,15 @@
 package com.trevorschoeny.menukit.core;
 
+import com.trevorschoeny.menukit.window.TriBool;
+
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 
 import org.jspecify.annotations.Nullable;
 
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * A side-neutral, declarative description of one registered-slot group that a
@@ -25,13 +29,26 @@ import java.util.function.Function;
  * sync-safety contract {@link MKCSlotProjection} documents).
  *
  * <p>It is the parity analogue of the per-call parameters on
- * {@link MKCSlots.Builder} — and, post Phase 5, just as behavior-free: storage,
- * layout, and the client reveal predicate, expressed once as reusable data rather
- * than imperatively against a single menu. Gating, quick-move, binding, and
- * mending are NOT set here; they're set later through the window by the slot's
- * address (the same path a vanilla slot uses). {@link MKCContainerPanel} turns
- * each {@code SlotSpec} into both the real slots (every menu, both sides) and the
- * {@link SlotElement}s that present them (client).
+ * {@link MKCSlots.Builder}: storage, layout, and the client reveal predicate,
+ * expressed once as reusable data rather than imperatively against a single menu.
+ * {@link MKCContainerPanel} turns each {@code SlotSpec} into both the real slots
+ * (every menu, both sides) and the {@link SlotElement}s that present them (client).
+ *
+ * <h3>Inline behavior verbs are sugar over the by-address engine path</h3>
+ *
+ * Gating, quick-move, binding, and mending are armed in THE ONE WINDOW engine by
+ * the slot's {@link com.trevorschoeny.menukit.window.Address} — that is where slot
+ * behavior <em>lives</em>, identically for a vanilla slot and a created slot. The
+ * inline verbs here ({@link #gate}, {@link #accepts}, {@link #binding},
+ * {@link #mending}, {@link #quickMove}) do not introduce a second behavior store:
+ * they record the consumer's intent on the spec, and
+ * {@link MKCContainerPanel.Builder#register()} arms the engine by address for every
+ * local index in the group — exactly {@code Window.slot(MKCContainerPanel.address(
+ * panelId, groupId, i)).set(KEY, value)}, the same call a consumer could make by
+ * hand. The win is purely ergonomic: behavior is declared where the slot group is
+ * declared (no separate forgettable arming pass), and the consumer never computes
+ * an address or hand-rolls a per-slot loop. The by-address path stays fully usable;
+ * inline is sugar, not a replacement.
  *
  * <h3>Storage is a factory, not a bound storage</h3>
  *
@@ -56,6 +73,16 @@ public final class SlotSpec {
     private @Nullable Function<Player, Storage> storageFactory;   // required
     private @Nullable BooleanSupplier revealWhen = null;  // client-side reveal; null => always
     private @Nullable String label = null;               // MK display name; null => capitalized groupId
+
+    // ── Inline behavior intent (armed by Address in register(); null => default) ──
+    // These hold the consumer's declared behavior so register() can arm the engine
+    // by each slot's Address. null means "leave the engine default" (gating OPEN,
+    // quick-move BOTH, binding/mending FALSE), so an un-declared slot is exactly
+    // vanilla — same as never arming it.
+    private @Nullable SlotGate gate = null;
+    private @Nullable TriBool binding = null;
+    private @Nullable TriBool mending = null;
+    private @Nullable QuickMoveParticipation quickMove = null;
 
     private SlotSpec(String groupId, int childX, int childY) {
         this.groupId = groupId;
@@ -123,6 +150,80 @@ public final class SlotSpec {
         return this;
     }
 
+    // ── Inline behavior verbs (sugar; armed by Address in register()) ───
+    // See the class doc: each verb records intent that
+    // MKCContainerPanel.Builder.register() arms onto the engine by the slot's
+    // Address for every local index in this group. Behavior still lives in the
+    // engine — this is exactly Window.slot(addr).set(KEY, value), just declared
+    // where the group is declared.
+
+    /**
+     * Arms a {@link SlotGate} (what every slot in this group accepts / releases /
+     * caps) — sugar for {@code Window.slot(addr).set(MKCBehaviorKeys.GATING, gate)}
+     * on each local index. Default (unset) is {@link SlotGate#OPEN} — pure vanilla.
+     */
+    public SlotSpec gate(SlotGate gate) {
+        this.gate = gate;
+        return this;
+    }
+
+    /**
+     * Convenience over {@link #gate}: a place-only filter. Builds a {@link SlotGate}
+     * that admits a stack iff {@code accept} passes (pickup stays open, stack cap
+     * stays vanilla). For a richer policy (pickup rule, stack cap) declare a full
+     * {@link SlotGate} via {@link #gate}.
+     */
+    public SlotSpec accepts(Predicate<ItemStack> accept) {
+        this.gate = new SlotGate() {
+            @Override public boolean mayPlace(ItemStack stack, GatingContext context) {
+                return accept.test(stack);
+            }
+            @Override public boolean mayPickup(Player player, GatingContext context) {
+                return true;
+            }
+        };
+        return this;
+    }
+
+    /**
+     * Enrolls every slot in this group in Curse-of-Binding enforcement (a bound
+     * item can't be taken out while alive, survival only; creative bypasses, §0051)
+     * — sugar for {@code set(MKCBehaviorKeys.BINDING, ...)}. Default off.
+     */
+    public SlotSpec binding(boolean enabled) {
+        this.binding = enabled ? TriBool.TRUE : TriBool.FALSE;
+        return this;
+    }
+
+    /** Equivalent to {@code binding(true)}. */
+    public SlotSpec binding() {
+        return binding(true);
+    }
+
+    /**
+     * Opts every slot in this group into the XP-orb Mending repair pool (§0053) —
+     * sugar for {@code set(MKCBehaviorKeys.MENDING, ...)}. Default off.
+     */
+    public SlotSpec mending(boolean enabled) {
+        this.mending = enabled ? TriBool.TRUE : TriBool.FALSE;
+        return this;
+    }
+
+    /** Equivalent to {@code mending(true)}. */
+    public SlotSpec mending() {
+        return mending(true);
+    }
+
+    /**
+     * Sets how every slot in this group participates in shift-click (quick-move)
+     * routing on a foreign menu — sugar for {@code set(MKCBehaviorKeys.QUICK_MOVE, p)}.
+     * Default {@link QuickMoveParticipation#BOTH}.
+     */
+    public SlotSpec quickMove(QuickMoveParticipation participation) {
+        this.quickMove = participation;
+        return this;
+    }
+
     // ── Accessors (read by MKCContainerPanel / ParitySlotRegistry) ──────
 
     String groupId()       { return groupId; }
@@ -134,4 +235,10 @@ public final class SlotSpec {
     @Nullable String label() { return label; }
 
     @Nullable Function<Player, Storage> storageFactory() { return storageFactory; }
+
+    // Inline behavior intent (null => leave the engine default for that key).
+    @Nullable SlotGate gateValue()                 { return gate; }
+    @Nullable TriBool bindingValue()               { return binding; }
+    @Nullable TriBool mendingValue()               { return mending; }
+    @Nullable QuickMoveParticipation quickMoveValue() { return quickMove; }
 }

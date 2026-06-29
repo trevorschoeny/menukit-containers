@@ -313,7 +313,7 @@ public final class ContractVerification {
      */
     private static boolean customSpecDeathEnrollment() {
         try {
-            StorageAttachment.custom(DEATH_PROBE_SPEC).dropsOnDeath(DropRule.KEEP);
+            StorageAttachment.customPlayerAttached(DEATH_PROBE_SPEC).dropsOnDeath(DropRule.KEEP);
             boolean enrolled = StorageAttachments.customPlayerDeathSpecs()
                     .containsKey(DEATH_PROBE_SPEC);
             LOGGER.info("[Verify.DeathEdgeA] custom-spec dropsOnDeath enrolled={} — VERDICT {}",

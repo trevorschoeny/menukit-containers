@@ -90,20 +90,34 @@ public abstract class StorageAttachment<O, C> {
         };
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    // Player-anchored subtype
+    // ══════════════════════════════════════════════════════════════════════
+
     /**
-     * Sets this attachment's death-drop policy. Only meaningful on player
-     * content attachments ({@link #playerAttached}), which are enrolled in death
-     * handling at {@link DropRule#DEFAULT} (vanilla parity) on creation; call
-     * this to override — {@code KEEP} (soulbound), {@code DESTROY} (cursed), or
-     * {@code DROP} (always drop even with {@code keepInventory} on). Fluent:
-     * {@code playerAttached(...).dropsOnDeath(KEEP)}.
+     * The death-handling-capable specialization of {@link StorageAttachment}, returned
+     * only by player-anchored factories ({@link #playerAttached} and
+     * {@link #customPlayerAttached}). Death handling is only meaningful on player
+     * content — content attached to a block / item / entity / ephemeral storage has no
+     * player-death lifecycle — so {@link #dropsOnDeath(DropRule)} lives here, not on the
+     * base type. A non-player attachment therefore CANNOT call {@code dropsOnDeath} at
+     * all: it is a compile error, not the old runtime
+     * {@link UnsupportedOperationException}.
      *
-     * <p>The base implementation throws — block / item / ephemeral / custom
-     * attachments have no player-death lifecycle.
+     * @param <C> content type (carried through from the base)
      */
-    public StorageAttachment<O, C> dropsOnDeath(DropRule rule) {
-        throw new UnsupportedOperationException(
-                "dropsOnDeath is only supported on playerAttached content attachments");
+    public abstract static class PlayerStorageAttachment<C>
+            extends StorageAttachment<Player, C> {
+
+        /**
+         * Sets this player attachment's death-drop policy. Player content attachments
+         * are enrolled in death handling at {@link DropRule#DEFAULT} (vanilla parity)
+         * on creation; call this to override — {@code KEEP} (soulbound),
+         * {@code DESTROY} (cursed), or {@code DROP} (always drop even with
+         * {@code keepInventory} on). Fluent:
+         * {@code playerAttached(...).dropsOnDeath(KEEP)}.
+         */
+        public abstract PlayerStorageAttachment<C> dropsOnDeath(DropRule rule);
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -141,7 +155,7 @@ public abstract class StorageAttachment<O, C> {
      * @param path      attachment-id path (unique per consumer-declared attachment)
      * @param slotCount number of item slots the content holds
      */
-    public static StorageAttachment<Player, NonNullList<ItemStack>> playerAttached(
+    public static PlayerStorageAttachment<NonNullList<ItemStack>> playerAttached(
             String namespace, String path, int slotCount) {
         Identifier id = Identifier.fromNamespaceAndPath(namespace, path);
         AttachmentType<ItemContainerContents> type =
@@ -223,11 +237,37 @@ public abstract class StorageAttachment<O, C> {
      * decorator-path escape hatch for consumers whose save/load doesn't
      * route through a MenuKit handler.
      *
+     * <p>This is the NON-player path: the returned base {@code StorageAttachment} has
+     * no {@code dropsOnDeath} (death handling is player-only). For a player-anchored
+     * custom spec that needs death handling, use {@link #customPlayerAttached} — it
+     * returns a {@link PlayerStorageAttachment} so {@code dropsOnDeath} is reachable.
+     *
      * @param <O> owner type
      * @param <C> content type
      */
     public static <O, C> StorageAttachment<O, C> custom(CustomAttachmentSpec<O, C> spec) {
         return new CustomAttachmentWrapper<>(spec);
+    }
+
+    /**
+     * Wraps a <b>player-anchored</b> {@link CustomAttachmentSpec} as a
+     * {@link PlayerStorageAttachment}, so it can opt into death handling via
+     * {@link PlayerStorageAttachment#dropsOnDeath(DropRule)} (§0052). The spec's owner
+     * type MUST be {@link Player}; that is what the typed factory asserts statically
+     * (unlike the old base {@code dropsOnDeath}, which threw at runtime on a non-player
+     * spec).
+     *
+     * <p>The library owns the gamerule-gated DROP/DESTROY at the death site;
+     * KEEP-across-respawn is the consumer storage's own responsibility — set
+     * {@code copyOnDeath} on your Fabric attachment (or use a persistent store). The
+     * library cannot set {@code copyOnDeath} on storage it does not own (the whole
+     * point of a custom spec).
+     *
+     * @param <C> content type
+     */
+    public static <C> PlayerStorageAttachment<C> customPlayerAttached(
+            CustomAttachmentSpec<Player, C> spec) {
+        return new CustomPlayerAttachmentWrapper<>(spec);
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -245,7 +285,7 @@ public abstract class StorageAttachment<O, C> {
 
     /** Player-attached via Fabric attachment, with death handling ({@link DropRule}). */
     private static final class PlayerAttachment
-            extends StorageAttachment<Player, NonNullList<ItemStack>> {
+            extends PlayerStorageAttachment<NonNullList<ItemStack>> {
         private final int slotCount;
         private final AttachmentType<ItemContainerContents> type;
         PlayerAttachment(int slotCount, AttachmentType<ItemContainerContents> type) {
@@ -265,7 +305,7 @@ public abstract class StorageAttachment<O, C> {
         }
 
         @Override
-        public StorageAttachment<Player, NonNullList<ItemStack>> dropsOnDeath(DropRule rule) {
+        public PlayerStorageAttachment<NonNullList<ItemStack>> dropsOnDeath(DropRule rule) {
             StorageAttachments.setDeathDropRule(type, rule);
             return this;
         }
@@ -361,45 +401,58 @@ public abstract class StorageAttachment<O, C> {
         }
     }
 
-    /** Consumer-supplied spec via {@link CustomAttachmentSpec}. */
+    /** Consumer-supplied spec via {@link CustomAttachmentSpec} (NON-player owner). */
     private static final class CustomAttachmentWrapper<O, C>
             extends StorageAttachment<O, C> {
         private final CustomAttachmentSpec<O, C> spec;
         CustomAttachmentWrapper(CustomAttachmentSpec<O, C> spec) { this.spec = spec; }
         @Override public int slotCount() { return spec.slotCount(); }
+        @Override public Storage bind(O owner) { return bindCustomSpec(spec, owner); }
+    }
+
+    /**
+     * Player-anchored consumer-supplied spec — the death-handling-capable custom
+     * wrapper. Returned by {@link #customPlayerAttached}; carries {@code dropsOnDeath}
+     * (§0052) since its owner is statically {@link Player}.
+     */
+    private static final class CustomPlayerAttachmentWrapper<C>
+            extends PlayerStorageAttachment<C> {
+        private final CustomAttachmentSpec<Player, C> spec;
+        CustomPlayerAttachmentWrapper(CustomAttachmentSpec<Player, C> spec) { this.spec = spec; }
+        @Override public int slotCount() { return spec.slotCount(); }
+        @Override public Storage bind(Player owner) { return bindCustomSpec(spec, owner); }
 
         @Override
-        public StorageAttachment<O, C> dropsOnDeath(DropRule rule) {
-            // §0052 completion — opt a PLAYER-anchored custom spec into death
-            // handling. PRECONDITION: O is Player. The consumer declares the
-            // spec player-anchored by calling this; calling it on a non-player
-            // custom spec is a usage error that surfaces as a ClassCastException
-            // at death (PlayerDeathDropHandler casts the owner to Player). The
-            // library owns the gamerule-gated DROP/DESTROY at the death site;
-            // KEEP-across-respawn is the consumer storage's own responsibility —
-            // set copyOnDeath on your Fabric attachment (or use a persistent
-            // store); the library cannot set copyOnDeath on storage it does not
-            // own (which is the whole point of a custom spec).
+        public PlayerStorageAttachment<C> dropsOnDeath(DropRule rule) {
+            // §0052 — opt a PLAYER-anchored custom spec into death handling. The
+            // typed customPlayerAttached(...) factory guarantees the owner is
+            // Player, so this can never be reached on a non-player spec. The library
+            // owns the gamerule-gated DROP/DESTROY at the death site;
+            // KEEP-across-respawn is the consumer storage's own responsibility (set
+            // copyOnDeath on your Fabric attachment / use a persistent store — the
+            // library cannot set copyOnDeath on storage it does not own).
             StorageAttachments.registerCustomPlayerDeathSpec(spec, rule);
             return this;
         }
-        @Override public Storage bind(O owner) {
-            return new Storage() {
-                @Override public ItemStack getStack(int i) {
-                    C content = spec.read(owner);
-                    return spec.toItemList(content).get(i);
-                }
-                @Override public void setStack(int i, ItemStack s) {
-                    C content = spec.read(owner);
-                    NonNullList<ItemStack> list = spec.toItemList(content);
-                    list.set(i, s);
-                    spec.write(owner, spec.fromItemList(list));
-                    spec.markDirty(owner);
-                }
-                @Override public int size() { return spec.slotCount(); }
-                @Override public void markDirty() { spec.markDirty(owner); }
-            };
-        }
+    }
+
+    /** Shared bind body for both custom-spec wrappers (re-resolves content per call). */
+    private static <O, C> Storage bindCustomSpec(CustomAttachmentSpec<O, C> spec, O owner) {
+        return new Storage() {
+            @Override public ItemStack getStack(int i) {
+                C content = spec.read(owner);
+                return spec.toItemList(content).get(i);
+            }
+            @Override public void setStack(int i, ItemStack s) {
+                C content = spec.read(owner);
+                NonNullList<ItemStack> list = spec.toItemList(content);
+                list.set(i, s);
+                spec.write(owner, spec.fromItemList(list));
+                spec.markDirty(owner);
+            }
+            @Override public int size() { return spec.slotCount(); }
+            @Override public void markDirty() { spec.markDirty(owner); }
+        };
     }
 
     /**

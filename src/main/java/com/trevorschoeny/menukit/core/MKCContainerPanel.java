@@ -2,6 +2,9 @@ package com.trevorschoeny.menukit.core;
 
 import com.trevorschoeny.menukit.inject.ScreenMatcher;
 import com.trevorschoeny.menukit.inject.ScreenPanelAdapter;
+import com.trevorschoeny.menukit.window.Address;
+import com.trevorschoeny.menukit.window.TriBool;
+import com.trevorschoeny.menukit.window.Window;
 
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.InventoryMenu;
@@ -178,6 +181,12 @@ public final class MKCContainerPanel {
 
             // 1. Register each slot's recipe under a derived, collision-free panel
             //    id (container panel id + group). Both build seams read these.
+            //    Then ARM any inline behavior the spec declared, by Address — this
+            //    is sugar over Window.slot(addr).set: behavior still lives in the
+            //    engine (keyed by Address, resolved when the slot appears), it's
+            //    just declared where the group is declared instead of in a separate,
+            //    forgettable pass. Side-neutral (the engine declarations are pure
+            //    data), matching the consumer's own common-init arming.
             for (SlotSpec spec : slots) {
                 if (spec.storageFactory() == null) {
                     throw new IllegalStateException(
@@ -185,6 +194,7 @@ public final class MKCContainerPanel {
                             + spec.groupId() + "' needs .storage(...) before register().");
                 }
                 ParitySlotRegistry.register(slotPanelId(panelId, spec.groupId()), spec);
+                armInlineBehavior(panelId, spec);
             }
 
             // 2. Ensure the one foreign-menu projection source exists. Its factory
@@ -199,6 +209,30 @@ public final class MKCContainerPanel {
         }
     }
 
+    /**
+     * Arms a {@link SlotSpec}'s inline behavior onto the engine by Address, for every
+     * local index in the group. A null inline value leaves the engine default for that
+     * key (so an un-declared slot stays exactly vanilla). This is the library half of
+     * the inline sugar — identical to the consumer calling
+     * {@code Window.slot(address(panelId, groupId, i)).set(KEY, value)} themselves.
+     */
+    private static void armInlineBehavior(String containerPanelId, SlotSpec spec) {
+        SlotGate gate = spec.gateValue();
+        TriBool binding = spec.bindingValue();
+        TriBool mending = spec.mendingValue();
+        QuickMoveParticipation quickMove = spec.quickMoveValue();
+        // Nothing declared → nothing to arm.
+        if (gate == null && binding == null && mending == null && quickMove == null) return;
+
+        for (int i = 0; i < spec.count(); i++) {
+            Address a = address(containerPanelId, spec.groupId(), i);
+            if (gate != null)      Window.slot(a).set(MKCBehaviorKeys.GATING, gate);
+            if (binding != null)   Window.slot(a).set(MKCBehaviorKeys.BINDING, binding);
+            if (mending != null)   Window.slot(a).set(MKCBehaviorKeys.MENDING, mending);
+            if (quickMove != null) Window.slot(a).set(MKCBehaviorKeys.QUICK_MOVE, quickMove);
+        }
+    }
+
     private static synchronized void ensureProjectionSource() {
         if (projectionSourceRegistered) return;
         projectionSourceRegistered = true;
@@ -210,6 +244,45 @@ public final class MKCContainerPanel {
     /** The id the built {@link MKCSlot}s carry and the {@link SlotElement}s resolve against. */
     private static String slotPanelId(String containerPanelId, String groupId) {
         return containerPanelId + ":" + groupId;
+    }
+
+    // ── Created-slot address minter (THE public way to name a parity slot) ──
+
+    /**
+     * THE canonical {@link Address} of one slot created by a container-parity
+     * {@code define(...)} — use this to name a {@code define()}-created slot when
+     * arming behavior or reading state by address. Never reconstruct the address by
+     * hand.
+     *
+     * <p><b>Why a dedicated minter:</b> a parity slot does NOT carry the container
+     * panel id passed to {@link #define(String)} as its address panel id — it carries
+     * the library-derived id {@code containerPanelId + ":" + groupId} (so each group
+     * lives in its own collision-free address sub-space). That derivation is an
+     * internal rule; this method applies it for you. Passing the bare {@code define()}
+     * panel id straight to {@link CreatedSlotAdapter#addressOf(String, String, int)}
+     * yields a non-matching address whose behavior arming silently never resolves to a
+     * live slot. So:
+     *
+     * <pre>{@code
+     * // Right — derived id applied internally:
+     * Window.slot(MKCContainerPanel.address("inventory-plus:pockets", "pockets", i))
+     *       .set(MKCBehaviorKeys.GATING, gate);
+     *
+     * // Wrong — bare panel id never resolves:
+     * Window.slot(CreatedSlotAdapter.addressOf("inventory-plus:pockets", "pockets", i)) ...
+     * }</pre>
+     *
+     * <p>For most consumers the {@link SlotSpec} inline verbs ({@code .gate(...)},
+     * {@code .binding()}, {@code .mending()}, {@code .quickMove(...)}) arm behavior
+     * for you and you never call this directly; it remains the explicit seam for
+     * by-address arming and for reading per-slot state by address.
+     *
+     * @param containerPanelId the id passed to {@link #define(String)}
+     * @param groupId          the slot group id (the {@link SlotSpec#at} group id)
+     * @param localIndex       the slot's index within its group
+     */
+    public static Address address(String containerPanelId, String groupId, int localIndex) {
+        return CreatedSlotAdapter.addressOf(slotPanelId(containerPanelId, groupId), groupId, localIndex);
     }
 
     // ── Client chrome wiring ────────────────────────────────────────────

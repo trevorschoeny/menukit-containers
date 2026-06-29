@@ -38,6 +38,7 @@ import java.util.function.BiFunction;
  *     .define(Identifier.fromNamespaceAndPath(MOD_ID, "custom_menu"), MyMenu::buildHandler)
  *     .title(Component.literal("My Custom Menu"))   // optional; default = "menu.<ns>.<path>"
  *     .screen(MyScreen::new)                         // optional; default MKCHandledScreen::new
+ *     .arm(MyMenu::armBehaviors)                     // optional; arm slot behavior by Address, same chain
  *     .register();
  *
  * // Open it:
@@ -54,6 +55,18 @@ import java.util.function.BiFunction;
  * screen factory is a {@link MKCMenuScreenFactory} — a never-server-invoked
  * functional interface, materialised into a vanilla screen only on the client from
  * {@link #registerScreens()} (same discipline as {@code MKCContainerPanel.chrome}).
+ *
+ * <h3>Namespace your panel ids</h3>
+ *
+ * This menu's {@link #getId()} {@code Identifier} is globally unique, but it does NOT
+ * scope the {@link com.trevorschoeny.menukit.window.Address}es of the slots the menu's
+ * handler creates — those are keyed globally by {@code (panelId, groupId, localIndex)}
+ * (see {@code CreatedSlotAdapter.addressOf}). So the panel ids the handler declares
+ * (via {@link MKCScreenHandler#builder}) must be namespaced per-mod — e.g.
+ * {@code "mymod:menu:main"} — exactly as container-parity panel ids already are, or two
+ * mods that both name a panel {@code "main"} will collide and arm each other's slots.
+ * That id is the same one used for layout references and for addressing in
+ * {@link Builder#arm}.
  */
 public final class MKCMenu {
 
@@ -106,6 +119,7 @@ public final class MKCMenu {
         private final BiFunction<Integer, Inventory, MKCScreenHandler> handlerFactory;
         private Component title;                                        // null => default translation key
         private MKCMenuScreenFactory screenFactory = MKCHandledScreen::new;
+        private @org.jspecify.annotations.Nullable Runnable arm = null; // behavior-arming; run by register()
 
         Builder(Identifier id, BiFunction<Integer, Inventory, MKCScreenHandler> handlerFactory) {
             this.id = id;
@@ -130,6 +144,36 @@ public final class MKCMenu {
         }
 
         /**
+         * A behavior-arming hook, invoked by {@link #register()} <b>after</b> the
+         * {@link MenuType} + id are live, so a custom menu's slot behavior is armed in
+         * the same define chain as the menu it belongs to and cannot be forgotten in a
+         * separate pass.
+         *
+         * <p>Arm slot behavior by {@link com.trevorschoeny.menukit.window.Address} here
+         * — the menu's created slots are addressable as soon as it is registered
+         * ({@code Window.slot(CreatedSlotAdapter.addressOf(panelId, groupId, i)).set(...)}).
+         * Side-neutral: it runs at register() time on whichever side called it (the
+         * engine declarations are pure data), exactly like arming behavior by hand in
+         * common init.
+         *
+         * <pre>{@code
+         * MKCMenu.define(id, MyMenu::buildHandler)
+         *     .screen(MyScreen::new)
+         *     .arm(() -> {
+         *         for (int i = 0; i < 2; i++) {
+         *             Window.slot(CreatedSlotAdapter.addressOf("side", "filtered", i))
+         *                   .set(MKCBehaviorKeys.GATING, diamondsOnly);
+         *         }
+         *     })
+         *     .register();
+         * }</pre>
+         */
+        public Builder arm(Runnable arm) {
+            this.arm = arm;
+            return this;
+        }
+
+        /**
          * Finalises the registration. Side-neutral (common init): builds + registers
          * the {@link MenuType}, resolves the default title if none was given, stores
          * the handle in {@link #DEFINITIONS} + {@link #BY_ID}, and returns it. Call
@@ -150,6 +194,13 @@ public final class MKCMenu {
             MKCMenu handle = new MKCMenu(id, handlerFactory, resolvedTitle, screenFactory, type);
             DEFINITIONS.add(handle);
             BY_ID.put(id, handle);
+
+            // Behavior-arming runs last, now that the MenuType + id are live and the
+            // menu's created slots are addressable (see Builder.arm). Keeping it on
+            // the define chain means it can't be forgotten in a separate pass.
+            if (arm != null) {
+                arm.run();
+            }
             return handle;
         }
     }
