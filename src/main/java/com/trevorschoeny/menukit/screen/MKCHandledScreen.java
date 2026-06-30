@@ -222,16 +222,15 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
      * be sized by the slot+element math, ignoring the consumer's pin.
      */
     private int[] computePanelSize(Panel panel) {
-        // Pass 3 — MKC panels are screen-centered (recenter()); feed the
-        // element content-width budget BEFORE reading getElements() so element
-        // text wraps to the screen edge instead of overflowing. NOTE: slot
-        // grids (maxCols*SLOT_SIZE) are author-fixed and are NOT reflowed by
-        // this — wrapping a slot grid means re-flowing its columns, a separate
-        // feature; validator slot grids are authored to fit on-screen.
-        panel.setAvailableContentWidth(
-                this.width - 2 * RegionConstants.SCREEN_EDGE_MARGIN
-                        - 2 * panel.interiorPadding());
-
+        // PURE MEASURE — the reactive-sizing budget is fed by the layout DRIVER
+        // per the panel's ROLE (MainRegionLayout: centred for the MAIN frame,
+        // anchor-aware for region siblings via the shared engine; the legacy path:
+        // computePanelSizeCentered). Feeding a flat budget here would clobber the
+        // driver's anchor-aware feed (last write wins) — the resize-engine split
+        // that made region siblings overlap. NOTE: slot grids (maxCols*SLOT_SIZE)
+        // are author-fixed and are NOT reflowed by the width budget — wrapping a
+        // slot grid is the separate SlotFlowElement primitive; custom-screen slot
+        // grids are authored to fit.
         int maxCols = 0;
         int totalSlotHeight = 0;
 
@@ -283,6 +282,21 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
     }
 
     /**
+     * The legacy BODY-stack size function: feed the centred-screen width budget
+     * BEFORE the pure {@link #computePanelSize} measure, so a body-stacked panel's
+     * element text wraps to the screen edge. The main path
+     * ({@link MainRegionLayout}) feeds per role itself (centred for the MAIN frame,
+     * anchor-aware for region siblings), so it calls the pure measure directly;
+     * only the legacy path needs this centred wrapper.
+     */
+    private int[] computePanelSizeCentered(Panel panel) {
+        panel.setAvailableContentWidth(
+                this.width - 2 * RegionConstants.SCREEN_EDGE_MARGIN
+                        - 2 * panel.interiorPadding());
+        return computePanelSize(panel);
+    }
+
+    /**
      * Computes panel positions and updates imageWidth/imageHeight.
      *
      * <p>Two-tier layout:
@@ -319,7 +333,7 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
             // clamps totalWidth/Height to those so vanilla's centering math doesn't
             // underflow. layoutOriginX/Y feed the post-super.init recenter().
             var layout = PanelTreeLayout.resolve(
-                    panels, this::computePanelSize,
+                    panels, this::computePanelSizeCentered,
                     BODY_GAP, RELATIVE_GAP, TITLE_HEIGHT,
                     /*minImageWidth=*/ 176, /*minImageHeight=*/ 100);
             panelBounds = layout.bounds();
