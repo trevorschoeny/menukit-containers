@@ -306,7 +306,8 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
             // 0), so the screen centres on the main panel and slots/labels add
             // leftPos/topPos exactly as a vanilla container does.
             var layout = MainRegionLayout.resolve(
-                    panels, this::computePanelSize, this.width, this.height);
+                    panels, this::computePanelSize, this.width, this.height,
+                    /*reserveTitle=*/ true);
             panelBounds = layout.bounds();
             imageWidth  = layout.mainW();
             imageHeight = layout.mainH();
