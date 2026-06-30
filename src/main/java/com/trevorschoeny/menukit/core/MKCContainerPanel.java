@@ -91,6 +91,7 @@ public final class MKCContainerPanel {
                               Supplier<List<PanelElement>> chrome,
                               @Nullable BooleanSupplier visibleWhen,
                               int pinnedHeight,
+                              int pinnedWidth,
                               List<SlotSpec> slots) {}
 
     /** Begins a container-parity panel registration with the given panel id. */
@@ -109,6 +110,7 @@ public final class MKCContainerPanel {
         private Supplier<List<PanelElement>> chrome = List::of;        // no chrome by default
         private @Nullable BooleanSupplier visibleWhen = null;          // null = always visible
         private int pinnedHeight = -1;                                 // -1 = auto-size to visible content
+        private int pinnedWidth = -1;                                  // -1 = auto-size to visible content
         private final List<SlotSpec> slots = new ArrayList<>();
 
         Builder(String panelId) {
@@ -206,6 +208,34 @@ public final class MKCContainerPanel {
         }
 
         /**
+         * Pins the panel's width to a fixed pixel extent (default: auto-size to
+         * visible content). The width twin of {@link #pinnedHeight(int)} — and
+         * the one that matters for a RIGHT-anchored, hover-reveal panel: when a
+         * revealed group is WIDER than the already-visible ones, an adaptive
+         * width grows the panel, and a right anchor turns that growth into a
+         * LEFTWARD shift of the existing slots. If the reveal predicate reads
+         * cursor-over-slot state, that shift slides the hover target out from
+         * under the cursor and oscillates (the flash). Pinning the width
+         * reserves the panel's full horizontal extent so reveals never shift
+         * existing slots sideways. Mirrors {@link Panel#pinnedWidth(int)}.
+         *
+         * @param w pinned content width in pixels
+         */
+        public Builder pinnedWidth(int w) {
+            this.pinnedWidth = w;
+            return this;
+        }
+
+        /** Pins BOTH axes — convenience for {@link #pinnedWidth(int)} +
+         *  {@link #pinnedHeight(int)}, the bulletproof "footprint never changes
+         *  on reveal" form. */
+        public Builder size(int w, int h) {
+            this.pinnedWidth = w;
+            this.pinnedHeight = h;
+            return this;
+        }
+
+        /**
          * Finalises the registration. Side-neutral: registers each slot recipe,
          * ensures the foreign-menu projection source exists, and stores the
          * definition for client chrome wiring. Call once at mod init (common
@@ -244,7 +274,8 @@ public final class MKCContainerPanel {
 
             // 3. Stash for client chrome wiring (read in MKCClient).
             DEFINITIONS.add(new Definition(panelId, placement, padding, style, opaque,
-                    parityScope, chrome, visibleWhen, pinnedHeight, List.copyOf(slots)));
+                    parityScope, chrome, visibleWhen, pinnedHeight, pinnedWidth,
+                    List.copyOf(slots)));
         }
     }
 
@@ -374,6 +405,9 @@ public final class MKCContainerPanel {
             // Pinned height (anchored-panel reveal stability) when declared.
             if (def.pinnedHeight() >= 0) {
                 panel.pinnedHeight(def.pinnedHeight());
+            }
+            if (def.pinnedWidth() >= 0) {
+                panel.pinnedWidth(def.pinnedWidth());
             }
 
             new ScreenPanelAdapter(panel, def.placement(), def.padding())
