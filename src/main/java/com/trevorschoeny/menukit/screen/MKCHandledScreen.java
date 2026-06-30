@@ -319,9 +319,16 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
             // and recenter() recomputes the SAME leftPos/topPos from them (origin
             // 0), so the screen centres on the main panel and slots/labels add
             // leftPos/topPos exactly as a vanilla container does.
+            // Auto-fit the MAIN frame's height ONLY when it holds no slots. A
+            // slot-bearing main can't scroll — its vanilla slots are positioned in
+            // absolute coords by positionSlots() and have no scroll hook, so
+            // scrolling the element layer would desync them. A pure-element container
+            // main (no slot groups) is safe to auto-scroll, exactly like a standalone
+            // MKScreen main.
+            boolean autoFitMain = mainPanelHoldsNoSlots(panels);
             var layout = MainRegionLayout.resolve(
                     panels, this::computePanelSize, this.width, this.height,
-                    /*reserveTitle=*/ true);
+                    /*reserveTitle=*/ true, autoFitMain);
             panelBounds = layout.bounds();
             imageWidth  = layout.mainW();
             imageHeight = layout.mainH();
@@ -375,6 +382,25 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
             this.inventoryLabelX = playerBounds.x() + 8;
             this.inventoryLabelY = playerBounds.y() - 11;
         }
+    }
+
+    /**
+     * True when the screen's MAIN panel (the frame) holds no slot groups — the gate
+     * for auto-fitting the main's height. A slot-bearing main must keep its natural
+     * height because its vanilla slots are positioned in absolute coords by
+     * {@link #positionSlots} and have no scroll hook; auto-scrolling it would desync
+     * the slots from the scrolled element layer. A pure-element container main (no
+     * slot groups) is safe to auto-scroll, exactly like a standalone MKScreen main.
+     * Returns false when there is no MAIN panel (the legacy BODY-stack path, which
+     * never auto-fits the main anyway).
+     */
+    private boolean mainPanelHoldsNoSlots(java.util.List<Panel> panels) {
+        for (Panel p : panels) {
+            if (p.getPosition().mode() == PanelPosition.Mode.MAIN) {
+                return menu.getGroupsFor(p.getId()).isEmpty();
+            }
+        }
+        return false;
     }
 
     /**
