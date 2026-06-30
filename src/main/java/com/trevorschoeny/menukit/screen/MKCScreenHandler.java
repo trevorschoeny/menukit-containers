@@ -557,27 +557,27 @@ public class MKCScreenHandler extends AbstractContainerMenu implements PanelOwne
             return this;
         }
 
-        /** Positions this panel to the right of the named anchor panel. */
-        public PanelBuilder rightOf(String anchorPanelId) {
-            this.position = PanelPosition.rightOf(anchorPanelId);
+        /**
+         * Marks this panel as the screen's MAIN panel — its frame (Movement ③).
+         * Centred on the screen window; every {@link #region}-anchored sibling
+         * resolves against its bounds, exactly as vanilla panels resolve against a
+         * menu frame. Exactly one panel per screen should be {@code main()}.
+         */
+        public PanelBuilder main() {
+            this.position = PanelPosition.main();
             return this;
         }
 
-        /** Positions this panel to the left of the named anchor panel. */
-        public PanelBuilder leftOf(String anchorPanelId) {
-            this.position = PanelPosition.leftOf(anchorPanelId);
-            return this;
-        }
-
-        /** Positions this panel above the named anchor panel. */
-        public PanelBuilder above(String anchorPanelId) {
-            this.position = PanelPosition.above(anchorPanelId);
-            return this;
-        }
-
-        /** Positions this panel below the named anchor panel. */
-        public PanelBuilder below(String anchorPanelId) {
-            this.position = PanelPosition.below(anchorPanelId);
+        /**
+         * Anchors this panel to the MAIN panel via {@code region} (Movement ③) —
+         * the same {@link MenuRegion} vocabulary vanilla-injected panels use against
+         * the menu frame (RIGHT_ALIGN_TOP, BOTTOM_CENTER, …), edge-aware and clamped
+         * on-screen. This replaces the retired relative verbs: a side group that was
+         * {@code rightOf(MAIN)} is now {@code region(MenuRegion.RIGHT_ALIGN_TOP)},
+         * a player inventory {@code below(MAIN)} is {@code region(BOTTOM_CENTER)}, etc.
+         */
+        public PanelBuilder region(MenuRegion region) {
+            this.position = PanelPosition.region(region);
             return this;
         }
 

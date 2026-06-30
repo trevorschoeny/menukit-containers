@@ -296,21 +296,37 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
      * is overridden to include them.
      */
     private void computeLayout() {
-        // Phase 16j R1 — delegate to shared PanelTreeLayout primitive.
-        // Min image dims (176×100) are vanilla's container-screen
-        // minimums; PanelTreeLayout clamps totalWidth/Height to those
-        // so vanilla's centering math doesn't underflow even when the
-        // layout itself is smaller. layoutOriginX/Y feed the post-
-        // super.init recenter() correction (see that method's javadoc).
-        var layout = PanelTreeLayout.resolve(
-                menu.getPanels(), this::computePanelSize,
-                BODY_GAP, RELATIVE_GAP, TITLE_HEIGHT,
-                /*minImageWidth=*/ 176, /*minImageHeight=*/ 100);
-        panelBounds = layout.bounds();
-        this.layoutOriginX = layout.layoutOriginX();
-        this.layoutOriginY = layout.layoutOriginY();
-        imageWidth  = layout.totalWidth();
-        imageHeight = layout.totalHeight();
+        java.util.List<Panel> panels = menu.getPanels();
+        if (MainRegionLayout.hasMain(panels)) {
+            // Movement ③ — the screen names a MAIN panel = its frame; every other
+            // panel anchors to it via MenuRegion through the SAME RegionMath path
+            // vanilla-injected panels take against the menu frame. The bounds are
+            // leftPos-relative (main at 0,0); imageWidth/Height = the main frame,
+            // and recenter() recomputes the SAME leftPos/topPos from them (origin
+            // 0), so the screen centres on the main panel and slots/labels add
+            // leftPos/topPos exactly as a vanilla container does.
+            var layout = MainRegionLayout.resolve(
+                    panels, this::computePanelSize, this.width, this.height);
+            panelBounds = layout.bounds();
+            imageWidth  = layout.mainW();
+            imageHeight = layout.mainH();
+            this.layoutOriginX = 0;
+            this.layoutOriginY = 0;
+        } else {
+            // Legacy BODY-stack layout (no designated main panel). Min image dims
+            // (176×100) are vanilla's container-screen minimums; PanelTreeLayout
+            // clamps totalWidth/Height to those so vanilla's centering math doesn't
+            // underflow. layoutOriginX/Y feed the post-super.init recenter().
+            var layout = PanelTreeLayout.resolve(
+                    panels, this::computePanelSize,
+                    BODY_GAP, RELATIVE_GAP, TITLE_HEIGHT,
+                    /*minImageWidth=*/ 176, /*minImageHeight=*/ 100);
+            panelBounds = layout.bounds();
+            this.layoutOriginX = layout.layoutOriginX();
+            this.layoutOriginY = layout.layoutOriginY();
+            imageWidth  = layout.totalWidth();
+            imageHeight = layout.totalHeight();
+        }
 
         // Position the "Inventory" label relative to the player panel.
         // Vanilla renders inventoryLabel at screen-coords (leftPos +
