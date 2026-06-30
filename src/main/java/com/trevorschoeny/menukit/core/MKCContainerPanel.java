@@ -32,7 +32,7 @@ import java.util.function.Supplier;
  *     .style(PanelStyle.RAISED)
  *     .parity(ScreenMatcher.all())                       // default; opt out per screen
  *     .chrome(() -> List.of(new Button(...)))             // client-only, built lazily
- *     .addSlot(SlotSpec.at("pockets", 19, 18)
+ *     .addSlot(SlotSpec.at("pockets").count(9)             // slots flow + wrap to width
  *             .storage(player -> POCKETS.bind(player)))
  *     .register();
  * }</pre>
@@ -373,22 +373,28 @@ public final class MKCContainerPanel {
         for (Definition def : DEFINITIONS) {
             List<PanelElement> elements = new ArrayList<>(def.chrome().get());
 
-            // One SlotElement per logical slot, laid out from the spec's panel-
-            // local origin on the standard 18px pitch — matching the seed layout
-            // ParitySlotRegistry hands MKCSlots, so element and slot agree.
+            // Movement ④ — slots flow + wrap reactively, not a fixed grid. One
+            // SlotElement per logical slot, built at the flow's origin (0,0); the
+            // SlotFlowElement owns their per-frame positions, flowing only the
+            // currently-visible ones into the panel's width and hugging the result
+            // (no fixed columns, no reserved empty space). Declared order across
+            // groups is the flow order — a group's slots are a contiguous run, so
+            // revealing a group simply joins its slots to the stream.
+            List<SlotElement> slotElements = new ArrayList<>();
             for (SlotSpec spec : def.slots()) {
                 String sid = slotPanelId(def.panelId(), spec.groupId());
                 for (int i = 0; i < spec.count(); i++) {
-                    int ex = spec.childX() + (i % spec.columns()) * MKCSlots.SLOT_PITCH;
-                    int ey = spec.childY() + (i / spec.columns()) * MKCSlots.SLOT_PITCH;
-                    SlotElement el = new SlotElement(sid, spec.groupId(), i, ex, ey);
+                    SlotElement el = new SlotElement(sid, spec.groupId(), i, 0, 0);
                     // Group-level hover tooltip flows from the spec onto each built
                     // SlotElement (the consumer can't reach these library-built instances).
                     if (spec.tooltip() != null) {
                         el.tooltip(spec.tooltip());
                     }
-                    elements.add(el);
+                    slotElements.add(el);
                 }
+            }
+            if (!slotElements.isEmpty()) {
+                elements.add(new SlotFlowElement(slotElements, 0, 0));
             }
 
             Panel panel = Panel.builder(def.panelId())

@@ -67,11 +67,8 @@ import java.util.function.Supplier;
 public final class SlotSpec {
 
     private final String groupId;
-    private final int childX;
-    private final int childY;
 
     private int count = 1;                                // logical slots in this group
-    private int columns = 1;                              // grid columns for multi-slot groups
     private @Nullable Function<Player, Storage> storageFactory;   // required
     private @Nullable BooleanSupplier revealWhen = null;  // client-side reveal; null => always
     private @Nullable String label = null;               // MK display name; null => capitalized groupId
@@ -87,21 +84,20 @@ public final class SlotSpec {
     private @Nullable TriBool mending = null;
     private @Nullable QuickMoveParticipation quickMove = null;
 
-    private SlotSpec(String groupId, int childX, int childY) {
+    private SlotSpec(String groupId) {
         this.groupId = groupId;
-        this.childX = childX;
-        this.childY = childY;
     }
 
     /**
-     * Begins a slot-group spec.
+     * Begins a slot-group spec. Position is reactive (Movement ④) — the group's
+     * slots flow + wrap into the owning panel's width via {@link SlotFlowElement},
+     * so a spec declares only WHAT a group is (storage, count, reveal, behavior),
+     * never where it sits.
      *
      * @param groupId slot-group id, unique within the owning {@link MKCContainerPanel}
-     * @param childX  panel-local X of the first slot (within the panel content area)
-     * @param childY  panel-local Y of the first slot
      */
-    public static SlotSpec at(String groupId, int childX, int childY) {
-        return new SlotSpec(groupId, childX, childY);
+    public static SlotSpec at(String groupId) {
+        return new SlotSpec(groupId);
     }
 
     /**
@@ -121,12 +117,6 @@ public final class SlotSpec {
      */
     public SlotSpec count(int count) {
         this.count = Math.max(1, count);
-        return this;
-    }
-
-    /** Grid columns for a multi-slot group (default {@code 1}). Slots fill left-to-right, top-to-bottom on an 18px pitch. */
-    public SlotSpec columns(int columns) {
-        this.columns = Math.max(1, columns);
         return this;
     }
 
@@ -246,10 +236,14 @@ public final class SlotSpec {
     // ── Accessors (read by MKCContainerPanel / ParitySlotRegistry) ──────
 
     String groupId()       { return groupId; }
-    int childX()           { return childX; }
-    int childY()           { return childY; }
     int count()            { return count; }
-    int columns()          { return columns; }
+    // Movement ④ — slots flow reactively (SlotFlowElement owns positions). These
+    // remain only as the off-panel SEED ParitySlotRegistry hands MKCSlots; the
+    // SlotElement overrides them per frame, so the seed never shows. Origin (0,0),
+    // one-row seed (columns = count).
+    int childX()           { return 0; }
+    int childY()           { return 0; }
+    int columns()          { return count; }
     @Nullable BooleanSupplier revealWhen() { return revealWhen; }
     @Nullable String label() { return label; }
     @Nullable Supplier<Component> tooltip() { return tooltip; }
