@@ -89,15 +89,18 @@ modrinth {
     versionNumber = property('menukit_version')
     versionName = "MenuKit: Containers ${property('menukit_version')}"
     versionType = "release"
-    changelog = '''MenuKit: Containers 1.1.0
+    changelog = '''MenuKit: Containers 2.0.0
 
-Slot-grafting and in-inventory containers:
-- Graft real, persistent, server-synced slots onto vanilla menus - with correct click-through handling and runtime repositioning.
-- Per-slot data can now survive a shulker being broken, carried, and replaced.
-- Opt a slot-state channel into cross-player-visible state, or keep it per-player.
-- Reach placed containers: double-chest resolution, menu-free server-side reads, and a client-capability check - enough to build container locks, automation, and mixed modded/vanilla-client features.
+Built on MenuKit 2.0. A clean API break.
 
-Additive update - no breaking changes; existing slot-state channels register unchanged. Requires MenuKit 1.1.0.'''
+Create a slot once; interact with it through one window - the same window that speaks to vanilla slots.
+- Created slots as panel elements - real, server-synced, persistent; on the player inventory, placed containers, or foreign menus.
+- Vanilla parity for free - identical in creative and survival; correct death behavior (drop / keep on keepInventory / destroy on Curse of Vanishing), grave-mod aware; opt-in Curse of Binding and XP Mending.
+- Container parity - register a slot panel once, it appears on every container screen (creative and foreign menus included), no per-screen wiring.
+- Shared or private per-slot state; placed-container reach (double-chest resolution, menu-free reads, capability query).
+- Persistence on the natural owner (player, block, entity, item), inspectable with /data get.
+
+Requires MenuKit 2.0.0. Breaking: the old graft/slot API does not compile against 2.0.'''
     uploadFile = remapJar
     gameVersions = [property('minecraft_version')]
     loaders = ["fabric"]
