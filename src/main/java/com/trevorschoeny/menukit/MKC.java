@@ -94,7 +94,7 @@ public class MKC implements ModInitializer {
         // by the id the client sent, hops to the main thread, and opens it. An
         // unknown id is a fail-loud log, never an NPE. This serves every MKCMenu
         // a consumer defines, keyed by the menu's registered id.
-        net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playC2S().register(
+        net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.serverboundPlay().register(
                 com.trevorschoeny.menukit.network.MKCOpenMenuC2SPayload.TYPE,
                 com.trevorschoeny.menukit.network.MKCOpenMenuC2SPayload.STREAM_CODEC);
         net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(

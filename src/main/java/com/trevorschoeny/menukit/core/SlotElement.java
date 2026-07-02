@@ -150,7 +150,7 @@ public final class SlotElement implements PanelElement {
         // ({@link MKCSlotInput}) hit-tests it where the panel actually drew
         // it. This is the per-frame positioning that used to be an onPrepare
         // callback — now it's just "an element rides its panel".
-        Screen screen = Minecraft.getInstance().screen;
+        Screen screen = Minecraft.getInstance().gui.screen();
         if (screen instanceof AbstractContainerScreen<?> acs) {
             AbstractContainerScreenAccessor acc = (AbstractContainerScreenAccessor) acs;
             slot.setRenderPosition(screenX - acc.mk$getLeftPos(),
@@ -184,7 +184,7 @@ public final class SlotElement implements PanelElement {
      * apply to).
      */
     private @Nullable MKCSlot resolve() {
-        Screen screen = Minecraft.getInstance().screen;
+        Screen screen = Minecraft.getInstance().gui.screen();
         if (!(screen instanceof AbstractContainerScreen<?> acs)) return null;
         AbstractContainerMenu menu = acs.getMenu();
         for (Slot slot : menu.slots) {

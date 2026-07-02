@@ -6,7 +6,7 @@ import com.trevorschoeny.menukit.core.MKCSlot;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.ItemStack;
@@ -54,7 +54,7 @@ public abstract class MKCCreativeSlotClickRouteMixin {
 
     @Inject(method = "slotClicked", at = @At("HEAD"), cancellable = true)
     private void mk$routeSlotClick(Slot slot, int slotId, int button,
-                                         ClickType clickType, CallbackInfo ci) {
+                                         ContainerInput clickType, CallbackInfo ci) {
         if (slot == null) return;
         MKCSlot mkcSlot = MKCSlotAccess.asMKCSlot(slot);
         if (mkcSlot == null) return;
@@ -66,7 +66,7 @@ public abstract class MKCCreativeSlotClickRouteMixin {
         LocalPlayer player = mc.player;
         if (player == null || !player.hasInfiniteMaterials() || mc.gameMode == null) return;
 
-        if (clickType == ClickType.THROW && mkcSlot.hasItem()) {
+        if (clickType == ContainerInput.THROW && mkcSlot.hasItem()) {
             // Drop (Q): mirror vanilla's inventory-tab throw — the dropped entity is
             // its own creative-drop server message; the slot's remainder syncs below.
             ItemStack dropped = mkcSlot.remove(button == 0 ? 1 : mkcSlot.getItem().getMaxStackSize());

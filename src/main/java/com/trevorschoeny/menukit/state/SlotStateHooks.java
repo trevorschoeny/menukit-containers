@@ -38,11 +38,11 @@ public final class SlotStateHooks {
     // ── Registration ────────────────────────────────────────────────────
 
     public static void registerCommon() {
-        PayloadTypeRegistry.playS2C().register(
+        PayloadTypeRegistry.clientboundPlay().register(
                 SlotStateSnapshotS2CPayload.TYPE, SlotStateSnapshotS2CPayload.STREAM_CODEC);
-        PayloadTypeRegistry.playS2C().register(
+        PayloadTypeRegistry.clientboundPlay().register(
                 SlotStateUpdateS2CPayload.TYPE, SlotStateUpdateS2CPayload.STREAM_CODEC);
-        PayloadTypeRegistry.playC2S().register(
+        PayloadTypeRegistry.serverboundPlay().register(
                 SlotStateUpdateC2SPayload.TYPE, SlotStateUpdateC2SPayload.STREAM_CODEC);
     }
 

@@ -6,7 +6,7 @@ import com.trevorschoeny.menukit.core.GatingContext;
 
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.ContainerInput;
 
 import org.spongepowered.asm.mixin.Mixin;
 
@@ -20,7 +20,7 @@ import org.spongepowered.asm.mixin.Mixin;
 public class MKCActingPlayerMixin {
 
     @WrapMethod(method = "clicked")
-    private void mkc$captureActingPlayer(int slotId, int button, ClickType clickType, Player player,
+    private void mkc$captureActingPlayer(int slotId, int button, ContainerInput clickType, Player player,
                                          Operation<Void> original) {
         GatingContext.setActingPlayer(player);
         try {

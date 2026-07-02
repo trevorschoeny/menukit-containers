@@ -5,7 +5,7 @@ import com.trevorschoeny.menukit.mixin.SlotPositionAccessor;
 import com.trevorschoeny.menukit.core.PanelRendering;
 import com.trevorschoeny.menukit.window.ClientWindowVisibility;
 
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -133,7 +133,7 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
      */
     public static @Nullable Runnable captureReturnAction() {
         net.minecraft.client.gui.screens.Screen current =
-                net.minecraft.client.Minecraft.getInstance().screen;
+                net.minecraft.client.Minecraft.getInstance().gui.screen();
         if (!(current instanceof MKCHandledScreen mkc)) return null;
         net.minecraft.world.inventory.MenuType<?> type;
         try {
@@ -151,12 +151,23 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
 
     // ── Construction ───────────────────────────────────────────────────
 
+    // ── MKC-owned image dimensions (26.2 migration) ───────────────────
+    // Vanilla made imageWidth/imageHeight FINAL at 26.x (dims are a
+    // construction-time contract now). MKC's reactive layout reassigns
+    // them per-frame, so MKC keeps its own pair. This is safe because
+    // MKC never relied on vanilla's consumers of those fields anyway:
+    // recenter() computes leftPos/topPos itself (overwriting
+    // super.init()'s centering), and hasClickedOutside is overridden.
+    // Every layout read/write below goes through these fields.
+    private int mkcImageWidth  = 176;
+    private int mkcImageHeight = 100;
+
     public MKCHandledScreen(MKCScreenHandler handler, Inventory inventory,
                                 Component title) {
         super(handler, inventory, title);
-        // Compute initial layout to set imageWidth/imageHeight before
-        // init() runs (which uses them for leftPos/topPos centering).
-        // The recenter() correction lands in init() after super.init().
+        // Compute initial layout to set mkcImageWidth/mkcImageHeight before
+        // init() runs (recenter() centers from them; super.init()'s own
+        // centering from the final vanilla dims is overwritten there).
         computeLayout();
     }
 
@@ -330,8 +341,8 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
                     panels, this::computePanelSize, this.width, this.height,
                     /*reserveTitle=*/ true, autoFitMain);
             panelBounds = layout.bounds();
-            imageWidth  = layout.mainW();
-            imageHeight = layout.mainH();
+            mkcImageWidth  = layout.mainW();
+            mkcImageHeight = layout.mainH();
             this.layoutOriginX = 0;
             this.layoutOriginY = 0;
         } else {
@@ -346,8 +357,8 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
             panelBounds = layout.bounds();
             this.layoutOriginX = layout.layoutOriginX();
             this.layoutOriginY = layout.layoutOriginY();
-            imageWidth  = layout.totalWidth();
-            imageHeight = layout.totalHeight();
+            mkcImageWidth  = layout.totalWidth();
+            mkcImageHeight = layout.totalHeight();
         }
 
         // Position the "Inventory" label relative to the player panel.
@@ -421,8 +432,8 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
      * mid-game).
      */
     private void recenter() {
-        this.leftPos = (this.width  - this.imageWidth)  / 2 - this.layoutOriginX;
-        this.topPos  = (this.height - this.imageHeight) / 2 - this.layoutOriginY;
+        this.leftPos = (this.width  - this.mkcImageWidth)  / 2 - this.layoutOriginX;
+        this.topPos  = (this.height - this.mkcImageHeight) / 2 - this.layoutOriginY;
     }
 
     /**
@@ -491,12 +502,17 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
     /**
      * Renders panel backgrounds and slot backgrounds in screen space.
      *
-     * <p>Called before vanilla's slot highlight and item rendering.
-     * Recomputes layout each frame so visibility toggles take
-     * effect immediately.
+     * <p>26.2: vanilla removed the {@code renderBg} hook — background
+     * drawing has no protected seam anymore. The equivalent ordering seam
+     * is the head of {@code extractContents}: vanilla's extractContents
+     * runs widgets (Screen.extractRenderState) → labels → slot highlight
+     * back → slots → highlight front, so drawing MKC's backgrounds before
+     * {@code super.extractContents} reproduces the old renderBg-before-
+     * everything order exactly. Recomputes layout each frame so
+     * visibility toggles take effect immediately.
      */
     @Override
-    protected void renderBg(GuiGraphics graphics, float delta, int mouseX, int mouseY) {
+    public void extractContents(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
         // Recompute layout each frame — cheap, handles visibility toggles
         computeLayout();
         positionSlots();
@@ -548,14 +564,19 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
                     mouseX, mouseY, ctx.hasMouseInput());
         }
 
+        // ── Vanilla content pass ───────────────────────────────────────
+        // Widgets, labels, slot highlights, slots — after MKC's
+        // backgrounds, exactly where the old renderBg → super.render
+        // boundary sat.
+        super.extractContents(graphics, mouseX, mouseY, delta);
     }
 
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
-        super.render(graphics, mouseX, mouseY, delta);
+    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(graphics, mouseX, mouseY, delta);
 
         // ── Hover tracking (fire enter/exit events) ────────────────────
-        // After super.render(), hoveredSlot is set by vanilla's pipeline.
+        // After the super pass, hoveredSlot is set by vanilla's pipeline.
         // Compare with previous frame to detect enter/exit transitions.
         MKCSlot currentHovered = (this.hoveredSlot instanceof MKCSlot mk) ? mk : null;
         if (currentHovered != previouslyHoveredMkSlot) {
@@ -568,24 +589,26 @@ public class MKCHandledScreen extends AbstractContainerScreen<MKCScreenHandler> 
             previouslyHoveredMkSlot = currentHovered;
         }
 
-        this.renderTooltip(graphics, mouseX, mouseY);
+        // 26.2: no manual tooltip call — vanilla's extractRenderState
+        // already runs extractTooltip (the old manual renderTooltip
+        // convention is gone with the extract/draw split).
     }
 
     @Override
-    protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY) {
+    protected void extractLabels(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
         // 1.21.11 requires explicit ARGB colors — drawString silently
         // discards text when alpha is 0 (ARGB.alpha(color) != 0 guard).
         // White text with shadow for readability on the dark overlay.
         // When labels move into panel backgrounds (panel elements), switch
         // to 0xFF404040 (vanilla's dark gray on light backgrounds).
-        graphics.drawString(this.font, this.title,
+        graphics.text(this.font, this.title,
                 this.titleLabelX, this.titleLabelY, 0xFFFFFFFF, true);
         // Only draw the vanilla "Inventory" label when the handler actually
         // has a player-inventory panel. Screens that deliberately omit the
         // player panel (e.g., the element-demo screen) shouldn't display
         // a floating label for content they don't render.
         if (panelBounds.get("player") != null) {
-            graphics.drawString(this.font, this.playerInventoryTitle,
+            graphics.text(this.font, this.playerInventoryTitle,
                     this.inventoryLabelX, this.inventoryLabelY, 0xFFFFFFFF, true);
         }
     }

@@ -15,7 +15,9 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 plugins {
-    id 'fabric-loom' version '1.14-SNAPSHOT'
+    // 26.x migration (2026-07-02): Loom plugin id is namespaced at 1.15+;
+    // 1.17 is the 26.2-era line. Version pinned at the workspace root.
+    id 'net.fabricmc.fabric-loom' version '1.17-SNAPSHOT'
     id 'java-library'
     id 'com.modrinth.minotaur' version '2.+'
 }
@@ -40,8 +42,9 @@ processResources {
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    // Minecraft 26.x runs on Java 25.
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
 }
 
 repositories {
@@ -52,10 +55,11 @@ repositories {
 }
 
 dependencies {
+    // 26.x: the game is unobfuscated — no mappings line, and mod deps use the
+    // standard java configurations (modImplementation → implementation etc.).
     minecraft "com.mojang:minecraft:${property('minecraft_version')}"
-    mappings loom.officialMojangMappings()
-    modImplementation "net.fabricmc:fabric-loader:${property('loader_version')}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${property('fabric_version')}"
+    implementation "net.fabricmc:fabric-loader:${property('loader_version')}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${property('fabric_version')}"
 
     // §0042 one-way dependency: MenuKit: Containers depends on MenuKit.
     // MenuKit does NOT depend on this artifact (enforced at gradle level).
@@ -64,7 +68,9 @@ dependencies {
     // validator and future consumer mods need access to both surfaces
     // through a single project dependency. Requires the `java-library`
     // plugin (above) to expose the `api` configuration.
-    api project(path: ':menukit', configuration: 'namedElements')
+    // (26.x: the remap layer is gone, so the `namedElements` variant no
+    // longer exists — a plain project dep is THE artifact now.)
+    api project(':menukit')
 
     // @ApiStatus.Internal markers. Compile-only so consumers don't transitively
     // depend on jetbrains-annotations at runtime; the annotation is a doc/IDE
@@ -75,12 +81,16 @@ dependencies {
     // against the grave mods' capture APIs, but MKC hard-depends on NEITHER —
     // each adapter class is loaded only behind a FabricLoader isModLoaded(...)
     // guard, and falls back to the Phase-1 floor when the mod is absent.
-    modCompileOnly "maven.modrinth:universal-graves:3.10.2+1.21.11"
-    // Pneumono's Gravestones — DEFERRED (floored). Its 1.21.11 jar is built with
-    // Loom 1.15.5, newer than this project's Loom 1.14; Loom refuses to remap a
-    // newer-Loom mod, so it can't be a modCompileOnly dep without a workspace Loom
-    // upgrade. The Phase-1 floor covers Pneumono users; revisit on a Loom bump.
-    // modCompileOnly "maven.modrinth:pneumono_gravestones:1.4.1+1.21.11+A"
+    // 26.x: bumped to UG's 26.2 release (3.12.0+26.2, verified on Modrinth
+    // 2026-07-02) — the old 1.21.11 jar is intermediary-mapped and can't be
+    // compiled against in the no-remap world.
+    compileOnly "maven.modrinth:universal-graves:3.12.0+26.2"
+    // Pneumono's Gravestones — DEFERRED (floored). Was blocked on a Loom
+    // version wall (its jar was built with a newer Loom than the workspace's
+    // 1.14). The workspace is now on Loom 1.17, but re-enabling the adapter
+    // needs a 26.2 Pneumono build + adapter re-verification — a design/compat
+    // decision for the owning unit, not this behavior-preserving pass.
+    // compileOnly "maven.modrinth:pneumono_gravestones:1.4.1+1.21.11+A"
 }
 
 loom {
@@ -115,7 +125,8 @@ Create a slot once; interact with it through one window - the same window that s
 - Persistence on the natural owner (player, block, entity, item), inspectable with /data get.
 
 Requires MenuKit 2.0.0. Breaking: the old graft/slot API does not compile against 2.0.'''
-    uploadFile = remapJar
+    // 26.x: no remap step — `jar` IS the shippable artifact (remapJar is gone).
+    uploadFile = jar
     gameVersions = [property('minecraft_version')]
     loaders = ["fabric"]
     dependencies {
