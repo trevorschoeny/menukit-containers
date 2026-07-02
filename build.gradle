@@ -25,6 +25,20 @@ group   = property('maven_group')
 
 base.archivesName = 'menukit-containers'
 
+// Stamp the real mod version into fabric.mod.json at build time. The version
+// used to be HARDCODED "1.0.0" in the manifest — bumping the gradle version
+// property renamed the JAR but the loader (which reads fabric.mod.json) still
+// saw 1.0.0, so every published artifact self-reported 1.0.0 and no versioned
+// dependency gate could ever be satisfied (the 2026-07-01 Keybindery boot
+// wall). fabric.mod.json now declares "version": "${version}" and this block
+// expands it from the project version — one source of truth.
+processResources {
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") {
+        expand "version": inputs.properties.version
+    }
+}
+
 java {
     sourceCompatibility = JavaVersion.VERSION_21
     targetCompatibility = JavaVersion.VERSION_21
